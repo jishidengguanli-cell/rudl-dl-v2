@@ -18,8 +18,6 @@ interface Env {
   ADMIN_TOKEN: string;
 }
 
-const app = new Hono<{ Bindings: Env }>();
-
 // 簡易管理員驗證
 app.use("/admin/*", async (c, next) => {
   const token = c.req.header("x-admin-token");
