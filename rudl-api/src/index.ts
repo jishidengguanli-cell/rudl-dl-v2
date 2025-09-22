@@ -1,5 +1,15 @@
 import { Hono } from "hono";
 import { v4 as uuidv4 } from "uuid";
+import { cors } from "hono/cors";
+
+const app = new Hono<{ Bindings: Env }>();
+
+// 允許本機與未來的後台網域
+app.use("*", cors({
+  origin: ["http://localhost:3000", "https://admin.dataruapp.com"],
+  allowHeaders: ["Content-Type", "x-admin-token"],
+  allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+}));
 
 type Platform = "apk" | "ipa";
 
