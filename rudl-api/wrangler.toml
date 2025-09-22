@@ -1,0 +1,13 @@
+name = "rudl-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-18"
+workers_dev = false
+
+routes = [
+  { pattern = "api.dataruapp.com", custom_domain = true }
+]
+
+[[d1_databases]]
+binding = "APP_DB"
+database_name = "rudl_app"
+database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
