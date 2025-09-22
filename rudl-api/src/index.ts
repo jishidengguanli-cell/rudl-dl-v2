@@ -78,6 +78,11 @@ app.post("/admin/files", async (c) => {
     package_name?: string; channel?: string; version?: string; size?: number; sha256?: string | null;
   }>();
   const id = uuidv4(), now = Date.now();
+  // 檢查 ownerId 是否存在於 point_accounts（防止填到 ledgerId）
+  const ownerOk = await c.env.APP_DB.prepare(
+    "SELECT 1 FROM point_accounts WHERE id=?1"
+  ).bind(body.ownerId).first();
+  if (!ownerOk) return c.text("ownerId not found", 400);
 
   await c.env.APP_DB.prepare(
     "INSERT INTO files (id, owner_id, platform, package_name, channel, version, size, sha256, r2_key, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
