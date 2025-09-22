@@ -5,19 +5,20 @@ workers_dev = false
 
 # 把 dl 子網域直接綁到這個 Worker
 routes = [
-  { pattern = "dl.dataruapp.com/*", custom_domain = true }
+  { pattern = "dl.dataruapp.com", custom_domain = true }
 ]
+
 
 # D1（先建立再把 id 貼回來）
 [[d1_databases]]
 binding = "APP_DB"
 database_name = "rudl_app"
-database_id = ""  # ← 第 E 步建立後回填
+database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"  # ← 第 E 步建立後回填
 
 # （佔位；本版沒用）
-[[kv_namespaces]]
-binding = "APP_KV"
-id = ""
+# [[kv_namespaces]]
+# binding = "APP_KV"
+# id = ""
 
 # R2 綁定（你的新名稱）
 [[r2_buckets]]
