@@ -1,208 +1,464 @@
+// src/index.ts
 import { Hono } from "hono";
-import { v4 as uuidv4 } from "uuid";
 import { cors } from "hono/cors";
+import type { D1Database } from '@cloudflare/workers-types';
 
+// ---- Environment typings（簡化，避免型別阻擋部署）----
+type D1 = any;
+
+type Env = {
+  ADMIN_TOKEN: string;
+  APP_DB: D1;            // D1 Database
+  // 如需使用 R2 / DO 再加：R2_BUCKET: R2Bucket; PointAccountDO: DurableObjectNamespace;
+};
+
+// ---- App & CORS ----
 const app = new Hono<{ Bindings: Env }>();
 
-// 允許本機與未來的後台網域
-app.use("*", cors({
-  origin: ["http://localhost:3000", "https://admin.dataruapp.com"],
-  allowHeaders: ["Content-Type", "x-admin-token"],
-  allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-}));
+app.use(
+  "*",
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "https://admin.dataruapp.com",
+      // 如你用 Pages 的暫時網域，記得加進來：
+      // "https://<your-pages>.pages.dev",
+    ],
+    allowHeaders: ["Content-Type", "x-admin-token"],
+    allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  })
+);
 
-type Platform = "apk" | "ipa";
+// ---- Health ----
+app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
 
-interface Env {
-  APP_DB: D1Database;
-  ADMIN_TOKEN: string;
-}
-
-// 簡易管理員驗證
+// ---- 管理員授權：套用在 /admin/* 全路由 ----
 app.use("/admin/*", async (c, next) => {
   const token = c.req.header("x-admin-token");
-  if (!token || token !== c.env.ADMIN_TOKEN) return c.text("Unauthorized", 401);
+  if (!token || token !== c.env.ADMIN_TOKEN) {
+    return c.text("Unauthorized", 401);
+  }
   await next();
 });
 
-app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
+// 工具：安全取 JSON
+async function readJSON<T = any>(c: any): Promise<T> {
+  try {
+    return (await c.req.json()) as T;
+  } catch {
+    c.status(400);
+    throw new Error("Invalid JSON body");
+  }
+}
 
-// 建 user（含點數帳戶）
+// ========= 1) Admin: 建使用者 =========
+// body: { email: string, initialBalance?: number }
 app.post("/admin/users", async (c) => {
-  const { email, initialBalance = 0 } = await c.req.json<{ email: string; initialBalance?: number }>();
-  const id = uuidv4(), now = Date.now();
+  const { email, initialBalance = 0 } = await readJSON<{
+    email: string;
+    initialBalance?: number;
+  }>(c);
+  if (!email) return c.text("email required", 400);
 
-  const existed = await c.env.APP_DB.prepare("SELECT id FROM users WHERE email=?1").bind(email).first();
-  if (existed) return c.text("Email already exists", 409);
-
-  await c.env.APP_DB.prepare(
-    "INSERT INTO users (id, email, pw_hash, role, created_at) VALUES (?1, ?2, NULL, 'user', ?3)"
-  ).bind(id, email, now).run();
-
-  await c.env.APP_DB.prepare(
-    "INSERT INTO point_accounts (id, user_id, balance, updated_at) VALUES (?1, ?2, ?3, ?4)"
-  ).bind(id, id, initialBalance, now).run();
-
-  return c.json({ id, email, balance: initialBalance });
-});
-
-app.get("/admin/users/:id", async (c) => {
-  const id = c.req.param("id");
-  const row = await c.env.APP_DB.prepare(
-    "SELECT u.id, u.email, u.role, p.balance FROM users u LEFT JOIN point_accounts p ON p.user_id=u.id WHERE u.id=?1"
-  ).bind(id).first();
-  if (!row) return c.text("Not Found", 404);
-  return c.json(row);
-});
-
-const PACKAGES: Record<string, number> = {
-  "P1": 500, "P5": 3000, "P15": 20000, "P35": 50000, "P100": 150000, "P300": 500000
-};
-
-app.post("/admin/recharge", async (c) => {
-  const { userId, packageId } = await c.req.json<{ userId: string; packageId: keyof typeof PACKAGES }>();
-  const points = PACKAGES[packageId];
-  if (!points) return c.text("Invalid packageId", 400);
-
+  const id = crypto.randomUUID(); // 使用 UUID；你也可改成自定義 id
   const now = Date.now();
-  const upd = await c.env.APP_DB.prepare(
-    "UPDATE point_accounts SET balance = balance + ?1, updated_at=?2 WHERE user_id=?3"
-  ).bind(points, now, userId).run();
-  if (upd.meta.changes === 0) return c.text("User/Account Not Found", 404);
 
-  const ledgerId = uuidv4();
-  await c.env.APP_DB.prepare(
-    "INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, NULL, ?5)"
-  ).bind(ledgerId, userId, points, `recharge:${packageId}`, now).run();
+  const db = c.env.APP_DB;
+  // 建 users
+  await db
+    .prepare(
+      "INSERT INTO users (id, email, pw_hash, role, created_at) VALUES (?1, ?2, '', 'user', ?3)"
+    )
+    .bind(id, email, now)
+    .run();
 
-  const acc = await c.env.APP_DB.prepare("SELECT balance FROM point_accounts WHERE user_id=?1")
-    .bind(userId).first<{ balance: number }>();
-  return c.json({ ok: true, balance: acc?.balance ?? 0, ledgerId });
+  // 建 point_accounts
+  await db
+    .prepare(
+      "INSERT INTO point_accounts (id, user_id, balance, updated_at) VALUES (?1, ?2, ?3, ?4)"
+    )
+    .bind(id, id, initialBalance, now)
+    .run();
+
+  // 若有初始點數，寫 ledger
+  if (initialBalance > 0) {
+    await db
+      .prepare(
+        "INSERT INTO point_ledger (user_id, change, reason, created_at) VALUES (?1, ?2, ?3, ?4)"
+      )
+      .bind(id, initialBalance, "init credit", now)
+      .run();
+  }
+
+  return c.json({ id, email, balance: initialBalance, created_at: now });
 });
 
-app.post("/admin/files", async (c) => {
-  const body = await c.req.json<{
-    ownerId: string; platform: Platform; r2_key: string;
-    package_name?: string; channel?: string; version?: string; size?: number; sha256?: string | null;
-  }>();
-  const id = uuidv4(), now = Date.now();
-  // 檢查 ownerId 是否存在於 point_accounts（防止填到 ledgerId）
-  const ownerOk = await c.env.APP_DB.prepare(
-    "SELECT 1 FROM point_accounts WHERE id=?1"
-  ).bind(body.ownerId).first();
-  if (!ownerOk) return c.text("ownerId not found", 400);
+// ========= 2) Admin: 充值 =========
+// body: { userId: string, packageId: 'P1'|'P2'|'P3'|'P5'|'P6'|'P7' }
+app.post("/admin/recharge", async (c) => {
+  const { userId, packageId } = await readJSON<{
+    userId: string;
+    packageId: string;
+  }>(c);
+  if (!userId || !packageId) return c.text("userId & packageId required", 400);
 
-  await c.env.APP_DB.prepare(
-    "INSERT INTO files (id, owner_id, platform, package_name, channel, version, size, sha256, r2_key, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
-  ).bind(id, body.ownerId, body.platform, body.package_name || null, body.channel || null,
-         body.version || null, body.size || null, body.sha256 || null, body.r2_key, now).run();
+  // 你的包裝點數對照（可依你需求調整）
+  const pkg: Record<string, { points: number; usd: number }> = {
+    P1: { points: 500, usd: 1 },
+    P2: { points: 3000, usd: 5 },
+    P3: { points: 20000, usd: 15 },
+    P5: { points: 50000, usd: 35 },
+    P6: { points: 150000, usd: 100 },
+    P7: { points: 500000, usd: 300 },
+  };
+  const sel = pkg[packageId];
+  if (!sel) return c.text("invalid packageId", 400);
+
+  const db = c.env.APP_DB;
+  const now = Date.now();
+
+  // 查餘額
+  const acc = (await db
+    .prepare("SELECT balance FROM point_accounts WHERE id=?1")
+    .bind(userId)
+    .first()) as { balance: number } | null;
+
+  if (!acc) return c.text("User/Account Not Found", 404);
+  const newBal = (acc.balance || 0) + sel.points;
+
+
+  // 更新餘額
+  await db
+    .prepare("UPDATE point_accounts SET balance=?1, updated_at=?2 WHERE id=?3")
+    .bind(newBal, now, userId)
+    .run();
+
+  // ledger
+  await db
+    .prepare(
+      "INSERT INTO point_ledger (user_id, change, reason, created_at) VALUES (?1, ?2, ?3, ?4)"
+    )
+    .bind(userId, sel.points, `recharge ${packageId}`, now)
+    .run();
+
+  return c.json({ ok: true, balance: newBal, ledgerId: undefined });
+});
+
+// ========= 3) Admin: 建檔案 =========
+// body: { ownerId, platform:'apk'|'ipa', package_name, version, size, r2_key, channel?, sha256? }
+app.post("/admin/files", async (c) => {
+  const body = await readJSON<{
+    ownerId: string;
+    platform: string;
+    package_name: string;
+    version: string;
+    size?: number;
+    r2_key: string;
+    channel?: string | null;
+    sha256?: string | null;
+  }>(c);
+
+  if (!body.ownerId || !body.platform || !body.package_name || !body.version || !body.r2_key) {
+    return c.text("ownerId/platform/package_name/version/r2_key required", 400);
+  }
+
+  // 確認帳戶存在
+  const acc = await c.env.APP_DB
+    .prepare("SELECT 1 FROM point_accounts WHERE id=?1")
+    .bind(body.ownerId)
+    .first();
+  if (!acc) return c.text("ownerId not found", 400);
+
+  const id = crypto.randomUUID();
+  const now = Date.now();
+
+  await c.env.APP_DB
+    .prepare(
+      `INSERT INTO files (id, owner_id, platform, package_name, channel, version, size, sha256, r2_key, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
+    )
+    .bind(
+      id,
+      body.ownerId,
+      body.platform,
+      body.package_name,
+      body.channel ?? null,
+      body.version,
+      body.size ?? null,
+      body.sha256 ?? null,
+      body.r2_key,
+      now
+    )
+    .run();
 
   return c.json({ id });
 });
 
-function randomCode(n = 6) {
-  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  let s = ""; for (let i=0;i<n;i++) s += chars[Math.floor(Math.random()*chars.length)];
-  return s;
-}
-
+// ========= 4) Admin: 建連結 =========
+// body: { fileId: string, title?: string, code: string, cn_direct?: number (0/1) }
 app.post("/admin/links", async (c) => {
-  const { fileId, title, code, is_active = 1, cn_direct = 0 } = await c.req.json<{
-    fileId: string; title?: string; code?: string; is_active?: number; cn_direct?: number;
-  }>();
-  const id = uuidv4(), now = Date.now(), codeToUse = code || randomCode();
+  const body = await readJSON<{
+    fileId: string;
+    title?: string;
+    code: string;
+    cn_direct?: number;
+  }>(c);
 
-  const dup = await c.env.APP_DB.prepare("SELECT 1 FROM links WHERE code=?1").bind(codeToUse).first();
-  if (dup) return c.text("Code already exists", 409);
+  if (!body.fileId || !body.code) return c.text("fileId & code required", 400);
 
-  await c.env.APP_DB.prepare(
-    "INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  ).bind(id, codeToUse, fileId, title || null, is_active, now, cn_direct).run();
-
-  return c.json({ id, code: codeToUse });
-});
-
-app.patch("/admin/links/:id", async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json<{ title?: string; is_active?: number; cn_direct?: number }>();
-  const sets: string[] = []; const vals: any[] = [];
-  if (body.title !== undefined) { sets.push("title=?"); vals.push(body.title); }
-  if (body.is_active !== undefined) { sets.push("is_active=?"); vals.push(body.is_active); }
-  if (body.cn_direct !== undefined) { sets.push("cn_direct=?"); vals.push(body.cn_direct); }
-  if (sets.length === 0) return c.text("Nothing to update", 400);
-  vals.push(id);
-  const res = await c.env.APP_DB.prepare(`UPDATE links SET ${sets.join(", ")} WHERE id=?`).bind(...vals).run();
-  if (res.meta.changes === 0) return c.text("Not Found", 404);
-  return c.json({ ok: true });
-});
-
-app.get("/admin/links", async (c) => {
-  const ownerId = c.req.query("ownerId");
-  const sql = ownerId
-    ? `SELECT l.*, f.owner_id, f.platform, f.r2_key FROM links l JOIN files f ON f.id=l.file_id WHERE f.owner_id=?1 ORDER BY l.created_at DESC`
-    : `SELECT l.*, f.owner_id, f.platform, f.r2_key FROM links l JOIN files f ON f.id=l.file_id ORDER BY l.created_at DESC`;
-  const stmt = c.env.APP_DB.prepare(sql);
-  const rows = ownerId ? await stmt.bind(ownerId).all() : await stmt.all();
-  return c.json(rows.results || []);
-});
-
-// 取得帳戶餘額＋最近20筆流水
-app.get("/admin/accounts/:userId", async (c) => {
-  const userId = c.req.param("userId");
-  const acc = await c.env.APP_DB.prepare(
-    "SELECT balance FROM point_accounts WHERE user_id=?1"
-  ).bind(userId).first<{ balance: number }>();
-  const ledger = await c.env.APP_DB.prepare(
-    "SELECT * FROM point_ledger WHERE account_id=?1 ORDER BY created_at DESC LIMIT 20"
-  ).bind(userId).all();
-  return c.json({ balance: acc?.balance ?? 0, ledger: ledger.results || [] });
-});
-
-// 更正檔案 owner 或其他欄位（ownerId/r2_key/version/...）
-app.patch("/admin/files/:id", async (c) => {
-  const id = c.req.param("id");
-  const b = await c.req.json<{
-    ownerId?: string; r2_key?: string; package_name?: string; channel?: string;
-    version?: string; size?: number; sha256?: string | null;
-  }>();
-
-  if (b.ownerId) {
-    const ok = await c.env.APP_DB.prepare("SELECT 1 FROM point_accounts WHERE id=?1")
-      .bind(b.ownerId).first();
-    if (!ok) return c.text("ownerId not found", 400);
+  // 檢查 code 唯一
+  const dup = await c.env.APP_DB
+    .prepare("SELECT 1 FROM links WHERE code=?1")
+    .bind(body.code)
+    .first();
+  if (dup) {
+    c.status(409);
+    return c.text("code already exists");
   }
 
-  const sets: string[] = []; const vals: any[] = [];
-  if (b.ownerId !== undefined)     { sets.push("owner_id=?");     vals.push(b.ownerId); }
-  if (b.r2_key !== undefined)      { sets.push("r2_key=?");       vals.push(b.r2_key); }
-  if (b.package_name !== undefined){ sets.push("package_name=?"); vals.push(b.package_name); }
-  if (b.channel !== undefined)     { sets.push("channel=?");      vals.push(b.channel); }
-  if (b.version !== undefined)     { sets.push("version=?");      vals.push(b.version); }
-  if (b.size !== undefined)        { sets.push("size=?");         vals.push(b.size); }
-  if (b.sha256 !== undefined)      { sets.push("sha256=?");       vals.push(b.sha256); }
-  if (!sets.length) return c.text("Nothing to update", 400);
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  await c.env.APP_DB
+    .prepare(
+      `INSERT INTO links (id, code, file_id, title, is_active, cn_direct, created_at)
+       VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)`
+    )
+    .bind(id, body.code, body.fileId, body.title ?? "", body.cn_direct ? 1 : 0, now)
+    .run();
 
-  vals.push(id);
-  const res = await c.env.APP_DB.prepare(`UPDATE files SET ${sets.join(", ")} WHERE id=?`).bind(...vals).run();
-  if (!res.meta.changes) return c.text("Not Found", 404);
-  return c.json({ ok: true });
+  return c.json({ id, code: body.code });
 });
 
-// 下載記錄查詢（可用 linkCode 過濾）
-app.get("/admin/downloads", async (c) => {
-  const limit = Math.min(Number(c.req.query("limit") ?? "50"), 200);
-  const linkCode = c.req.query("linkCode");
-  const sql = `SELECT d.*, l.code, f.platform, f.r2_key
-               FROM downloads d
-               JOIN links l ON l.id=d.link_id
-               JOIN files f ON f.id=d.file_id
-               ${linkCode ? "WHERE l.code=?1" : ""}
-               ORDER BY d.created_at DESC
-               LIMIT ${limit}`;
-  const rows = linkCode
-    ? await c.env.APP_DB.prepare(sql).bind(linkCode!).all()
-    : await c.env.APP_DB.prepare(sql).all();
-  return c.json(rows.results || []);
+// ========= 5) Admin: Users 列表（搜尋 + 分頁） =========
+// GET /admin/users?q=&limit=20&offset=0
+app.get("/admin/users", async (c) => {
+  const url = new URL(c.req.url);
+  const q = url.searchParams.get("q") || "";
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+
+  const like = `%${q}%`;
+  const { results } = await c.env.APP_DB
+    .prepare(
+      `SELECT u.id, u.email, pa.balance, u.created_at
+       FROM users u
+       LEFT JOIN point_accounts pa ON pa.id = u.id
+       WHERE u.email LIKE ?1
+       ORDER BY u.created_at DESC
+       LIMIT ?2 OFFSET ?3`
+    )
+    .bind(like, limit, offset)
+    .all();
+
+  return c.json({
+    items: results,
+    nextOffset: results.length === limit ? offset + limit : null,
+  });
+});
+
+// ========= 6) Admin: Files 列表 =========
+// GET /admin/files?ownerId=&q=&limit=20&offset=0
+app.get("/admin/files", async (c) => {
+  const url = new URL(c.req.url);
+  const ownerId = url.searchParams.get("ownerId");
+  const q = url.searchParams.get("q") || "";
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+
+  const like = `%${q}%`;
+  let sql = `
+    SELECT id, owner_id, platform, package_name, channel, version, size, sha256, r2_key, created_at
+    FROM files
+    WHERE 1=1
+  `;
+  const binds: any[] = [];
+  if (ownerId) {
+    sql += ` AND owner_id = ?`;
+    binds.push(ownerId);
+  }
+  if (q) {
+    sql += ` AND (package_name LIKE ? OR version LIKE ? OR r2_key LIKE ?)`;
+    binds.push(like, like, like);
+  }
+  sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  binds.push(limit, offset);
+
+  const { results } = await c.env.APP_DB.prepare(sql).bind(...binds).all();
+  return c.json({
+    items: results,
+    nextOffset: results.length === limit ? offset + limit : null,
+  });
+});
+
+// ========= 7) Admin: Links 列表（新版，含搜尋 + 分頁） =========
+// GET /admin/links?q=&limit=20&offset=0
+app.get("/admin/links", async (c) => {
+  const url = new URL(c.req.url);
+  const q = url.searchParams.get("q") || "";
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+
+  const like = `%${q}%`;
+  const { results } = await c.env.APP_DB
+    .prepare(
+      `SELECT id, code, title, file_id, is_active, cn_direct, created_at
+       FROM links
+       WHERE (code LIKE ?1 OR title LIKE ?1)
+       ORDER BY created_at DESC
+       LIMIT ?2 OFFSET ?3`
+    )
+    .bind(like, limit, offset)
+    .all();
+
+  return c.json({
+    items: results,
+    nextOffset: results.length === limit ? offset + limit : null,
+  });
+});
+
+// ========= 8) Admin: 編輯 File（保留功能完整版本） =========
+// PATCH /admin/files/:id
+// body 可帶：ownerId / r2_key / package_name / channel / version / size / sha256
+app.patch("/admin/files/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await readJSON<any>(c);
+
+  const fields: string[] = [];
+  const binds: any[] = [];
+
+  if (body.ownerId) {
+    // 確認 owner 存在
+    const ok = await c.env.APP_DB
+      .prepare("SELECT 1 FROM point_accounts WHERE id=?1")
+      .bind(body.ownerId)
+      .first();
+    if (!ok) return c.text("ownerId not found", 400);
+    fields.push("owner_id=?");
+    binds.push(body.ownerId);
+  }
+  if (typeof body.r2_key === "string") {
+    fields.push("r2_key=?");
+    binds.push(body.r2_key);
+  }
+  if (typeof body.package_name === "string") {
+    fields.push("package_name=?");
+    binds.push(body.package_name);
+  }
+  if (typeof body.channel === "string" || body.channel === null) {
+    fields.push("channel=?");
+    binds.push(body.channel);
+  }
+  if (typeof body.version === "string") {
+    fields.push("version=?");
+    binds.push(body.version);
+  }
+  if (Number.isFinite(body.size)) {
+    fields.push("size=?");
+    binds.push(Number(body.size));
+  }
+  if (typeof body.sha256 === "string" || body.sha256 === null) {
+    fields.push("sha256=?");
+    binds.push(body.sha256);
+  }
+
+  if (!fields.length) return c.text("no fields", 400);
+
+  await c.env.APP_DB
+    .prepare(`UPDATE files SET ${fields.join(", ")} WHERE id=?`)
+    .bind(...binds, id)
+    .run();
+
+  const row = await c.env.APP_DB
+    .prepare(
+      "SELECT id, owner_id, platform, package_name, channel, version, size, sha256, r2_key, created_at FROM files WHERE id=?1"
+    )
+    .bind(id)
+    .first();
+
+  return c.json(row);
+});
+
+// ========= 9) Admin: 編輯 Link（新版，含 code/fileId） =========
+// PATCH /admin/links/:id
+// body 可帶：title / is_active(0|1) / cn_direct(0|1) / code / fileId
+app.patch("/admin/links/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await readJSON<any>(c);
+
+  const fields: string[] = [];
+  const binds: any[] = [];
+
+  if (typeof body.title === "string") {
+    fields.push("title=?");
+    binds.push(body.title);
+  }
+  if (typeof body.is_active !== "undefined") {
+    fields.push("is_active=?");
+    binds.push(body.is_active ? 1 : 0);
+  }
+  if (typeof body.cn_direct !== "undefined") {
+    fields.push("cn_direct=?");
+    binds.push(body.cn_direct ? 1 : 0);
+  }
+  if (typeof body.code === "string") {
+    fields.push("code=?");
+    binds.push(body.code);
+  }
+  if (typeof body.fileId === "string") {
+    fields.push("file_id=?");
+    binds.push(body.fileId);
+  }
+
+  if (!fields.length) return c.text("no fields", 400);
+
+  try {
+    await c.env.APP_DB
+      .prepare(`UPDATE links SET ${fields.join(", ")} WHERE id=?`)
+      .bind(...binds, id)
+      .run();
+  } catch (e: any) {
+    if (String(e?.message || "").includes("UNIQUE")) {
+      c.status(409);
+      return c.text("code already exists");
+    }
+    throw e;
+  }
+
+  const row = await c.env.APP_DB
+    .prepare(
+      "SELECT id, code, title, file_id, is_active, cn_direct, created_at FROM links WHERE id=?1"
+    )
+    .bind(id)
+    .first();
+
+  return c.json(row);
+});
+
+// === DELETE Link ===
+app.delete("/admin/links/:id", async (c) => {
+  const id = c.req.param("id");
+  const res = await c.env.APP_DB.prepare("DELETE FROM links WHERE id=?1").bind(id).run();
+  const changes = (res as any)?.meta?.changes ?? (res as any)?.changes ?? 0;
+  return c.json({ ok: true, changes });
+});
+
+// === DELETE File（若還有連結，回 409）===
+app.delete("/admin/files/:id", async (c) => {
+  const id = c.req.param("id");
+  // 檔案是否仍被連結指向
+  const cnt = (await c.env.APP_DB
+    .prepare("SELECT COUNT(1) AS n FROM links WHERE file_id=?1")
+    .bind(id)
+    .first()) as { n: number } | null;
+
+  const n = (cnt as any)?.n ?? (cnt as any)?.["COUNT(1)"] ?? 0;
+  if (n > 0) {
+    c.status(409);
+    return c.text("has_links");
+  }
+  const res = await c.env.APP_DB.prepare("DELETE FROM files WHERE id=?1").bind(id).run();
+  const changes = (res as any)?.meta?.changes ?? (res as any)?.changes ?? 0;
+  return c.json({ ok: true, changes });
 });
 
 
