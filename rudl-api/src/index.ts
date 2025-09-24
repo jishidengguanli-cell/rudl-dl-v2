@@ -1,27 +1,33 @@
 // src/index.ts
 import { Hono } from "hono";
-import { cors } from "hono/cors";
-import type { D1Database } from "@cloudflare/workers-types";
-import { getLedger, adjustPoints } from './points';
-
+import { v4 as uuidv4 } from "uuid";
+import { auth, withCors, mustUser } from "./auth";
+import { installMeLinks } from "./me_links";
+import type {
+  D1Database,
+  KVNamespace,
+  R2Bucket,
+  DurableObjectNamespace,
+} from "cloudflare:workers";
 
 // ---- Environment typings ----
-type Env = {
-  ADMIN_TOKEN: string;
+export interface Env {
   APP_DB: D1Database;
-};
+  APP_KV: KVNamespace;
+  R2_BUCKET: R2Bucket;
+  PointAccountDO: DurableObjectNamespace;
+  R2_PUBLIC_HOST: string;
+  ADMIN_TOKEN: string;
+}
 
+type Platform = "apk" | "ipa";
 // ---- App & CORS ----
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { userId?: string } }>();
 
-app.use(
-  "*",
-  cors({
-    origin: ["http://localhost:3000", "https://admin.dataruapp.com"],
-    allowHeaders: ["Content-Type", "x-admin-token"],
-    allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-  })
-);
+installMeLinks(app);
+
+// 允許跨網域並帶 cookie（web → api）
+app.use("*", withCors);
 
 // ---- Health ----
 app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
@@ -101,7 +107,10 @@ app.post("/admin/recharge", async (c) => {
   const db = c.env.APP_DB;
   const now = Date.now();
 
-  const acc = await db.prepare("SELECT balance FROM point_accounts WHERE id=?1").bind(userId).first<{ balance: number }>();
+  const acc = await db
+    .prepare("SELECT balance FROM point_accounts WHERE id=?1")
+    .bind(userId)
+    .first<{ balance: number }>();
   if (!acc) return c.text("User/Account Not Found", 404);
 
   const newBal = (acc.balance || 0) + sel.points;
@@ -185,7 +194,7 @@ app.post("/admin/links", async (c) => {
   const now = Date.now();
   await c.env.APP_DB
     .prepare(
-      `INSERT INTO links (id, code, file_id, title, is_active, cn_direct, created_at)
+      `INSERT INTO links (id, code, title, file_id, is_active, cn_direct, created_at)
        VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)`
     )
     .bind(id, body.code, body.fileId, body.title ?? "", body.cn_direct ? 1 : 0, now)
@@ -444,5 +453,203 @@ app.get("/admin/points/ledger", async (c) => {
     return c.json({ error: e?.message || String(e) }, 500);
   }
 });
+
+/* =========================
+ * 使用者自己的功能（需登入）
+ * ========================= */
+
+// 1) 取得自己的分發列表（連 files）
+app.get("/me/links", mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const limit = Number(c.req.query("limit") ?? 20);
+  const offset = Number(c.req.query("offset") ?? 0);
+
+  const rows = await c.env.APP_DB.prepare(
+    `SELECT l.id, l.code, l.title, l.is_active, l.created_at,
+            f.id as file_id, f.platform, f.package_name, f.version, f.size
+       FROM links l
+       JOIN files f ON f.id = l.file_id
+      WHERE f.owner_id = ?
+      ORDER BY l.created_at DESC
+      LIMIT ? OFFSET ?`
+  ).bind(userId, limit, offset).all();
+
+  return c.json({ ok: true, items: rows.results ?? [] });
+});
+
+// 2) 新增自己的 File（先用手動輸入 r2_key；之後再補 R2 簽名上傳）
+app.post("/me/files", mustUser, async (c) => {
+  // 允許 multipart
+  const ct = c.req.header("content-type") || "";
+  if (!ct.toLowerCase().startsWith("multipart/form-data")) {
+    return c.text("Content-Type must be multipart/form-data", 400);
+  }
+
+  const userId = c.get("userId") as string;
+  const form = await c.req.formData();
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return c.text("file is required", 400);
+
+  // 可由前端帶，也可自動判斷
+  const platform: Platform =
+    ((form.get("platform") as string) as Platform) ??
+    (file.name.toLowerCase().endsWith(".ipa") ? "ipa" : "apk");
+
+  const packageName = (form.get("package_name") as string) || "";
+  const version = (form.get("version") as string) || "1.0.0";
+
+  const now = Date.now();
+  const safeName = encodeURIComponent(file.name);
+  const r2Key = `uploads/${userId}/${now}/${safeName}`;
+
+  // Put 到 R2（串流）
+  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
+    httpMetadata: { contentType: file.type || "application/octet-stream" },
+  });
+
+  // 計算 sha256
+  const ab = await file.arrayBuffer();
+  const shaBuf = await crypto.subtle.digest("SHA-256", ab);
+  const sha256 = [...new Uint8Array(shaBuf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const id = crypto.randomUUID();
+  const size = file.size;
+
+  await c.env.APP_DB
+    .prepare(
+      `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, sha256, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`
+    )
+    .bind(id, userId, platform, packageName, version, size, r2Key, sha256, now)
+    .run();
+
+  return c.json({
+    ok: true,
+    file: {
+      id,
+      platform,
+      package_name: packageName,
+      version,
+      size,
+      r2_key: r2Key,
+      sha256,
+      created_at: now,
+    },
+  });
+});
+
+// 3) 針對自己的 File 新增 Link
+app.post("/me/links", mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    title?: string;
+    cn_direct?: number | boolean;
+    locale?: string; // 下載頁預設語系
+    apk?: { file_id: string } | null;
+    ios?: { file_id: string } | null;
+    code?: string; // 若沒帶就自動生 4 碼英字
+  };
+
+  const title = body.title ?? "";
+  const cnDirect = body.cn_direct ? 1 : 0;
+  const locale = (body.locale || "en").trim();
+  const now = Date.now();
+
+  // 4 碼英字（大小寫）
+  const code =
+    body.code && /^[a-zA-Z]{4}$/.test(body.code)
+      ? body.code
+      : randomCode4();
+
+  const linksCreated: Array<{ id: string; platform: Platform }> = [];
+
+  // helper：插入一筆 link
+  const insertLink = async (fileId: string, platform: Platform) => {
+    const id = uuidv4();
+    await c.env.APP_DB
+      .prepare(
+        `INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct)
+         VALUES (?,?,?,?,?, ?,?)`
+      )
+      .bind(id, code, fileId, title, 1, now, cnDirect)
+      .run();
+    linksCreated.push({ id, platform });
+  };
+
+  if (body.apk?.file_id) await insertLink(body.apk.file_id, "apk");
+  if (body.ios?.file_id) await insertLink(body.ios.file_id, "ipa");
+
+  if (linksCreated.length === 0) {
+    return c.text("no file selected", 400);
+  }
+
+  // 把預設語系存在 KV，不動資料表
+  await c.env.APP_KV.put(`link_lang:${code}`, locale);
+
+  return c.json({ ok: true, code, links: linksCreated });
+});
+
+// === 列出自己的檔案（提供下拉/回填用）===
+app.get("/me/files", mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const limit = Number(c.req.query("limit") ?? "100");
+
+  const rs = await c.env.APP_DB
+    .prepare(
+      `SELECT id, owner_id, platform, package_name, version, size, r2_key, sha256, created_at
+       FROM files WHERE owner_id=? ORDER BY created_at DESC LIMIT ?`
+    )
+    .bind(userId, limit)
+    .all();
+
+  return c.json({ ok: true, files: rs.results ?? [] });
+});
+
+// === 上傳檔案（本機 → Worker → R2）===
+app.post("/me/upload", withCors, mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+
+  const form = await c.req.formData();
+  const file = form.get("file") as File | null;
+  const platform = (form.get("platform") as string | null)?.toLowerCase();
+  const pkg = (form.get("package_name") as string | null) ?? "";
+  const ver = (form.get("version") as string | null) ?? "";
+
+  if (!file) return c.text("file is required", 400);
+  if (platform !== "apk" && platform !== "ipa") return c.text("platform must be apk or ipa", 400);
+  if (!pkg || !ver) return c.text("package_name and version are required", 400);
+
+  // 產生 R2 Key，例如：apps/com.demo/1.0.0/app-release.apk
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const r2Key = `apps/${pkg}/${ver}/${safeName}`;
+
+  // 串流寫入 R2
+  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
+    httpMetadata: { contentType: file.type || "application/octet-stream" },
+  });
+
+  const id = crypto.randomUUID();
+  const size = file.size;
+
+  await c.env.APP_DB.prepare(
+    `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+  ).bind(id, userId, platform, pkg, ver, size, r2Key, Date.now()).run();
+
+  return c.json({ ok: true, id, r2_key: r2Key, size, platform, package_name: pkg, version: ver });
+});
+
+function randomCode4() {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let s = "";
+  for (let i = 0; i < 4; i++) s += chars[(Math.random() * chars.length) | 0];
+  return s;
+}
+
+// 掛載 Auth 路由
+app.route("/auth", auth);
 
 export default app;

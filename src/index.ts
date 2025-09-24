@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { v4 as uuidv4 } from "uuid";
+import type { D1Database } from "@cloudflare/workers-types";
 
 type Platform = "apk" | "ipa";
 

@@ -11,3 +11,23 @@ routes = [
 binding = "APP_DB"
 database_name = "rudl_app"
 database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
+
+[vars]
+# 前端 App 的正式網域（你要用哪個就填哪個）
+APP_ORIGIN = "https://app.dataruapp.com"
+
+# 開發時允許本機
+DEV_ORIGIN = "http://localhost:3000"
+
+# 以逗點分隔的允許來源清單（程式會讀這個）
+CORS_ORIGINS = "https://app.dataruapp.com,http://localhost:3000"
+
+# Cookie 作用域，未來登入時發 HttpOnly Cookie 要用
+COOKIE_DOMAIN = ".dataruapp.com"
+COOKIE_SECURE = "true"
+COOKIE_SAME_SITE = "Lax"
+
+[[kv_namespaces]]
+binding = "APP_KV"
+id = "f9bbc6fb03f9415d9e77fc3c7a6d50e1"
+preview_id = "f9bbc6fb03f9415d9e77fc3c7a6d50e1"
