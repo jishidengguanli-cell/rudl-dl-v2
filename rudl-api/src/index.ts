@@ -544,53 +544,87 @@ app.post("/me/files", mustUser, async (c) => {
 // 3) 針對自己的 File 新增 Link
 app.post("/me/links", mustUser, async (c) => {
   const userId = c.get("userId") as string;
+
   const body = (await c.req.json().catch(() => ({}))) as {
     title?: string;
     cn_direct?: number | boolean;
-    locale?: string; // 下載頁預設語系
+    locale?: string;            // 下載頁預設語系
     apk?: { file_id: string } | null;
     ios?: { file_id: string } | null;
-    code?: string; // 若沒帶就自動生 4 碼英字
+    code?: string;              // 若沒帶就自動生 4 碼英字
   };
 
-  const title = body.title ?? "";
+  const title = (body.title ?? "").trim();
   const cnDirect = body.cn_direct ? 1 : 0;
   const locale = (body.locale || "en").trim();
   const now = Date.now();
 
-  // 4 碼英字（大小寫）
-  const code =
-    body.code && /^[a-zA-Z]{4}$/.test(body.code)
-      ? body.code
-      : randomCode4();
+  // 取得並驗證檔案（存在、歸屬、平台）
+  type FileRow = { id: string; owner_id: string; platform: Platform };
+  const getFile = async (id: string) =>
+    (await c.env.APP_DB
+      .prepare("SELECT id, owner_id, platform FROM files WHERE id=?1")
+      .bind(id)
+      .first<FileRow>()) || null;
+
+  let apkFile: FileRow | null = null;
+  let iosFile: FileRow | null = null;
+
+  if (body.apk?.file_id) {
+    apkFile = await getFile(body.apk.file_id);
+    if (!apkFile) return c.text("apk file not found", 404);
+    if (apkFile.owner_id !== userId) return c.text("apk file not owned by user", 403);
+    if (apkFile.platform !== "apk") return c.text("apk file_id is not an APK", 400);
+  }
+  if (body.ios?.file_id) {
+    iosFile = await getFile(body.ios.file_id);
+    if (!iosFile) return c.text("ios file not found", 404);
+    if (iosFile.owner_id !== userId) return c.text("ios file not owned by user", 403);
+    if (iosFile.platform !== "ipa") return c.text("ios file_id is not an IPA", 400);
+  }
+
+  if (!apkFile && !iosFile) {
+    return c.text("no file selected", 400);
+  }
+
+  // 4 碼英字（大小寫），並確保唯一（最多嘗試 5 次）
+  const genCode = () =>
+    (body.code && /^[a-zA-Z]{4}$/.test(body.code) ? body.code : randomCode4());
+
+  let code = genCode();
+  for (let i = 0; i < 5; i++) {
+    const exists = await c.env.APP_DB
+      .prepare("SELECT 1 FROM links WHERE code=?1 LIMIT 1")
+      .bind(code)
+      .first();
+    if (!exists) break;
+    code = randomCode4();
+    if (i === 4) return c.text("code collision, please retry", 409);
+  }
 
   const linksCreated: Array<{ id: string; platform: Platform }> = [];
 
-  // helper：插入一筆 link
   const insertLink = async (fileId: string, platform: Platform) => {
     const id = uuidv4();
     await c.env.APP_DB
       .prepare(
         `INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct)
-         VALUES (?,?,?,?,?, ?,?)`
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)`
       )
-      .bind(id, code, fileId, title, 1, now, cnDirect)
+      .bind(id, code, fileId, title, now, cnDirect)
       .run();
     linksCreated.push({ id, platform });
   };
 
-  if (body.apk?.file_id) await insertLink(body.apk.file_id, "apk");
-  if (body.ios?.file_id) await insertLink(body.ios.file_id, "ipa");
+  if (apkFile) await insertLink(apkFile.id, "apk");
+  if (iosFile) await insertLink(iosFile.id, "ipa");
 
-  if (linksCreated.length === 0) {
-    return c.text("no file selected", 400);
-  }
-
-  // 把預設語系存在 KV，不動資料表
+  // 存預設語系（不動資料表）
   await c.env.APP_KV.put(`link_lang:${code}`, locale);
 
   return c.json({ ok: true, code, links: linksCreated });
 });
+
 
 // === 列出自己的檔案（提供下拉/回填用）===
 app.get("/me/files", mustUser, async (c) => {
@@ -615,31 +649,60 @@ app.post("/me/upload", withCors, mustUser, async (c) => {
   const form = await c.req.formData();
   const file = form.get("file") as File | null;
   const platform = (form.get("platform") as string | null)?.toLowerCase();
-  const pkg = (form.get("package_name") as string | null) ?? "";
-  const ver = (form.get("version") as string | null) ?? "";
 
-  if (!file) return c.text("file is required", 400);
-  if (platform !== "apk" && platform !== "ipa") return c.text("platform must be apk or ipa", 400);
-  if (!pkg || !ver) return c.text("package_name and version are required", 400);
+  // 可選（顯示用；你之後也可以做自動解析）
+  const pkg = ((form.get("package_name") as string | null) ?? "").trim();
+  const ver = ((form.get("version") as string | null) ?? "").trim();
 
-  // 產生 R2 Key，例如：apps/com.demo/1.0.0/app-release.apk
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const r2Key = `apps/${pkg}/${ver}/${safeName}`;
+  if (!(file instanceof File)) return c.text("file is required", 400);
+  if (platform !== "apk" && platform !== "ipa") {
+    return c.text("platform must be apk or ipa", 400);
+  }
+
+  if (platform === "apk" && !file.name.toLowerCase().endsWith(".apk")) {
+    return c.text("file extension must be .apk for platform=apk", 400);
+  }
+  if (platform === "ipa" && !file.name.toLowerCase().endsWith(".ipa")) {
+    return c.text("file extension must be .ipa for platform=ipa", 400);
+  }
+
+  // 統一用 uuid + 副檔名，避免使用者檔名造成覆寫/字元問題
+  const id = crypto.randomUUID();
+  const ext = platform === "apk" ? ".apk" : ".ipa";
+
+  const r2Key =
+    pkg && ver
+      ? `apps/${pkg}/${ver}/${id}${ext}`
+      : `uploads/${userId}/${id}${ext}`;
 
   // 串流寫入 R2
   await c.env.R2_BUCKET.put(r2Key, file.stream(), {
     httpMetadata: { contentType: file.type || "application/octet-stream" },
   });
 
-  const id = crypto.randomUUID();
-  const size = file.size;
+  const size = file.size || 0;
 
-  await c.env.APP_DB.prepare(
-    `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-  ).bind(id, userId, platform, pkg, ver, size, r2Key, Date.now()).run();
+  // 寫 files（package_name/version 可為空字串）
+  await c.env.APP_DB
+    .prepare(
+      `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+    )
+    .bind(id, userId, platform, pkg, ver, size, r2Key, Date.now())
+    .run();
 
-  return c.json({ ok: true, id, r2_key: r2Key, size, platform, package_name: pkg, version: ver });
+  // 回傳格式改為 { ok:true, file:{ id, ... } }，對齊前端 uploadOne 的使用
+  return c.json({
+    ok: true,
+    file: {
+      id,
+      r2_key: r2Key,
+      size,
+      platform,
+      package_name: pkg,
+      version: ver,
+    },
+  });
 });
 
 function randomCode4() {
