@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api"; // 保留你本來的 api helper
 
@@ -13,21 +13,56 @@ const LANG_OPTIONS = [
   { value: "ko", label: "한국어" },
 ];
 
-async function uploadOne(file: File, platform: "apk" | "ipa") {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("platform", platform);
+const BASE =
+  (process.env.NEXT_PUBLIC_API_BASE || "https://api.dataruapp.com").replace(/\/$/, "");
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/me/upload`, {
-    method: "POST",
-    body: fd,
-    credentials: "include", // 必要：帶 cookie
+/** 以 XHR 上傳暫存，支援進度條；回傳 temp_key */
+function uploadTempWithProgress(
+  file: File,
+  platform: "apk" | "ipa",
+  onProgress: (pct: number) => void
+): Promise<{ temp_key: string; size: number }> {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("platform", platform);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}/me/upload-temp`, true);
+    xhr.withCredentials = true; // 必要：帶 cookie
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText || "{}");
+        if (xhr.status >= 200 && xhr.status < 300 && data?.ok) {
+          onProgress(100);
+          resolve({ temp_key: data.temp_key, size: data.size });
+        } else {
+          reject(new Error(data?.error || `HTTP ${xhr.status}`));
+        }
+      } catch (err) {
+        reject(err as any);
+      }
+    };
+    xhr.onerror = () => reject(new Error("network error"));
+    xhr.send(fd);
   });
-  const j = await res.json();
-  if (!res.ok || !j?.ok) {
-    throw new Error(j?.error || "上傳失敗");
-  }
-  return j.file.id as string; // 後端會回 { ok: true, file: { id } }
+}
+
+/** 丟棄暫存（冪等） */
+async function discardTemp(temp_key: string) {
+  try {
+    await fetch(`${BASE}/me/upload-discard`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ temp_key }),
+    });
+  } catch {}
 }
 
 export default function NewDistributionPage() {
@@ -44,55 +79,160 @@ export default function NewDistributionPage() {
   const apkRef = useRef<HTMLInputElement | null>(null);
   const ipaRef = useRef<HTMLInputElement | null>(null);
 
+  // 進度 / 暫存 key / 是否有選檔
+  const [apkPct, setApkPct] = useState(0);
+  const [ipaPct, setIpaPct] = useState(0);
+  const [apkTemp, setApkTemp] = useState<string | null>(null);
+  const [ipaTemp, setIpaTemp] = useState<string | null>(null);
+  const [apkPicked, setApkPicked] = useState(false);
+  const [ipaPicked, setIpaPicked] = useState(false);
+  // 為避免「舊上傳晚回來覆蓋新狀態」，加 token
+  const [apkToken, setApkToken] = useState(0);
+  const [ipaToken, setIpaToken] = useState(0);
+
   const [busy, setBusy] = useState(false);
 
-  // 建立分發
-  const handleCreate = async () => {
-  try {
-    const apkFile = apkRef.current?.files?.[0] ?? null;
-    const ipaFile = ipaRef.current?.files?.[0] ?? null;
+  // 建立按鈕是否可按
+  const apkUploading = apkPct > 0 && apkPct < 100;
+  const ipaUploading = ipaPct > 0 && ipaPct < 100;
+  const canCreate =
+    (apkPicked || ipaPicked) &&
+    (!apkPicked || (apkTemp && apkPct === 100)) &&
+    (!ipaPicked || (ipaTemp && ipaPct === 100));
 
-    if (!apkFile && !ipaFile) {
-      alert("請至少上傳一個平台的檔案（APK 或 IPA）再建立。");
+  // APK 選檔 → 自動上傳暫存
+  const onPickApk = async (f: File | null) => {
+    setApkPicked(!!f);
+    // 清空時丟棄既有暫存
+    if (!f) {
+      if (apkTemp) await discardTemp(apkTemp);
+      setApkTemp(null);
+      setApkPct(0);
       return;
     }
+    // 選新檔：丟棄舊暫存，重設進度
+    if (apkTemp) await discardTemp(apkTemp);
+    setApkTemp(null);
+    setApkPct(0);
 
-    setBusy(true);
+    const token = Date.now();
+    setApkToken(token);
+    try {
+      const r = await uploadTempWithProgress(f, "apk", (p) => {
+        // 只更新最新的一次選檔
+        if (apkToken === token) setApkPct(p);
+      });
+      if (apkToken === token) setApkTemp(r.temp_key);
+    } catch (err: any) {
+      if (apkToken === token) {
+        setApkPct(0);
+        setApkTemp(null);
+        alert(err?.message || "APK 上傳失敗");
+      }
+    }
+  };
 
-    // 1) 依平台各自上傳，拿 file_id
-    const apkId = apkFile ? await uploadOne(apkFile, "apk") : null;
-    const ipaId = ipaFile ? await uploadOne(ipaFile, "ipa") : null;
+  // IPA 選檔 → 自動上傳暫存
+  const onPickIpa = async (f: File | null) => {
+    setIpaPicked(!!f);
+    if (!f) {
+      if (ipaTemp) await discardTemp(ipaTemp);
+      setIpaTemp(null);
+      setIpaPct(0);
+      return;
+    }
+    if (ipaTemp) await discardTemp(ipaTemp);
+    setIpaTemp(null);
+    setIpaPct(0);
 
-    // 2) 建立分發（同一 code，後端會自動產生 4 碼英數）
-    const payload = {
-      title: title?.trim() || null,         // 顯示用（可空）
-      version: version?.trim() || null,     // 顯示用（可空），也可用後端解析檔案
-      bundle_id: bundleId?.trim() || null,  // 顯示用（可空）
-      lang,                                 // 下載頁預設語系
-      cn_direct: cnDirect ? 1 : 0,          // 是否中國直連
-      file_apk_id: apkId,
-      file_ipa_id: ipaId,
+    const token = Date.now();
+    setIpaToken(token);
+    try {
+      const r = await uploadTempWithProgress(f, "ipa", (p) => {
+        if (ipaToken === token) setIpaPct(p);
+      });
+      if (ipaToken === token) setIpaTemp(r.temp_key);
+    } catch (err: any) {
+      if (ipaToken === token) {
+        setIpaPct(0);
+        setIpaTemp(null);
+        alert(err?.message || "IPA 上傳失敗");
+      }
+    }
+  };
+
+  // 離開頁面 / 重整時丟棄暫存（不入庫）
+  useEffect(() => {
+    const sendBeaconJson = (url: string, data: any) => {
+      try {
+        const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+        (navigator as any).sendBeacon?.(url, blob);
+      } catch {}
     };
+    const onUnload = () => {
+      if (apkTemp) sendBeaconJson(`${BASE}/me/upload-discard`, { temp_key: apkTemp });
+      if (ipaTemp) sendBeaconJson(`${BASE}/me/upload-discard`, { temp_key: ipaTemp });
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      // 卸載時再做一次保險
+      if (apkTemp) discardTemp(apkTemp);
+      if (ipaTemp) discardTemp(ipaTemp);
+    };
+  }, [apkTemp, ipaTemp]);
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/me/links`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
-    const j = await res.json();
-    if (!res.ok || !j?.ok) throw new Error(j?.error || "建立分發失敗");
+  // 建立分發（用 temp_key 提交；後端會搬運到正式路徑並寫入 DB）
+  const handleCreate = async () => {
+    try {
+      const apkFile = apkRef.current?.files?.[0] ?? null;
+      const ipaFile = ipaRef.current?.files?.[0] ?? null;
 
-    // 成功
-    alert(`建立完成！分發碼：${j.link.code}`);
-    router.push("/distributions");
-  } catch (err: any) {
-    console.error(err);
-    alert(err?.message || "建立失敗");
-  } finally {
-    setBusy(false);
-  }
-};
+      if (!apkFile && !ipaFile) {
+        alert("請至少上傳一個平台的檔案（APK 或 IPA）再建立。");
+        return;
+      }
+      // 理論上按鈕已禁用，這裡再保護一次
+      if ((apkFile && apkPct < 100) || (ipaFile && ipaPct < 100)) return;
+
+      setBusy(true);
+
+      const payload = {
+        title: title?.trim() || null,
+        version: version?.trim() || null,
+        bundle_id: bundleId?.trim() || null,
+        locale: lang,                 // 後端期待的是 locale
+        cn_direct: cnDirect ? 1 : 0,
+        apk_temp_key: apkTemp || null,
+        ios_temp_key: ipaTemp || null,
+      };
+
+      const res = await fetch(`${BASE}/me/links`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const j = await res.json();
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "建立分發失敗");
+
+      alert(`建立完成！分發碼：${j.code}`);
+      // 成功清理暫存狀態
+      setApkTemp(null);
+      setIpaTemp(null);
+      setApkPct(0);
+      setIpaPct(0);
+      setApkPicked(false);
+      setIpaPicked(false);
+
+      router.push("/distributions");
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || "建立失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
@@ -166,7 +306,16 @@ export default function NewDistributionPage() {
           type="file"
           accept=".apk,application/vnd.android.package-archive"
           className="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-white"
+          onChange={(e) => onPickApk(e.target.files?.[0] ?? null)}
         />
+        {apkPicked && (
+          <div className="mt-2 h-2 w-full bg-neutral-800 rounded">
+            <div
+              className="h-2 bg-blue-500 rounded"
+              style={{ width: `${apkPct}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* IPA 檔（iOS） */}
@@ -177,13 +326,22 @@ export default function NewDistributionPage() {
           type="file"
           accept=".ipa,application/octet-stream"
           className="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-white"
+          onChange={(e) => onPickIpa(e.target.files?.[0] ?? null)}
         />
+        {ipaPicked && (
+          <div className="mt-2 h-2 w-full bg-neutral-800 rounded">
+            <div
+              className="h-2 bg-blue-500 rounded"
+              style={{ width: `${ipaPct}%` }}
+            />
+          </div>
+        )}
       </div>
 
       <div>
         <button
           onClick={handleCreate}
-          disabled={busy}
+          disabled={busy || !canCreate}
           className="rounded bg-green-700 px-4 py-2 text-white disabled:opacity-60"
         >
           {busy ? "處理中…" : "建立"}

@@ -548,10 +548,17 @@ app.post("/me/links", mustUser, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
     title?: string;
     cn_direct?: number | boolean;
-    locale?: string;            // 下載頁預設語系
+    locale?: string;
     apk?: { file_id: string } | null;
     ios?: { file_id: string } | null;
-    code?: string;              // 若沒帶就自動生 4 碼英字
+    code?: string;
+    // 新增：暫存提交
+    apk_temp_key?: string | null;
+    ios_temp_key?: string | null;
+
+    // 顯示用（可留空）
+    version?: string | null;
+    bundle_id?: string | null;
   };
 
   const title = (body.title ?? "").trim();
@@ -559,39 +566,84 @@ app.post("/me/links", mustUser, async (c) => {
   const locale = (body.locale || "en").trim();
   const now = Date.now();
 
-  // 取得並驗證檔案（存在、歸屬、平台）
   type FileRow = { id: string; owner_id: string; platform: Platform };
+
+  // 先處理 temp_key -> 產生 files 資料列
+  async function finalizeFromTemp(tempKey: string, platform: Platform): Promise<FileRow> {
+    const raw = await c.env.APP_KV.get(`temp_upload:${tempKey}`);
+    if (!raw) throw new Error("temp key not found");
+    const meta = JSON.parse(raw) as { userId: string; r2_key: string; platform: string; size: number };
+    if (meta.userId !== userId) throw new Error("temp key not owned by user");
+    if (meta.platform !== platform) throw new Error("platform mismatch");
+
+    // 讀暫存物件
+    const tmpObj = await c.env.R2_BUCKET.get(meta.r2_key);
+    if (!tmpObj || !tmpObj.body) throw new Error("temp object not found");
+
+    // 正式 key：dist/<user>/<link-proto>/<platform>/<uuid>.ext
+    // 注意：此時還沒有 linkId，因此先用一個 uuid 當 proto 目錄；或直接 uploads/<user>/<uuid>.ext 也可
+    const fileId = crypto.randomUUID();
+    const ext = platform === "apk" ? ".apk" : ".ipa";
+    const finalKey = `uploads/${userId}/${fileId}${ext}`;
+
+    // 搬移 = put 新的 + 刪舊的（R2 沒 rename）
+    await c.env.R2_BUCKET.put(finalKey, tmpObj.body, { httpMetadata: tmpObj.httpMetadata });
+    await c.env.R2_BUCKET.delete(meta.r2_key);
+    await c.env.APP_KV.delete(`temp_upload:${tempKey}`);
+
+    // 寫入 files（package_name/version 作顯示用，可帶 body.bundle_id/version，或留空）
+    const pkg = (body.bundle_id ?? "").trim();
+    const ver = (body.version ?? "").trim();
+
+    await c.env.APP_DB
+      .prepare(
+        `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+      )
+      .bind(fileId, userId, platform, pkg, ver, meta.size || 0, finalKey, now)
+      .run();
+
+    return { id: fileId, owner_id: userId, platform };
+  }
+
+  // 取得既有 file（你原本就有）
   const getFile = async (id: string) =>
     (await c.env.APP_DB
       .prepare("SELECT id, owner_id, platform FROM files WHERE id=?1")
       .bind(id)
       .first<FileRow>()) || null;
 
+  // 收集本次要建 link 的兩個平台檔案
   let apkFile: FileRow | null = null;
   let iosFile: FileRow | null = null;
 
-  if (body.apk?.file_id) {
-    apkFile = await getFile(body.apk.file_id);
-    if (!apkFile) return c.text("apk file not found", 404);
-    if (apkFile.owner_id !== userId) return c.text("apk file not owned by user", 403);
-    if (apkFile.platform !== "apk") return c.text("apk file_id is not an APK", 400);
+  // 先走 temp_key（若有）
+  if (body.apk_temp_key) apkFile = await finalizeFromTemp(body.apk_temp_key, "apk");
+  if (body.ios_temp_key) iosFile = await finalizeFromTemp(body.ios_temp_key, "ipa");
+
+  // 再支援你原本的 file_id 型式（相容）
+  if (!apkFile && body.apk?.file_id) {
+    const f = await getFile(body.apk.file_id);
+    if (!f) return c.text("apk file not found", 404);
+    if (f.owner_id !== userId) return c.text("apk file not owned by user", 403);
+    if (f.platform !== "apk") return c.text("apk file_id is not an APK", 400);
+    apkFile = f;
   }
-  if (body.ios?.file_id) {
-    iosFile = await getFile(body.ios.file_id);
-    if (!iosFile) return c.text("ios file not found", 404);
-    if (iosFile.owner_id !== userId) return c.text("ios file not owned by user", 403);
-    if (iosFile.platform !== "ipa") return c.text("ios file_id is not an IPA", 400);
+  if (!iosFile && body.ios?.file_id) {
+    const f = await getFile(body.ios.file_id);
+    if (!f) return c.text("ios file not found", 404);
+    if (f.owner_id !== userId) return c.text("ios file not owned by user", 403);
+    if (f.platform !== "ipa") return c.text("ios file_id is not an IPA", 400);
+    iosFile = f;
   }
 
   if (!apkFile && !iosFile) {
     return c.text("no file selected", 400);
   }
 
-  // 4 碼英字（大小寫），並確保唯一（最多嘗試 5 次）
-  const genCode = () =>
-    (body.code && /^[a-zA-Z]{4}$/.test(body.code) ? body.code : randomCode4());
-
-  let code = genCode();
+  // 產 code（你原邏輯保留），確保唯一
+  let code =
+    body.code && /^[a-zA-Z]{4}$/.test(body.code) ? body.code : randomCode4();
   for (let i = 0; i < 5; i++) {
     const exists = await c.env.APP_DB
       .prepare("SELECT 1 FROM links WHERE code=?1 LIMIT 1")
@@ -602,6 +654,7 @@ app.post("/me/links", mustUser, async (c) => {
     if (i === 4) return c.text("code collision, please retry", 409);
   }
 
+  const now2 = Date.now();
   const linksCreated: Array<{ id: string; platform: Platform }> = [];
 
   const insertLink = async (fileId: string, platform: Platform) => {
@@ -609,9 +662,9 @@ app.post("/me/links", mustUser, async (c) => {
     await c.env.APP_DB
       .prepare(
         `INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct)
-         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)`
+         VALUES (?,?,?,?, 1, ?, ?)`
       )
-      .bind(id, code, fileId, title, now, cnDirect)
+      .bind(id, code, fileId, title, now2, cnDirect)
       .run();
     linksCreated.push({ id, platform });
   };
@@ -619,11 +672,12 @@ app.post("/me/links", mustUser, async (c) => {
   if (apkFile) await insertLink(apkFile.id, "apk");
   if (iosFile) await insertLink(iosFile.id, "ipa");
 
-  // 存預設語系（不動資料表）
+  // 存語系在 KV（你原做法）
   await c.env.APP_KV.put(`link_lang:${code}`, locale);
 
   return c.json({ ok: true, code, links: linksCreated });
 });
+
 
 
 // === 列出自己的檔案（提供下拉/回填用）===
@@ -711,6 +765,54 @@ function randomCode4() {
   for (let i = 0; i < 4; i++) s += chars[(Math.random() * chars.length) | 0];
   return s;
 }
+
+app.post("/me/upload-temp", withCors, mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const form = await c.req.formData();
+  const file = form.get("file");
+  const platform = (form.get("platform") as string | null)?.toLowerCase();
+
+  if (!(file instanceof File)) return c.text("file is required", 400);
+  if (platform !== "apk" && platform !== "ipa") return c.text("platform must be apk or ipa", 400);
+
+  const ext = platform === "apk" ? ".apk" : ".ipa";
+  const token = crypto.randomUUID(); // 用這個當 temp_key
+  const r2Key = `temp/${userId}/${token}${ext}`;
+
+  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
+    httpMetadata: { contentType: file.type || "application/octet-stream" },
+  });
+
+  const meta = {
+    userId,
+    platform,
+    r2_key: r2Key,
+    size: file.size || 0,
+    created_at: Date.now(),
+  };
+
+  // 設 1 小時 TTL（你可改長短）
+  await c.env.APP_KV.put(`temp_upload:${token}`, JSON.stringify(meta), { expirationTtl: 3600 });
+
+  return c.json({ ok: true, temp_key: token, size: meta.size, platform });
+});
+
+app.post("/me/upload-discard", withCors, mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const { temp_key } = await c.req.json().catch(() => ({ temp_key: "" }));
+  if (!temp_key) return c.text("temp_key required", 400);
+
+  const raw = await c.env.APP_KV.get(`temp_upload:${temp_key}`);
+  if (raw) {
+    const meta = JSON.parse(raw) as { userId: string; r2_key: string };
+    if (meta.userId === userId) {
+      await c.env.R2_BUCKET.delete(meta.r2_key);
+    }
+    await c.env.APP_KV.delete(`temp_upload:${temp_key}`);
+  }
+  return c.json({ ok: true });
+});
+
 
 // 掛載 Auth 路由
 app.route("/auth", auth);
