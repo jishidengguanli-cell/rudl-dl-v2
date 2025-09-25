@@ -100,35 +100,36 @@ export default function NewDistributionPage() {
     (!apkPicked || (apkTemp && apkPct === 100)) &&
     (!ipaPicked || (ipaTemp && ipaPct === 100));
 
+  // 1) 新增兩個 ref 取代 state token
+  const apkReqToken = useRef(0);
+  const ipaReqToken = useRef(0);
   // APK 選檔 → 自動上傳暫存
   const onPickApk = async (f: File | null) => {
     setApkPicked(!!f);
-    // 清空時丟棄既有暫存
     if (!f) {
-      if (apkTemp) await discardTemp(apkTemp);
-      setApkTemp(null);
-      setApkPct(0);
-      return;
+        if (apkTemp) await discardTemp(apkTemp);
+        setApkTemp(null);
+        setApkPct(0);
+        return;
     }
-    // 選新檔：丟棄舊暫存，重設進度
     if (apkTemp) await discardTemp(apkTemp);
     setApkTemp(null);
     setApkPct(0);
 
-    const token = Date.now();
-    setApkToken(token);
+    const t = Date.now();
+    apkReqToken.current = t;
+
     try {
-      const r = await uploadTempWithProgress(f, "apk", (p) => {
-        // 只更新最新的一次選檔
-        if (apkToken === token) setApkPct(p);
-      });
-      if (apkToken === token) setApkTemp(r.temp_key);
+        const r = await uploadTempWithProgress(f, "apk", (p) => {
+        if (apkReqToken.current === t) setApkPct(p);   // ★ 用 ref 判斷
+        });
+        if (apkReqToken.current === t) setApkTemp(r.temp_key); // ★ 用 ref 判斷
     } catch (err: any) {
-      if (apkToken === token) {
+        if (apkReqToken.current === t) {
         setApkPct(0);
         setApkTemp(null);
         alert(err?.message || "APK 上傳失敗");
-      }
+        }
     }
   };
 
@@ -136,30 +137,31 @@ export default function NewDistributionPage() {
   const onPickIpa = async (f: File | null) => {
     setIpaPicked(!!f);
     if (!f) {
-      if (ipaTemp) await discardTemp(ipaTemp);
-      setIpaTemp(null);
-      setIpaPct(0);
-      return;
+        if (ipaTemp) await discardTemp(ipaTemp);
+        setIpaTemp(null);
+        setIpaPct(0);
+        return;
     }
     if (ipaTemp) await discardTemp(ipaTemp);
     setIpaTemp(null);
     setIpaPct(0);
 
-    const token = Date.now();
-    setIpaToken(token);
+    const t = Date.now();
+    ipaReqToken.current = t;
+
     try {
-      const r = await uploadTempWithProgress(f, "ipa", (p) => {
-        if (ipaToken === token) setIpaPct(p);
-      });
-      if (ipaToken === token) setIpaTemp(r.temp_key);
+        const r = await uploadTempWithProgress(f, "ipa", (p) => {
+        if (ipaReqToken.current === t) setIpaPct(p);   // ★ 用 ref 判斷
+        });
+        if (ipaReqToken.current === t) setIpaTemp(r.temp_key); // ★ 用 ref 判斷
     } catch (err: any) {
-      if (ipaToken === token) {
+        if (ipaReqToken.current === t) {
         setIpaPct(0);
         setIpaTemp(null);
         alert(err?.message || "IPA 上傳失敗");
-      }
+        }
     }
-  };
+    };
 
   // 離開頁面 / 重整時丟棄暫存（不入庫）
   useEffect(() => {
