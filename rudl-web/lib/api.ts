@@ -1,6 +1,9 @@
 // rudl-web/lib/api.ts
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://api.dataruapp.com";
 
+// 讓舊程式可用：輸出 API_BASE（你的 login 目前用的就是這個）
+export const API_BASE = BASE;
+
 export interface ApiResult<T = any> {
   ok: boolean;
   status: number;
@@ -24,16 +27,15 @@ export async function api<T = any>(
   try {
     data = await res.json();
   } catch {
-    // 不是 JSON 也不要炸掉
+    // 回傳不是 JSON 也不要炸掉
   }
   return { ok: res.ok, status: res.status, data };
 }
 
-// 讓舊習慣也能用
-// export const j = api;
-// 同時提供 default 匯出（想要 import api from "@/lib/api" 也行）
+// 同時提供 default 匯出，想要 `import api from "@/lib/api"` 也行
 export default api;
 
+// ---- 下面是你現有的 j() + 封裝 API，保留 ----
 async function j(path: string, method: "GET" | "POST" = "GET", body?: any) {
   const opt: RequestInit = {
     method,
@@ -50,7 +52,12 @@ export function apiMyFiles(limit = 100) {
   return j(`/me/files?limit=${limit}`);
 }
 
-export function apiUploadFile(file: File, platform?: "apk" | "ipa", pkg?: string, ver?: string) {
+export function apiUploadFile(
+  file: File,
+  platform?: "apk" | "ipa",
+  pkg?: string,
+  ver?: string
+) {
   const fd = new FormData();
   fd.append("file", file);
   if (platform) fd.append("platform", platform);

@@ -10,38 +10,49 @@ import type {
   DurableObjectNamespace,
 } from "cloudflare:workers";
 
-// ---- Environment typings ----
+/** ==== Bindings ==== */
 export interface Env {
   APP_DB: D1Database;
   APP_KV: KVNamespace;
   R2_BUCKET: R2Bucket;
+
+  // 既有綁定
   PointAccountDO: DurableObjectNamespace;
   R2_PUBLIC_HOST: string;
   ADMIN_TOKEN: string;
+
+  // 直傳 R2 簽名所需
+  R2_ACCOUNT_ID: string;
+  R2_BUCKET_NAME: string;
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
 }
 
 type Platform = "apk" | "ipa";
-// ---- App & CORS ----
+
 const app = new Hono<{ Bindings: Env; Variables: { userId?: string } }>();
 
+// 既有 me 下載頁等路由
 installMeLinks(app);
 
-// 允許跨網域並帶 cookie（web → api）
+// 跨域（需要帶 cookie）
 app.use("*", withCors);
 
-// ---- Health ----
+/* =========================
+ * 健康檢查
+ * ========================= */
 app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
 
-// ---- 管理員授權：套用在 /admin/* 全路由 ----
+/* =========================
+ * 管理員保護
+ * ========================= */
 app.use("/admin/*", async (c, next) => {
   const token = c.req.header("x-admin-token");
-  if (!token || token !== c.env.ADMIN_TOKEN) {
-    return c.text("Unauthorized", 401);
-  }
+  if (!token || token !== c.env.ADMIN_TOKEN) return c.text("Unauthorized", 401);
   await next();
 });
 
-// 工具：安全取 JSON
+/* 小工具：安全讀 JSON */
 async function readJSON<T = any>(c: any): Promise<T> {
   try {
     return (await c.req.json()) as T;
@@ -53,7 +64,6 @@ async function readJSON<T = any>(c: any): Promise<T> {
 
 /* =========================
  * 1) Admin: 建使用者
- * body: { email: string, initialBalance?: number }
  * ========================= */
 app.post("/admin/users", async (c) => {
   const { email, initialBalance = 0 } = await readJSON<{ email: string; initialBalance?: number }>(c);
@@ -87,7 +97,6 @@ app.post("/admin/users", async (c) => {
 
 /* =========================
  * 2) Admin: 充值（套餐）
- * body: { userId: string, packageId: 'P1'|'P2'|'P3'|'P5'|'P6'|'P7' }
  * ========================= */
 app.post("/admin/recharge", async (c) => {
   const { userId, packageId } = await readJSON<{ userId: string; packageId: string }>(c);
@@ -115,7 +124,6 @@ app.post("/admin/recharge", async (c) => {
 
   const newBal = (acc.balance || 0) + sel.points;
 
-  // 同步更新餘額 + 新增明細（使用 account_id / delta）
   await db.batch([
     db.prepare("UPDATE point_accounts SET balance=?, updated_at=? WHERE id=?").bind(newBal, now, userId),
     db
@@ -129,8 +137,7 @@ app.post("/admin/recharge", async (c) => {
 });
 
 /* =========================
- * 3) Admin: 建檔案
- * body: { ownerId, platform:'apk'|'ipa', package_name, version, size?, r2_key, channel?, sha256? }
+ * 3) Admin: 建檔案（直接插 DB）
  * ========================= */
 app.post("/admin/files", async (c) => {
   const body = await readJSON<{
@@ -178,7 +185,6 @@ app.post("/admin/files", async (c) => {
 
 /* =========================
  * 4) Admin: 建連結
- * body: { fileId: string, title?: string, code: string, cn_direct?: number (0/1) }
  * ========================= */
 app.post("/admin/links", async (c) => {
   const body = await readJSON<{ fileId: string; title?: string; code: string; cn_direct?: number }>(c);
@@ -197,14 +203,14 @@ app.post("/admin/links", async (c) => {
       `INSERT INTO links (id, code, title, file_id, is_active, cn_direct, created_at)
        VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)`
     )
-    .bind(id, body.code, body.fileId, body.title ?? "", body.cn_direct ? 1 : 0, now)
+    .bind(id, body.code, body.title ?? "", body.fileId, body.cn_direct ? 1 : 0, now)
     .run();
 
   return c.json({ id, code: body.code });
 });
 
 /* =========================
- * 5) Admin: Users 列表（搜尋 + 分頁）
+ * 5) Admin: Users 列表
  * ========================= */
 app.get("/admin/users", async (c) => {
   const url = new URL(c.req.url);
@@ -232,7 +238,7 @@ app.get("/admin/users", async (c) => {
 });
 
 /* =========================
- * 6) Admin: Files 列表（搜尋 + 分頁）
+ * 6) Admin: Files 列表
  * ========================= */
 app.get("/admin/files", async (c) => {
   const url = new URL(c.req.url);
@@ -267,7 +273,7 @@ app.get("/admin/files", async (c) => {
 });
 
 /* =========================
- * 7) Admin: Links 列表（搜尋 + 分頁）
+ * 7) Admin: Links 列表
  * ========================= */
 app.get("/admin/links", async (c) => {
   const url = new URL(c.req.url);
@@ -294,7 +300,7 @@ app.get("/admin/links", async (c) => {
 });
 
 /* =========================
- * 8) Admin: 編輯 File
+ * 8) Admin: 編輯 / 刪除
  * ========================= */
 app.patch("/admin/files/:id", async (c) => {
   const id = c.req.param("id");
@@ -330,9 +336,6 @@ app.patch("/admin/files/:id", async (c) => {
   return c.json(row);
 });
 
-/* =========================
- * 9) Admin: 編輯 Link
- * ========================= */
 app.patch("/admin/links/:id", async (c) => {
   const id = c.req.param("id");
   const body = await readJSON<any>(c);
@@ -366,9 +369,6 @@ app.patch("/admin/links/:id", async (c) => {
   return c.json(row);
 });
 
-/* =========================
- * 10) Admin: 刪除 Link
- * ========================= */
 app.delete("/admin/links/:id", async (c) => {
   const id = c.req.param("id");
   const res = await c.env.APP_DB.prepare("DELETE FROM links WHERE id=?1").bind(id).run();
@@ -376,9 +376,6 @@ app.delete("/admin/links/:id", async (c) => {
   return c.json({ ok: true, changes });
 });
 
-/* =========================
- * 11) Admin: 刪除 File（若仍有連結 → 409）
- * ========================= */
 app.delete("/admin/files/:id", async (c) => {
   const id = c.req.param("id");
   const cnt = await c.env.APP_DB.prepare("SELECT COUNT(1) AS n FROM links WHERE file_id=?1").bind(id).first<{ n: number }>();
@@ -393,72 +390,8 @@ app.delete("/admin/files/:id", async (c) => {
 });
 
 /* =========================
- * 12) Admin: 手動加/扣點
- * POST /admin/points/adjust { userId: string, delta: number, reason?: string }
+ * 9) 使用者：查自己的分發
  * ========================= */
-app.post("/admin/points/adjust", async (c) => {
-  try {
-    const { userId, delta, reason } = await c.req.json<{ userId: string; delta: number; reason?: string }>();
-    if (!userId || !Number.isFinite(Number(delta))) {
-      return c.json({ error: "bad_request" }, 400);
-    }
-    const db = c.env.APP_DB;
-    const now = Date.now();
-    const ledId = crypto.randomUUID();
-
-    const res = await db.batch([
-      db.prepare("UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?")
-        .bind(Number(delta), now, userId),
-      db.prepare(
-        "INSERT INTO point_ledger (id, account_id, delta, reason, created_at) VALUES (?, ?, ?, ?, ?)"
-      ).bind(ledId, userId, Number(delta), reason ?? null, now),
-    ]);
-
-    const changed = (res?.[0] as any)?.meta?.changes ?? 0;
-    if (!changed) return c.text("User/Account Not Found", 404);
-
-    const row = await db.prepare("SELECT balance FROM point_accounts WHERE id=?").bind(userId).first<{ balance: number }>();
-    return c.json({ ok: true, balance: row?.balance ?? null, ledgerId: ledId });
-  } catch (e: any) {
-    console.error("adjust error", e);
-    return c.json({ ok: false, error: e?.message || String(e) }, 500);
-  }
-});
-
-/* =========================
- * 13) Admin: 查某使用者的點數異動（ledger）
- * GET /admin/points/ledger?userId=...&limit=20&offset=0
- * ========================= */
-app.get("/admin/points/ledger", async (c) => {
-  try {
-    const userId = c.req.query("userId") || "";
-    const limit = Number(c.req.query("limit") ?? 20);
-    const offset = Number(c.req.query("offset") ?? 0);
-    if (!userId) return c.json({ items: [], nextOffset: null });
-
-    const rs = await c.env.APP_DB.prepare(
-      `SELECT id, delta, reason, created_at
-         FROM point_ledger
-        WHERE account_id = ?
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?`
-    ).bind(userId, limit, offset)
-     .all<{ id: string; delta: number; reason: string | null; created_at: number }>();
-
-    const items = rs?.results ?? [];
-    const nextOffset = items.length === limit ? offset + limit : null;
-    return c.json({ items, nextOffset });
-  } catch (e: any) {
-    console.error("ledger error", e);
-    return c.json({ error: e?.message || String(e) }, 500);
-  }
-});
-
-/* =========================
- * 使用者自己的功能（需登入）
- * ========================= */
-
-// 1) 取得自己的分發列表（連 files）
 app.get("/me/links", mustUser, async (c) => {
   const userId = c.get("userId") as string;
   const limit = Number(c.req.query("limit") ?? 20);
@@ -477,210 +410,9 @@ app.get("/me/links", mustUser, async (c) => {
   return c.json({ ok: true, items: rows.results ?? [] });
 });
 
-// 2) 新增自己的 File（先用手動輸入 r2_key；之後再補 R2 簽名上傳）
-app.post("/me/files", mustUser, async (c) => {
-  // 允許 multipart
-  const ct = c.req.header("content-type") || "";
-  if (!ct.toLowerCase().startsWith("multipart/form-data")) {
-    return c.text("Content-Type must be multipart/form-data", 400);
-  }
-
-  const userId = c.get("userId") as string;
-  const form = await c.req.formData();
-
-  const file = form.get("file");
-  if (!(file instanceof File)) return c.text("file is required", 400);
-
-  // 可由前端帶，也可自動判斷
-  const platform: Platform =
-    ((form.get("platform") as string) as Platform) ??
-    (file.name.toLowerCase().endsWith(".ipa") ? "ipa" : "apk");
-
-  const packageName = (form.get("package_name") as string) || "";
-  const version = (form.get("version") as string) || "1.0.0";
-
-  const now = Date.now();
-  const safeName = encodeURIComponent(file.name);
-  const r2Key = `uploads/${userId}/${now}/${safeName}`;
-
-  // Put 到 R2（串流）
-  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: file.type || "application/octet-stream" },
-  });
-
-  // 計算 sha256
-  const ab = await file.arrayBuffer();
-  const shaBuf = await crypto.subtle.digest("SHA-256", ab);
-  const sha256 = [...new Uint8Array(shaBuf)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const id = crypto.randomUUID();
-  const size = file.size;
-
-  await c.env.APP_DB
-    .prepare(
-      `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, sha256, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`
-    )
-    .bind(id, userId, platform, packageName, version, size, r2Key, sha256, now)
-    .run();
-
-  return c.json({
-    ok: true,
-    file: {
-      id,
-      platform,
-      package_name: packageName,
-      version,
-      size,
-      r2_key: r2Key,
-      sha256,
-      created_at: now,
-    },
-  });
-});
-
-// 3) 針對自己的 File 新增 Link
-app.post("/me/links", mustUser, async (c) => {
-  const userId = c.get("userId") as string;
-
-  const body = (await c.req.json().catch(() => ({}))) as {
-    title?: string;
-    cn_direct?: number | boolean;
-    locale?: string;
-    apk?: { file_id: string } | null;
-    ios?: { file_id: string } | null;
-    code?: string;
-    // 新增：暫存提交
-    apk_temp_key?: string | null;
-    ios_temp_key?: string | null;
-
-    // 顯示用（可留空）
-    version?: string | null;
-    bundle_id?: string | null;
-  };
-
-  const title = (body.title ?? "").trim();
-  const cnDirect = body.cn_direct ? 1 : 0;
-  const locale = (body.locale || "en").trim();
-  const now = Date.now();
-
-  type FileRow = { id: string; owner_id: string; platform: Platform };
-
-  // 先處理 temp_key -> 產生 files 資料列
-  async function finalizeFromTemp(tempKey: string, platform: Platform): Promise<FileRow> {
-    const raw = await c.env.APP_KV.get(`temp_upload:${tempKey}`);
-    if (!raw) throw new Error("temp key not found");
-    const meta = JSON.parse(raw) as { userId: string; r2_key: string; platform: string; size: number };
-    if (meta.userId !== userId) throw new Error("temp key not owned by user");
-    if (meta.platform !== platform) throw new Error("platform mismatch");
-
-    // 讀暫存物件
-    const tmpObj = await c.env.R2_BUCKET.get(meta.r2_key);
-    if (!tmpObj || !tmpObj.body) throw new Error("temp object not found");
-
-    // 正式 key：dist/<user>/<link-proto>/<platform>/<uuid>.ext
-    // 注意：此時還沒有 linkId，因此先用一個 uuid 當 proto 目錄；或直接 uploads/<user>/<uuid>.ext 也可
-    const fileId = crypto.randomUUID();
-    const ext = platform === "apk" ? ".apk" : ".ipa";
-    const finalKey = `uploads/${userId}/${fileId}${ext}`;
-
-    // 搬移 = put 新的 + 刪舊的（R2 沒 rename）
-    await c.env.R2_BUCKET.put(finalKey, tmpObj.body, { httpMetadata: tmpObj.httpMetadata });
-    await c.env.R2_BUCKET.delete(meta.r2_key);
-    await c.env.APP_KV.delete(`temp_upload:${tempKey}`);
-
-    // 寫入 files（package_name/version 作顯示用，可帶 body.bundle_id/version，或留空）
-    const pkg = (body.bundle_id ?? "").trim();
-    const ver = (body.version ?? "").trim();
-
-    await c.env.APP_DB
-      .prepare(
-        `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-      )
-      .bind(fileId, userId, platform, pkg, ver, meta.size || 0, finalKey, now)
-      .run();
-
-    return { id: fileId, owner_id: userId, platform };
-  }
-
-  // 取得既有 file（你原本就有）
-  const getFile = async (id: string) =>
-    (await c.env.APP_DB
-      .prepare("SELECT id, owner_id, platform FROM files WHERE id=?1")
-      .bind(id)
-      .first<FileRow>()) || null;
-
-  // 收集本次要建 link 的兩個平台檔案
-  let apkFile: FileRow | null = null;
-  let iosFile: FileRow | null = null;
-
-  // 先走 temp_key（若有）
-  if (body.apk_temp_key) apkFile = await finalizeFromTemp(body.apk_temp_key, "apk");
-  if (body.ios_temp_key) iosFile = await finalizeFromTemp(body.ios_temp_key, "ipa");
-
-  // 再支援你原本的 file_id 型式（相容）
-  if (!apkFile && body.apk?.file_id) {
-    const f = await getFile(body.apk.file_id);
-    if (!f) return c.text("apk file not found", 404);
-    if (f.owner_id !== userId) return c.text("apk file not owned by user", 403);
-    if (f.platform !== "apk") return c.text("apk file_id is not an APK", 400);
-    apkFile = f;
-  }
-  if (!iosFile && body.ios?.file_id) {
-    const f = await getFile(body.ios.file_id);
-    if (!f) return c.text("ios file not found", 404);
-    if (f.owner_id !== userId) return c.text("ios file not owned by user", 403);
-    if (f.platform !== "ipa") return c.text("ios file_id is not an IPA", 400);
-    iosFile = f;
-  }
-
-  if (!apkFile && !iosFile) {
-    return c.text("no file selected", 400);
-  }
-
-  // 產 code（你原邏輯保留），確保唯一
-  let code =
-    body.code && /^[a-zA-Z]{4}$/.test(body.code) ? body.code : randomCode4();
-  for (let i = 0; i < 5; i++) {
-    const exists = await c.env.APP_DB
-      .prepare("SELECT 1 FROM links WHERE code=?1 LIMIT 1")
-      .bind(code)
-      .first();
-    if (!exists) break;
-    code = randomCode4();
-    if (i === 4) return c.text("code collision, please retry", 409);
-  }
-
-  const now2 = Date.now();
-  const linksCreated: Array<{ id: string; platform: Platform }> = [];
-
-  const insertLink = async (fileId: string, platform: Platform) => {
-    const id = uuidv4();
-    await c.env.APP_DB
-      .prepare(
-        `INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct)
-         VALUES (?,?,?,?, 1, ?, ?)`
-      )
-      .bind(id, code, fileId, title, now2, cnDirect)
-      .run();
-    linksCreated.push({ id, platform });
-  };
-
-  if (apkFile) await insertLink(apkFile.id, "apk");
-  if (iosFile) await insertLink(iosFile.id, "ipa");
-
-  // 存語系在 KV（你原做法）
-  await c.env.APP_KV.put(`link_lang:${code}`, locale);
-
-  return c.json({ ok: true, code, links: linksCreated });
-});
-
-
-
-// === 列出自己的檔案（提供下拉/回填用）===
+/* =========================
+ * 10) 使用者：列出自己的檔案（下拉/回填用）
+ * ========================= */
 app.get("/me/files", mustUser, async (c) => {
   const userId = c.get("userId") as string;
   const limit = Number(c.req.query("limit") ?? "100");
@@ -696,69 +428,160 @@ app.get("/me/files", mustUser, async (c) => {
   return c.json({ ok: true, files: rs.results ?? [] });
 });
 
-// === 上傳檔案（本機 → Worker → R2）===
-app.post("/me/upload", withCors, mustUser, async (c) => {
+/* ========= R2 直傳：簽名工具 ========= */
+function encodeRfc3986(s: string) {
+  return encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+function pathEncode(key: string) {
+  return key.split('/').map(encodeRfc3986).join('/');
+}
+async function sha256Hex(input: string) {
+  const enc = new TextEncoder().encode(input);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function importKeyRaw(rawKey: ArrayBuffer | Uint8Array) {
+  return crypto.subtle.importKey('raw', rawKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+}
+async function hmacKey(key: ArrayBuffer | Uint8Array, data: string) {
+  const k = await importKeyRaw(key);
+  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(data));
+  return new Uint8Array(sig);
+}
+async function getSigningKey(secret: string, date: string, region: string, service: string) {
+  const kDate   = await hmacKey(new TextEncoder().encode('AWS4' + secret), date);
+  const kRegion = await hmacKey(kDate, region);
+  const kServ   = await hmacKey(kRegion, service);
+  const kSig    = await hmacKey(kServ, 'aws4_request');
+  return await importKeyRaw(kSig);
+}
+async function hmacHex(key: CryptoKey, data: string) {
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function amzDateNow() {
+  const d = new Date();
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth()+1).padStart(2,'0');
+  const dd = String(d.getUTCDate()).padStart(2,'0');
+  const hh = String(d.getUTCHours()).padStart(2,'0');
+  const mi = String(d.getUTCMinutes()).padStart(2,'0');
+  const ss = String(d.getUTCSeconds()).padStart(2,'0');
+  const datestamp = `${yyyy}${mm}${dd}`;
+  const amzDate = `${datestamp}T${hh}${mi}${ss}Z`;
+  return { datestamp, amzDate };
+}
+async function signR2PutUrl(env: Env, key: string, expiresSec = 3600) {
+  const host = `${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+  const bucket = env.R2_BUCKET_NAME;
+  const { datestamp, amzDate } = amzDateNow();
+
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const credential = `${env.R2_ACCESS_KEY_ID}/${datestamp}/auto/s3/aws4_request`;
+  const signedHeaders = 'host';
+
+  const qs = new URLSearchParams({
+    'X-Amz-Algorithm': algorithm,
+    'X-Amz-Credential': credential,
+    'X-Amz-Date': amzDate,
+    'X-Amz-Expires': String(expiresSec),
+    'X-Amz-SignedHeaders': signedHeaders
+  });
+
+  const canonicalQuery = qs.toString();
+  const path = `/${bucket}/${pathEncode(key)}`;
+  const canonicalRequest =
+    `PUT\n${path}\n${canonicalQuery}\nhost:${host}\n\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
+  const crHash = await sha256Hex(canonicalRequest);
+
+  const stringToSign =
+    `${algorithm}\n${amzDate}\n${datestamp}/auto/s3/aws4_request\n${crHash}`;
+  const k = await getSigningKey(env.R2_SECRET_ACCESS_KEY, datestamp, 'auto', 's3');
+  const signature = await hmacHex(k, stringToSign);
+
+  const url = `https://${host}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+  return url;
+}
+
+/* ========= R2 直傳：API ========= */
+
+/** 取得預簽 URL（上傳到 tmp/ 前綴） */
+app.post("/me/upload-temp", mustUser, async (c) => {
   const userId = c.get("userId") as string;
+  const body = (await c.req.json().catch(() => ({}))) as {
+    platform?: "apk" | "ipa";
+    filename?: string;
+  };
 
-  const form = await c.req.formData();
-  const file = form.get("file") as File | null;
-  const platform = (form.get("platform") as string | null)?.toLowerCase();
+  if (body.platform !== "apk" && body.platform !== "ipa") return c.text("platform must be apk or ipa", 400);
+  if (!body.filename) return c.text("filename required", 400);
 
-  // 可選（顯示用；你之後也可以做自動解析）
-  const pkg = ((form.get("package_name") as string | null) ?? "").trim();
-  const ver = ((form.get("version") as string | null) ?? "").trim();
+  const safeName = body.filename.replace(/[^\w.\-]+/g, "_");
+  const tmpKey = `tmp/${userId}/${crypto.randomUUID()}-${safeName}`;
 
-  if (!(file instanceof File)) return c.text("file is required", 400);
-  if (platform !== "apk" && platform !== "ipa") {
-    return c.text("platform must be apk or ipa", 400);
-  }
-
-  if (platform === "apk" && !file.name.toLowerCase().endsWith(".apk")) {
-    return c.text("file extension must be .apk for platform=apk", 400);
-  }
-  if (platform === "ipa" && !file.name.toLowerCase().endsWith(".ipa")) {
-    return c.text("file extension must be .ipa for platform=ipa", 400);
-  }
-
-  // 統一用 uuid + 副檔名，避免使用者檔名造成覆寫/字元問題
-  const id = crypto.randomUUID();
-  const ext = platform === "apk" ? ".apk" : ".ipa";
-
-  const r2Key =
-    pkg && ver
-      ? `apps/${pkg}/${ver}/${id}${ext}`
-      : `uploads/${userId}/${id}${ext}`;
-
-  // 串流寫入 R2
-  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: file.type || "application/octet-stream" },
-  });
-
-  const size = file.size || 0;
-
-  // 寫 files（package_name/version 可為空字串）
-  await c.env.APP_DB
-    .prepare(
-      `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-    )
-    .bind(id, userId, platform, pkg, ver, size, r2Key, Date.now())
-    .run();
-
-  // 回傳格式改為 { ok:true, file:{ id, ... } }，對齊前端 uploadOne 的使用
-  return c.json({
-    ok: true,
-    file: {
-      id,
-      r2_key: r2Key,
-      size,
-      platform,
-      package_name: pkg,
-      version: ver,
-    },
-  });
+  const putUrl = await signR2PutUrl(c.env, tmpKey, 300); // 5 分鐘
+  return c.json({ ok: true, putUrl, key: tmpKey, expires: 300 });
 });
 
+/** 放棄暫存檔（改選檔案或離開頁面呼叫） */
+app.post("/me/upload-abort", mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const body = (await c.req.json().catch(() => ({}))) as { key?: string };
+  if (!body.key || !body.key.startsWith(`tmp/${userId}/`)) return c.text("bad key", 400);
+
+  await c.env.R2_BUCKET.delete(body.key).catch(() => {});
+  return c.json({ ok: true });
+});
+
+/** 建立前「提交」：把 tmp/ 搬到正式路徑並寫入 DB，回傳 file_id */
+app.post("/me/commit-files", mustUser, async (c) => {
+  const userId = c.get("userId") as string;
+  const now = Date.now();
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    apk?: { key: string; package_name: string; version: string } | null;
+    ios?: { key: string; package_name: string; version: string } | null;
+  };
+
+  async function promote(kind: "apk" | "ipa", x?: { key: string; package_name: string; version: string } | null) {
+    if (!x?.key) return null;
+    if (!x.key.startsWith(`tmp/${userId}/`)) throw new Error("bad key");
+
+    const fileName = x.key.split("/").pop()!;
+    const finalKey = `apps/${x.package_name}/${x.version}/${fileName}`;
+
+    // copy (若無 copy 支援則 fallback 到 get→put)
+    // @ts-ignore
+    if (typeof c.env.R2_BUCKET.copy === "function") {
+      // @ts-ignore
+      await c.env.R2_BUCKET.copy(x.key, finalKey);
+    } else {
+      const obj = await c.env.R2_BUCKET.get(x.key);
+      if (!obj) throw new Error("tmp object missing");
+      await c.env.R2_BUCKET.put(finalKey, obj.body, { httpMetadata: obj.httpMetadata });
+    }
+    await c.env.R2_BUCKET.delete(x.key);
+
+    const head = await c.env.R2_BUCKET.head(finalKey);
+    const size = head?.size ?? 0;
+
+    const id = crypto.randomUUID();
+    await c.env.APP_DB.prepare(
+      `INSERT INTO files (id, owner_id, platform, package_name, version, size, r2_key, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+    ).bind(id, userId, kind, x.package_name, x.version, size, finalKey, now).run();
+
+    return { id, r2_key: finalKey, size };
+  }
+
+  const apk = await promote("apk", body.apk ?? undefined);
+  const ios = await promote("ipa", body.ios ?? undefined);
+
+  if (!apk && !ios) return c.text("nothing to commit", 400);
+  return c.json({ ok: true, apk, ios });
+});
+
+/** 使用者建立分發：帶檔案的 file_id（由前一步 commit-files 取得） */
 function randomCode4() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
   let s = "";
@@ -766,55 +589,87 @@ function randomCode4() {
   return s;
 }
 
-app.post("/me/upload-temp", withCors, mustUser, async (c) => {
+app.post("/me/links", mustUser, async (c) => {
   const userId = c.get("userId") as string;
-  const form = await c.req.formData();
-  const file = form.get("file");
-  const platform = (form.get("platform") as string | null)?.toLowerCase();
 
-  if (!(file instanceof File)) return c.text("file is required", 400);
-  if (platform !== "apk" && platform !== "ipa") return c.text("platform must be apk or ipa", 400);
-
-  const ext = platform === "apk" ? ".apk" : ".ipa";
-  const token = crypto.randomUUID(); // 用這個當 temp_key
-  const r2Key = `temp/${userId}/${token}${ext}`;
-
-  await c.env.R2_BUCKET.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: file.type || "application/octet-stream" },
-  });
-
-  const meta = {
-    userId,
-    platform,
-    r2_key: r2Key,
-    size: file.size || 0,
-    created_at: Date.now(),
+  const body = (await c.req.json().catch(() => ({}))) as {
+    title?: string;
+    cn_direct?: number | boolean;
+    locale?: string;
+    apk?: { file_id: string } | null;
+    ios?: { file_id: string } | null;
+    code?: string;
   };
 
-  // 設 1 小時 TTL（你可改長短）
-  await c.env.APP_KV.put(`temp_upload:${token}`, JSON.stringify(meta), { expirationTtl: 3600 });
+  const title = (body.title ?? "").trim();
+  const cnDirect = body.cn_direct ? 1 : 0;
+  const locale = (body.locale || "en").trim();
+  const now2 = Date.now();
 
-  return c.json({ ok: true, temp_key: token, size: meta.size, platform });
-});
+  type FileRow = { id: string; owner_id: string; platform: Platform };
 
-app.post("/me/upload-discard", withCors, mustUser, async (c) => {
-  const userId = c.get("userId") as string;
-  const { temp_key } = await c.req.json().catch(() => ({ temp_key: "" }));
-  if (!temp_key) return c.text("temp_key required", 400);
+  const getFile = async (id: string) =>
+    (await c.env.APP_DB
+      .prepare("SELECT id, owner_id, platform FROM files WHERE id=?1")
+      .bind(id)
+      .first<FileRow>()) || null;
 
-  const raw = await c.env.APP_KV.get(`temp_upload:${temp_key}`);
-  if (raw) {
-    const meta = JSON.parse(raw) as { userId: string; r2_key: string };
-    if (meta.userId === userId) {
-      await c.env.R2_BUCKET.delete(meta.r2_key);
-    }
-    await c.env.APP_KV.delete(`temp_upload:${temp_key}`);
+  let apkFile: FileRow | null = null;
+  let iosFile: FileRow | null = null;
+
+  if (body.apk?.file_id) {
+    const f = await getFile(body.apk.file_id);
+    if (!f) return c.text("apk file not found", 404);
+    if (f.owner_id !== userId) return c.text("apk file not owned by user", 403);
+    if (f.platform !== "apk") return c.text("apk file_id is not an APK", 400);
+    apkFile = f;
   }
-  return c.json({ ok: true });
+  if (body.ios?.file_id) {
+    const f = await getFile(body.ios.file_id);
+    if (!f) return c.text("ios file not found", 404);
+    if (f.owner_id !== userId) return c.text("ios file not owned by user", 403);
+    if (f.platform !== "ipa") return c.text("ios file_id is not an IPA", 400);
+    iosFile = f;
+  }
+
+  if (!apkFile && !iosFile) return c.text("no file selected", 400);
+
+  // 產 4 碼 code，確保唯一
+  let code =
+    body.code && /^[a-zA-Z]{4}$/.test(body.code) ? body.code : randomCode4();
+  for (let i = 0; i < 5; i++) {
+    const exists = await c.env.APP_DB
+      .prepare("SELECT 1 FROM links WHERE code=?1 LIMIT 1")
+      .bind(code)
+      .first();
+    if (!exists) break;
+    code = randomCode4();
+    if (i === 4) return c.text("code collision, please retry", 409);
+  }
+
+  const linksCreated: Array<{ id: string; platform: Platform }> = [];
+  const insertLink = async (fileId: string, platform: Platform) => {
+    const id = uuidv4();
+    await c.env.APP_DB
+      .prepare(
+        `INSERT INTO links (id, code, file_id, title, is_active, created_at, cn_direct)
+         VALUES (?,?,?,?, 1, ?, ?)`
+      )
+      .bind(id, code, fileId, title, now2, cnDirect)
+      .run();
+    linksCreated.push({ id, platform });
+  };
+
+  if (apkFile) await insertLink(apkFile.id, "apk");
+  if (iosFile) await insertLink(iosFile.id, "ipa");
+
+  // 預設語系放 KV
+  await c.env.APP_KV.put(`link_lang:${code}`, locale);
+
+  return c.json({ ok: true, code, links: linksCreated });
 });
 
-
-// 掛載 Auth 路由
+// 掛載 Auth（/auth/*）
 app.route("/auth", auth);
 
 export default app;
