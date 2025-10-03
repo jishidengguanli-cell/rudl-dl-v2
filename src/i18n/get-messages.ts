@@ -1,4 +1,4 @@
-import type { Locale } from "./locales";
+import { defaultLocale, type Locale } from "./locales";
 import zhTW from "./messages/zh-TW.json";
 import en from "./messages/en.json";
 
@@ -11,5 +11,5 @@ const TABLE: Record<Locale, Messages> = {
 };
 
 export async function getMessages(locale: Locale): Promise<Messages> {
-  return TABLE[locale] ?? TABLE["zh-TW"];
+  return TABLE[locale] ?? TABLE[defaultLocale];
 }
