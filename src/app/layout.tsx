@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export const metadata = { title: "DataruApp V2", description: "Next + Cloudflare Pages" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -8,9 +10,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="mb-6 flex items-center justify-between">
             <h1 className="text-xl font-semibold">DataruApp V2</h1>
             <nav className="space-x-4 text-sm">
-              <a className="underline" href="/">Home</a>
-              <a className="underline" href="/dashboard">Dashboard</a>
-              <a className="underline" href="/playground/bill">Bill Test</a>
+              <Link className="underline" href="/">Home</Link>
+              <Link className="underline" href="/dashboard">Dashboard</Link>
+              <Link className="underline" href="/playground/bill">Bill Test</Link>
             </nav>
           </header>
           <main>{children}</main>
