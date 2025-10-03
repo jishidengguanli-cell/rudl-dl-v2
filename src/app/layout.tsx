@@ -4,6 +4,8 @@ import { I18nProvider } from '@/i18n/provider';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 import LangNav from '@/components/LangNav';
 
+export const runtime = 'edge';
+
 export const metadata = { title: 'DataruApp V2', description: 'Next + Cloudflare Pages' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
