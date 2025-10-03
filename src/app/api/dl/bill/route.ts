@@ -3,11 +3,19 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 
 export const runtime = 'edge';
 
-export async function POST(req: Request) {
-  const { env } = getRequestContext();
-  const DB: D1Database = env.DB;
+type Env = { DB: D1Database };
+type DeductRequestBody = {
+  account_id?: string;
+  link_id?: string;
+  platform?: string;
+};
 
-  const { account_id, link_id, platform } = await req.json().catch(() => ({}));
+export async function POST(req: Request) {
+  const { env } = getRequestContext<Env>();
+  const DB = env.DB;
+
+  const body = (await req.json().catch(() => ({}))) as DeductRequestBody;
+  const { account_id, link_id, platform } = body;
   if (!account_id || !link_id || !platform) {
     return NextResponse.json({ ok: false, error: 'bad request' }, { status: 400 });
   }
@@ -29,11 +37,11 @@ export async function POST(req: Request) {
 
     const acct = await DB.prepare(
       `SELECT balance FROM point_accounts WHERE id=? LIMIT 1`
-    ).bind(account_id).first<{ balance:number }>();
+    ).bind(account_id).first<{ balance: number }>();
     const bal = Number(acct?.balance ?? 0);
     if (bal < cost) {
       await DB.exec('ROLLBACK');
-      return NextResponse.json({ ok:false, error:'INSUFFICIENT_POINTS' }, { status: 402 });
+      return NextResponse.json({ ok: false, error: 'INSUFFICIENT_POINTS' }, { status: 402 });
     }
 
     const id = crypto.randomUUID();
@@ -51,9 +59,10 @@ export async function POST(req: Request) {
     ).bind(account_id, link_id, bucket_minute, platform).run();
 
     await DB.exec('COMMIT');
-    return NextResponse.json({ ok:true, cost });
-  } catch (e:any) {
+    return NextResponse.json({ ok: true, cost });
+  } catch (e: unknown) {
     await DB.exec('ROLLBACK');
-    return NextResponse.json({ ok:false, error:String(e) }, { status: 500 });
+    const error = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 }
