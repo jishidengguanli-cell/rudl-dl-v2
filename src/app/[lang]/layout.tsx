@@ -6,6 +6,8 @@ import { t } from "@/i18n/t";
 import { locales, defaultLocale, type Locale } from "@/i18n/locales";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 
+export const runtime = "edge";
+
 type LayoutParams = { lang: string };
 
 const resolveLocale = (value: string): Locale =>
