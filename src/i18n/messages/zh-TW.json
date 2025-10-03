@@ -1,0 +1,12 @@
+{
+  "app.title": "DataruApp V2",
+  "nav.home": "首頁",
+  "nav.dashboard": "控制台",
+  "nav.billTest": "扣點測試",
+  "home.heading": "歡迎回來！",
+  "home.desc": "這是多語系範例。當前語系：{lang}。",
+  "dashboard.title": "連結列表",
+  "bill.title": "扣點測試",
+  "bill.submit": "送出",
+  "download.button": "下載"
+}

@@ -1,0 +1,12 @@
+{
+  "app.title": "DataruApp V2",
+  "nav.home": "Home",
+  "nav.dashboard": "Dashboard",
+  "nav.billTest": "Bill Test",
+  "home.heading": "Welcome back!",
+  "home.desc": "This is the i18n demo. Current locale: {lang}.",
+  "dashboard.title": "Links",
+  "bill.title": "Bill Playground",
+  "bill.submit": "Submit",
+  "download.button": "Download"
+}
