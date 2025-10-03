@@ -6,8 +6,8 @@ import LangNav from '@/components/LangNav';
 
 export const metadata = { title: 'DataruApp V2', description: 'Next + Cloudflare Pages' };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = cookies();
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const initialLocale = c && dictionaries[c] ? c : DEFAULT_LOCALE;
 

@@ -11,6 +11,7 @@ type Ctx = {
 
 const I18nCtx = createContext<Ctx | null>(null);
 const LS_KEY = 'locale';
+const isLocale = (value: string): value is Locale => value in dictionaries;
 
 export function I18nProvider({
   children,
@@ -21,7 +22,7 @@ export function I18nProvider({
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
-  // 初始：優先 localStorage
+  // Prefer the persisted locale on the client when available
   useEffect(() => {
     const saved = (typeof window !== 'undefined' && localStorage.getItem(LS_KEY)) as Locale | null;
     if (saved && dictionaries[saved]) setLocaleState(saved);
@@ -50,9 +51,9 @@ export function useI18n() {
   return ctx;
 }
 
-/** Server Component 取得 t（用 cookie 或預設語系） */
+// Server components helper: read dictionary by locale stored in cookies
 export function getT(locale: string | undefined) {
-  const l = (locale as any) ?? DEFAULT_LOCALE;
-  const dict = dictionaries[l as keyof typeof dictionaries] ?? dictionaries[DEFAULT_LOCALE];
+  const resolved: Locale = locale && isLocale(locale) ? locale : DEFAULT_LOCALE;
+  const dict = dictionaries[resolved];
   return (key: string) => dict[key] ?? key;
 }

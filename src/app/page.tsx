@@ -6,12 +6,12 @@ import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 export const runtime = 'edge';
 
 export default async function Page() {
-  // 取得當前語系（cookie 沒有就預設）
-  const c = cookies().get('locale')?.value as Locale | undefined;
+  const cookieStore = await cookies();
+  const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
 
-  // 簡單 ping D1：取 links 計數（失敗就忽略）
+  // Ping D1 to count links; ignore failures
   let linksCount: number | null = null;
   try {
     const { env } = getRequestContext();
@@ -30,7 +30,7 @@ export default async function Page() {
           <li>{t('env.adapter')}</li>
           <li>
             {t('env.d1Binding')}
-            <code>DB</code>（rudl-app）
+            <code>DB</code> (rudl-app)
           </li>
           <li>
             {t('env.r2Cdn')}

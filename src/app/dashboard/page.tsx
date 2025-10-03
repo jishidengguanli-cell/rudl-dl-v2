@@ -15,7 +15,8 @@ type LinkRow = {
 };
 
 export default async function Dashboard() {
-  const c = cookies().get('locale')?.value as Locale | undefined;
+  const cookieStore = await cookies();
+  const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
 
