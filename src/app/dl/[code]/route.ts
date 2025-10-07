@@ -3,13 +3,20 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 
 export const runtime = 'edge';
 
-type Env = { DB: D1Database };
+type Env = {
+  DB: D1Database;
+  ['rudl-app']?: D1Database;
+};
 type Link = { id: string; code: string; file_id: string; is_active: number; platform: string | null };
 type FileRec = { id: string; r2_key: string; platform: string };
 
 export async function GET(_: Request, context: { params: Promise<{ code: string }> }) {
   const { env } = getRequestContext<Env>();
-  const DB = env.DB;
+  const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
+  const DB = env.DB ?? legacyDB;
+  if (!DB) {
+    return new Response('Missing D1 binding DB', { status: 500 });
+  }
 
   const params = await context.params;
   const code = String(params?.code ?? '').trim().toUpperCase();

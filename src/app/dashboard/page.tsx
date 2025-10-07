@@ -13,6 +13,10 @@ type LinkRow = {
   platform: string | null;
   created_at: number | null;
 };
+type Env = {
+  DB: D1Database;
+  ['rudl-app']?: D1Database;
+};
 
 export default async function Dashboard() {
   const cookieStore = await cookies();
@@ -20,8 +24,14 @@ export default async function Dashboard() {
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
 
-  const { env } = getRequestContext();
-  const rows = await env.DB.prepare(
+  const { env } = getRequestContext<Env>();
+  const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
+  const DB = env.DB ?? legacyDB;
+  if (!DB) {
+    throw new Error('D1 binding DB is missing');
+  }
+
+  const rows = await DB.prepare(
     `SELECT id, code, title, is_active, platform, created_at
      FROM links ORDER BY created_at DESC LIMIT 50`
   )

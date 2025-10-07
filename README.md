@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# rudl-dl-v2
 
-## Getting Started
+Next.js 15 + React 19 application prepared for Cloudflare Pages (Next on Pages). The app serves localized dashboards and API routes backed by a Cloudflare D1 database and files distributed through an R2-backed CDN.
 
-First, run the development server:
+## Development
+- Install dependencies with `npm install`.
+- Run the dev server with `npm run dev` (http://localhost:3000).
+- The project relies on a D1 binding named `DB`. For local development you can use `wrangler pages dev` with a stub D1, or guard the code before hitting the database if you do not need those pages.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Cloudflare Pages Deployment
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Git integration
+1. Connect the GitHub repository to your Pages project. If you see **"The repository cannot be accessed"**, re-run the GitHub App installation from the Pages UI and grant it access to `jishidengguanli-cell/rudl-dl-v2`.
+2. Build command: `npx @cloudflare/next-on-pages@latest` (same as `npm run cf:build`).
+3. Build output directory: `.vercel/output/static`.
+4. Set the project compatibility date to at least `2025-10-03` and enable the `nodejs_compat` flag (already shown in the screenshots).
+5. Bindings: add a D1 binding named `DB` that points to your `rudl_app` database. The code now tolerates an existing binding called `rudl-app`, but standardising on `DB` avoids extra lookups.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Once pushed to the `main` branch, Cloudflare Pages will run the build and deploy automatically.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Manual deploy via Wrangler
+1. Authenticate once with `npx wrangler login`.
+2. Build: `npm run cf:build` (generates `.vercel/output/{static,functions}`).
+3. Deploy: `npm run cf:deploy` (wraps `wrangler pages deploy .vercel/output/static --project-name rudl-v2-web --branch main --functions .vercel/output/functions`).
 
-## Learn More
+This path is useful when testing before pushing to Git or when you need an immediate redeploy.
 
-To learn more about Next.js, take a look at the following resources:
+## Troubleshooting
+- Missing D1 binding: API routes and server components return HTTP 500 with "D1 binding DB is missing". Ensure the Pages project exposes the binding as `DB` (or temporarily keep `rudl-app` while migrating).
+- CDN assets: downloads redirect to `https://cdn.dataruapp.com/<key>`. Confirm that key exists in R2 and the CDN exposes it publicly.
+- Locales: middleware redirects to `/en` or `/zh-TW`. Add languages under `src/i18n/messages` and update `src/i18n/locales.ts` for extra locales.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Useful scripts
+- `npm run dev` - local Next.js dev server.
+- `npm run build` - standard Next build (useful for linting/diagnostics).
+- `npm run cf:build` - build for Cloudflare Pages using `@cloudflare/next-on-pages`.
+- `npm run cf:deploy` - build + deploy to the configured Cloudflare Pages project.

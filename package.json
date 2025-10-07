@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "cf:build": "npx @cloudflare/next-on-pages"
+    "cf:build": "npx @cloudflare/next-on-pages",
+    "cf:deploy": "npm run cf:build && wrangler pages deploy .vercel/output/static --project-name rudl-v2-web --branch main --functions .vercel/output/functions"
   },
   "dependencies": {
     "next": "^15.5.2",

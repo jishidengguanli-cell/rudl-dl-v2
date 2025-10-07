@@ -3,7 +3,10 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 
 export const runtime = 'edge';
 
-type Env = { DB: D1Database };
+type Env = {
+  DB: D1Database;
+  ['rudl-app']?: D1Database;
+};
 type DeductRequestBody = {
   account_id?: string;
   link_id?: string;
@@ -12,7 +15,11 @@ type DeductRequestBody = {
 
 export async function POST(req: Request) {
   const { env } = getRequestContext<Env>();
-  const DB = env.DB;
+  const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
+  const DB = env.DB ?? legacyDB;
+  if (!DB) {
+    return NextResponse.json({ ok: false, error: 'D1 binding DB is missing' }, { status: 500 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as DeductRequestBody;
   const { account_id, link_id, platform } = body;
