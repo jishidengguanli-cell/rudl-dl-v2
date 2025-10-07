@@ -1,43 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import { defaultLocale, locales } from "./i18n/locales";
 
-function detect(req: NextRequest): string {
+type LocaleValue = (typeof locales)[number];
+
+function detect(req: NextRequest): LocaleValue {
   const cookieLang = req.cookies.get("lang")?.value;
-  if (cookieLang && (locales as readonly string[]).includes(cookieLang)) return cookieLang;
+  if (cookieLang && (locales as readonly string[]).includes(cookieLang)) return cookieLang as LocaleValue;
 
   const accept = req.headers.get("accept-language") ?? "";
-  const found = accept.split(",").map(s => s.split(";")[0].trim());
-  for (const l of found) {
-    if ((locales as readonly string[]).includes(l)) return l;
-    if (l.startsWith("zh")) return "zh-TW";
-    if (l.startsWith("en")) return "en";
+  const found = accept.split(",").map((s) => s.split(";")[0].trim());
+  for (const candidate of found) {
+    if ((locales as readonly string[]).includes(candidate)) return candidate as LocaleValue;
+    if (candidate.startsWith("zh")) return "zh-TW";
+    if (candidate.startsWith("en")) return "en";
   }
   return defaultLocale;
 }
 
+const shouldBypass = (pathname: string) =>
+  pathname.startsWith("/_next") ||
+  pathname.startsWith("/api") ||
+  pathname.startsWith("/dl") ||
+  pathname === "/favicon.ico";
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 略過不應處理的路徑
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/dl") || // 讓 302 下載 route 照舊
-    pathname === "/favicon.ico"
-  ) {
-    return;
+  if (shouldBypass(pathname)) {
+    return NextResponse.next();
   }
 
-  const hasLocale = (locales as readonly string[]).some(
-    (l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`)
-  );
+  const segments = pathname.split("/").filter(Boolean);
+  const maybeLocale = segments[0];
+  const isKnownLocale = (locales as readonly string[]).includes(maybeLocale ?? "");
 
-  if (!hasLocale) {
+  if (!isKnownLocale) {
     const lang = detect(req);
     const url = req.nextUrl.clone();
     url.pathname = `/${lang}${pathname}`;
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    res.cookies.set("lang", lang, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+    return res;
   }
+
+  const response = NextResponse.next();
+  const cookieLang = req.cookies.get("lang")?.value;
+  if (!cookieLang || cookieLang !== maybeLocale) {
+    response.cookies.set("lang", maybeLocale as LocaleValue, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  }
+  return response;
 }
 
 export const config = {

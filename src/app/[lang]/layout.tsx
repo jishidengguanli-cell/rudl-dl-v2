@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { cookies } from "next/headers";
 import { getMessages } from "@/i18n/get-messages";
 import { t } from "@/i18n/t";
 import { locales, defaultLocale, type Locale } from "@/i18n/locales";
@@ -20,9 +19,6 @@ export default async function LangLayout({
   const { lang: requestedLang } = await params;
   const lang = resolveLocale(requestedLang);
   const msgs = await getMessages(lang);
-  // 記 cookie 方便下次偵測
-  const cookieStore = await cookies();
-  cookieStore.set("lang", lang, { path: "/", maxAge: 60 * 60 * 24 * 365 });
 
   return (
     <html lang={lang}>
