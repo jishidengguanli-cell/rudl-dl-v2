@@ -1,3 +1,3 @@
-export { runtime } from '@/app/dashboard/page';
+export const runtime = 'edge';
 
 export { default } from '@/app/dashboard/page';
