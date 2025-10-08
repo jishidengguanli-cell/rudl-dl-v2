@@ -23,24 +23,36 @@ export default async function Dashboard() {
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
-  
-  const { env } = getRequestContext<Env>();
-  const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
-  const DB = env.DB ?? legacyDB;
-  if (!DB) {
-    throw new Error('D1 binding DB is missing');
-  }
 
-  const rows = await DB.prepare(
-    `SELECT id, code, title, is_active, platform, created_at
-     FROM links ORDER BY created_at DESC LIMIT 50`
-  )
-    .all<LinkRow>()
-    .then((r) => r.results ?? []);
+  let rows: LinkRow[] = [];
+  let dbError: string | null = null;
+
+  try {
+    const { env } = getRequestContext<Env>();
+    const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
+    const DB = env?.DB ?? legacyDB;
+
+    if (!DB) {
+      dbError = 'D1 binding DB is missing';
+    } else {
+      const queryResult = await DB.prepare(
+        `SELECT id, code, title, is_active, platform, created_at
+         FROM links ORDER BY created_at DESC LIMIT 50`
+      ).all<LinkRow>();
+      rows = queryResult.results ?? [];
+    }
+  } catch (error: unknown) {
+    dbError = error instanceof Error ? error.message : String(error);
+  }
 
   return (
     <div className="rounded-lg border bg-white p-4">
       <h2 className="mb-3 text-lg font-medium">{t('dashboard.title')}</h2>
+      {dbError && (
+        <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {t('status.unreadable')}: {dbError}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
