@@ -23,7 +23,7 @@ export default async function Dashboard() {
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
-
+  
   const { env } = getRequestContext<Env>();
   const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
   const DB = env.DB ?? legacyDB;

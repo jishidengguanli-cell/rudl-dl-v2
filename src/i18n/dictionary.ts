@@ -31,6 +31,13 @@ export const dictionaries: Record<Locale, Dict> = {
     'table.actions': '操作',
 
     'action.download': '下載',
+
+    'bill.title': '扣點測試',
+    'bill.account': '帳戶 ID',
+    'bill.link': '連結 ID',
+    'bill.platform': '平台',
+    'bill.submit': '送出',
+    'result.label': '結果',
   },
 
   'zh-CN': {
@@ -61,6 +68,13 @@ export const dictionaries: Record<Locale, Dict> = {
     'table.actions': '操作',
 
     'action.download': '下载',
+
+    'bill.title': '扣点测试',
+    'bill.account': '账户 ID',
+    'bill.link': '链接 ID',
+    'bill.platform': '平台',
+    'bill.submit': '提交',
+    'result.label': '结果',
   },
 
   en: {
@@ -91,5 +105,12 @@ export const dictionaries: Record<Locale, Dict> = {
     'table.actions': 'Actions',
 
     'action.download': 'Download',
+
+    'bill.title': 'Billing test',
+    'bill.account': 'Account ID',
+    'bill.link': 'Link ID',
+    'bill.platform': 'Platform',
+    'bill.submit': 'Submit',
+    'result.label': 'Result',
   },
 };
