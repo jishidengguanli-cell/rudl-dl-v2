@@ -7,12 +7,13 @@
     "build": "next build",
     "start": "next start",
     "cf:build": "npx @cloudflare/next-on-pages",
-    "cf:deploy": "npm run cf:build && wrangler pages deploy .vercel/output/static --project-name rudl-v2-web --branch main --functions .vercel/output/functions"
+    "cf:deploy": "npm run cf:build && wrangler pages deploy .vercel/output/static --project-name rudl-v2-web --branch main --functions .vercel/output/functions",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "next": "^15.5.2",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"    
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.16",
@@ -24,6 +25,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.36.0",
     "eslint-config-next": "^15.5.4",
+    "patch-package": "^8.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^4.1.14",
     "typescript": "^5.9.3",

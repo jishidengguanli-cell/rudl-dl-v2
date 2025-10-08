@@ -1,0 +1,37 @@
+diff --git a/node_modules/@cloudflare/next-on-pages/dist/index.js b/node_modules/@cloudflare/next-on-pages/dist/index.js
+index 5ee7d94..7de40be 100644
+--- a/node_modules/@cloudflare/next-on-pages/dist/index.js
++++ b/node_modules/@cloudflare/next-on-pages/dist/index.js
+@@ -12867,7 +12867,7 @@ async function tryToFixAppRouterNotFoundFunction({
+     const invalidError = invalidFunctions.get(
+       fullPath.replace(notFoundFuncName, errorFuncName)
+     );
+-    if (invalidNotFound && !invalidError) {
++    if (invalidNotFound) {
+       ignoredFunctions.set(fullPath, {
+         reason: "invalid unnecessary not-found function",
+         ...fnInfo
+@@ -12882,15 +12882,18 @@ async function tryToFixAppRouterNotFoundFunction({
+         });
+         invalidFunctions.delete(notFoundRscDir);
+       }
+-    }
+-    if (invalidNotFound && invalidError) {
+-      cliWarn(`
++      if (invalidError) {
++        ignoredFunctions.set(fullPath.replace(notFoundFuncName, errorFuncName), {
++          reason: "invalid unnecessary not-found companion _error function",
++          ...invalidError
++        });
++        invalidFunctions.delete(fullPath.replace(notFoundFuncName, errorFuncName));
++        cliWarn(`
+ 				Warning: your app/not-found route might contain runtime logic, this is currently
+ 				not supported by @cloudflare/next-on-pages, if that's actually the case please
+ 				remove the runtime logic from your not-found route
+ 			`);
+-    }
+-    if (invalidNotFound) {
++      }
+       break;
+     }
+   }
