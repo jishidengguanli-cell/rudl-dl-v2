@@ -34,8 +34,9 @@ export default function BillPlayground({
       });
       const json = await res.json();
       setOut(JSON.stringify(json, null, 2));
-    } catch (err: any) {
-      setOut(String(err?.message ?? err));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setOut(message);
     }
   };
 
