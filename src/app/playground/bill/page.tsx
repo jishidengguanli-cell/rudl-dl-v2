@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { use, useMemo, useState } from 'react';
 import { dictionaries, DEFAULT_LOCALE, type Locale } from '@/i18n/dictionary';
 
 function makeT(localeParam?: string) {
@@ -14,9 +14,10 @@ function makeT(localeParam?: string) {
 export default function BillPlayground({
   params,
 }: {
-  params: { lang?: string };
+  params: Promise<{ lang?: string }>;
 }) {
-  const t = useMemo(() => makeT(params?.lang), [params?.lang]);
+  const { lang } = use(params);
+  const t = useMemo(() => makeT(lang), [lang]);
 
   const [accountId, setAccountId] = useState('owner_1');
   const [linkId, setLinkId] = useState('link_1');
