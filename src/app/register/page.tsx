@@ -24,13 +24,19 @@ export default function RegisterPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password: pw }),
       });
-      const j = await r.json();
-      if (j.ok) {
-        setOut(t('auth.register.success') ?? 'Registered');
-        location.href = '/login';
-      } else {
-        setOut(j.error ?? 'Register failed');
+      const json: unknown = await r.json();
+      if (typeof json === 'object' && json !== null && 'ok' in json && typeof (json as { ok: unknown }).ok === 'boolean') {
+        const payload = json as { ok: boolean; error?: unknown };
+        if (payload.ok) {
+          setOut(t('auth.register.success') ?? 'Registered');
+          location.href = '/login';
+          return;
+        }
+        const message = typeof payload.error === 'string' ? payload.error : 'Register failed';
+        setOut(message);
+        return;
       }
+      setOut('Unexpected response');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       setOut(message);

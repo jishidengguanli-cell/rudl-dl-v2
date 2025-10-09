@@ -20,12 +20,25 @@ export default function RechargePage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ account_id: accountId, amount: Number(amount), memo }),
       });
-      const j = await r.json();
-      if (j.ok) {
-        setOut(`${t('recharge.success') ?? 'Recharge success'}: +${j.amount}`);
-      } else {
-        setOut(j.error ?? 'Recharge failed');
+      const json: unknown = await r.json();
+      if (typeof json === 'object' && json !== null && 'ok' in json && typeof (json as { ok: unknown }).ok === 'boolean') {
+        const payload = json as { ok: boolean; amount?: unknown; error?: unknown };
+        if (payload.ok) {
+          const amountStr =
+            typeof payload.amount === 'number'
+              ? payload.amount
+              : Number.isFinite(Number(payload.amount))
+              ? Number(payload.amount)
+              : null;
+          const formatted = amountStr !== null ? `+${amountStr}` : '';
+          setOut(`${t('recharge.success') ?? 'Recharge success'}${formatted ? `: ${formatted}` : ''}`);
+          return;
+        }
+        const message = typeof payload.error === 'string' ? payload.error : 'Recharge failed';
+        setOut(message);
+        return;
       }
+      setOut('Unexpected response');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       setOut(message);

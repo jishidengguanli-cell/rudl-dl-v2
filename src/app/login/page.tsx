@@ -19,14 +19,20 @@ export default function LoginPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password: pw }),
       });
-      const j = await r.json();
-      if (j.ok) {
-        setOut(t('auth.login.success') ?? 'Login success');
-        // 可選：導向 Dashboard
-        location.href = '/dashboard';
-      } else {
-        setOut(j.error ?? 'Login failed');
+      const json: unknown = await r.json();
+      if (typeof json === 'object' && json !== null && 'ok' in json && typeof (json as { ok: unknown }).ok === 'boolean') {
+        const payload = json as { ok: boolean; error?: unknown };
+        if (payload.ok) {
+          setOut(t('auth.login.success') ?? 'Login success');
+          // 可選：導向 Dashboard
+          location.href = '/dashboard';
+          return;
+        }
+        const message = typeof payload.error === 'string' ? payload.error : 'Login failed';
+        setOut(message);
+        return;
       }
+      setOut('Unexpected response');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       setOut(message);
