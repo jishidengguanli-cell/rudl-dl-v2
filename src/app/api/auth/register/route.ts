@@ -8,7 +8,9 @@ export async function POST(req: Request) {
   const { env } = getRequestContext();
   const DB: D1Database = env.DB;
 
-  const { email, password } = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => ({}))) as Partial<{ email: unknown; password: unknown }>;
+  const email = typeof body.email === 'string' ? body.email : undefined;
+  const password = typeof body.password === 'string' ? body.password : undefined;
   if (!email || !password) return NextResponse.json({ ok: false, error: 'bad request' }, { status: 400 });
 
   // 是否已存在
