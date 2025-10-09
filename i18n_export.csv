@@ -1,0 +1,44 @@
+﻿key,zh-TW,zh-CN,en
+action.download,下載,下载,Download
+app.name,DataruApp,DataruApp,DataruApp
+bill.account,帳戶 ID,账户 ID,Account ID
+bill.link,連結 ID,链接 ID,Link ID
+bill.platform,平台,平台,Platform
+bill.submit,送出,提交,Submit
+bill.title,扣點測試,扣点测试,Billing test
+dashboard.title,Links（最近 50 筆）,Links（最近 50 条）,Links (latest 50)
+env.adapter,轉接器：@cloudflare/next-on-pages,适配器：@cloudflare/next-on-pages,Adapter: @cloudflare/next-on-pages
+env.check,環境檢查,环境检查,Environment checks
+env.d1Binding,D1 綁定：,D1 绑定：,D1 binding: 
+env.linksCount,D1 links 計數：,D1 links 计数：,D1 links count: 
+env.nextReact,Next.js 15 + React 19（App Router）,Next.js 15 + React 19（App Router）,Next.js 15 + React 19 (App Router)
+env.r2Cdn,R2 以 CDN：,R2 以 CDN：,R2 via CDN: 
+home.desc,這是 V2 的全新前端與分發系統。,这是 V2 的全新前端与分发系统。,This is the brand-new V2 distribution system.
+home.title,歡迎回來,欢迎回来,Welcome back
+nav.bill,扣點測試,扣点测试,Billing test
+nav.dashboard,儀表板,仪表盘,Dashboard
+nav.home,首頁,首页,Home
+result.label,結果,结果,Result
+status.empty,沒有資料,暂无数据,No data
+status.loading,載入中…,加载中…,Loading…
+status.unreadable,無法讀取,无法读取,unreadable
+table.actions,操作,操作,Actions
+table.active,Active,Active,Active
+table.code,Code,Code,Code
+table.platform,Platform,Platform,Platform
+table.title,Title,Title,Title
+auth.login.title,登入 ,登录 ,Login
+auth.login.submit,登入 ,登录 ,Sign in
+auth.login.success,登入成功 ,登录成功 ,Login success
+auth.register.title,註冊 ,注册 ,Register
+auth.register.submit,註冊 ,注册 ,Sign up
+auth.register.mismatch,兩次密碼不一致 ,两次密码不一致 ,Passwords do not match
+auth.email,電子郵件 ,电子邮件 ,Email
+auth.password,密碼 ,密码 ,Password
+auth.password.confirm,確認密碼 ,确认密码 ,Confirm password
+recharge.title,儲值 ,充值 ,Recharge
+recharge.account,帳戶 ID ,账户 ID ,Account ID
+recharge.amount,金額 ,金额 ,Amount
+recharge.memo,備註 ,备注 ,Memo
+recharge.submit,儲值 ,充值 ,Top up
+recharge.success,儲值成功 ,充值成功 ,Recharge success
