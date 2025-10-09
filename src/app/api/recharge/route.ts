@@ -7,9 +7,17 @@ export async function POST(req: Request) {
   const { env } = getRequestContext();
   const DB: D1Database = env.DB;
 
-  const { account_id, amount, memo } = await req.json().catch(() => ({}));
-  const n = Number(amount);
-  if (!account_id || !Number.isFinite(n) || n <= 0) {
+  const body = (await req.json().catch(() => ({}))) as Partial<{
+    account_id: unknown;
+    amount: unknown;
+    memo: unknown;
+  }>;
+  const accountId = typeof body.account_id === 'string' ? body.account_id : undefined;
+  const amountValue = typeof body.amount === 'number' ? body.amount : Number(body.amount);
+  const memo = typeof body.memo === 'string' ? body.memo : undefined;
+
+  const n = Number(amountValue);
+  if (!accountId || !Number.isFinite(n) || n <= 0) {
     return NextResponse.json({ ok:false, error:'bad request' }, { status: 400 });
   }
 
@@ -21,10 +29,10 @@ export async function POST(req: Request) {
     await DB.prepare(
       `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
        VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-    ).bind(lid, account_id, n, `recharge:${memo ?? ''}`, now).run();
+    ).bind(lid, accountId, n, `recharge:${memo ?? ''}`, now).run();
 
     await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
-      .bind(n, now, account_id).run();
+      .bind(n, now, accountId).run();
 
     await DB.exec('COMMIT');
     return NextResponse.json({ ok:true, amount:n, ledger_id: lid });
