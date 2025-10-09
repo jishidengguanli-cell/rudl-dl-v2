@@ -28,8 +28,9 @@ export async function POST(req: Request) {
 
     await DB.exec('COMMIT');
     return NextResponse.json({ ok:true, amount:n, ledger_id: lid });
-  } catch (e:any) {
+  } catch (error: unknown) {
     await DB.exec('ROLLBACK');
-    return NextResponse.json({ ok:false, error:String(e) }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ ok:false, error: message }, { status: 500 });
   }
 }

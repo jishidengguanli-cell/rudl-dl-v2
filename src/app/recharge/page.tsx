@@ -26,8 +26,9 @@ export default function RechargePage() {
       } else {
         setOut(j.error ?? 'Recharge failed');
       }
-    } catch (e: any) {
-      setOut(String(e?.message ?? e));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOut(message);
     }
   };
 

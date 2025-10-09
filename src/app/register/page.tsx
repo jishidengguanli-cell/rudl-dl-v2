@@ -31,8 +31,9 @@ export default function RegisterPage() {
       } else {
         setOut(j.error ?? 'Register failed');
       }
-    } catch (e: any) {
-      setOut(String(e?.message ?? e));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOut(message);
     }
   };
 

@@ -27,8 +27,9 @@ export default function LoginPage() {
       } else {
         setOut(j.error ?? 'Login failed');
       }
-    } catch (e: any) {
-      setOut(String(e?.message ?? e));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOut(message);
     }
   };
 
