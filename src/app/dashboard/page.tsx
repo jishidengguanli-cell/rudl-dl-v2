@@ -1,49 +1,16 @@
-import { getRequestContext } from '@cloudflare/next-on-pages';
 import { cookies } from 'next/headers';
 import { getT } from '@/i18n/provider';
 import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
 
-type LinkRow = {
-  id: string;
-  code: string;
-  title: string | null;
-  is_active: number;
-  platform: string | null;
-  created_at: number | null;
-};
-type Env = {
-  DB: D1Database;
-  ['rudl-app']?: D1Database;
-};
-
 export default async function Dashboard() {
   const cookieStore = await cookies();
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
-
-  let rows: LinkRow[] = [];
-  let dbError: string | null = null;
-
-  try {
-    const { env } = getRequestContext<Env>();
-    const legacyDB = (env as unknown as { ['rudl-app']?: D1Database })['rudl-app'];
-    const DB = env?.DB ?? legacyDB;
-
-    if (!DB) {
-      dbError = 'D1 binding DB is missing';
-    } else {
-      const queryResult = await DB.prepare(
-        `SELECT id, code, title, is_active, platform, created_at
-         FROM links ORDER BY created_at DESC LIMIT 50`
-      ).all<LinkRow>();
-      rows = queryResult.results ?? [];
-    }
-  } catch (error: unknown) {
-    dbError = error instanceof Error ? error.message : String(error);
-  }
+  const dbError = 'D1 database not connected in this environment.';
+  const rows: never[] = [];
 
   return (
     <div className="rounded-lg border bg-white p-4">
