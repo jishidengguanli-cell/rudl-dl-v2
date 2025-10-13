@@ -4,13 +4,22 @@ import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
 
+type LinkRow = {
+  id: string;
+  code: string;
+  title: string | null;
+  is_active: number;
+  platform: string | null;
+  created_at: number | null;
+};
+
 export default async function Dashboard() {
   const cookieStore = await cookies();
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);
   const dbError = 'D1 database not connected in this environment.';
-  const rows: never[] = [];
+  const rows: LinkRow[] = [];
 
   return (
     <div className="rounded-lg border bg-white p-4">
