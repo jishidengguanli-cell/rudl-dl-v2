@@ -5,9 +5,18 @@ import { hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
+
 export async function POST(req: Request) {
   const { env } = getRequestContext();
-  const DB: D1Database = env.DB;
+  const bindings = env as Env;
+  const DB = bindings.DB ?? bindings['rudl-app'];
+  if (!DB) {
+    return NextResponse.json({ ok: false, error: 'D1 binding DB is missing' }, { status: 500 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as Partial<{ email: unknown; password: unknown }>;
   const email = typeof body.email === 'string' ? body.email : undefined;

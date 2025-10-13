@@ -2,7 +2,8 @@ import type { D1Database } from '@cloudflare/workers-types';
 
 let flagsStore: { hasUsersBalance?: boolean } | undefined;
 
-export async function hasUsersBalanceColumn(DB: D1Database): Promise<boolean> {
+export async function hasUsersBalanceColumn(DB?: D1Database): Promise<boolean> {
+  if (!DB) return false;
   if (!flagsStore) {
     flagsStore = {};
   }
