@@ -18,9 +18,12 @@ export default async function Dashboard() {
   const cookieStore = await cookies();
   const uid = cookieStore.get('uid')?.value;
   if (!uid) {
-    const nextPath = '/dashboard';
+    const c = cookieStore.get('locale')?.value as Locale | undefined;
+    const curLocale = c && dictionaries[c] ? c : DEFAULT_LOCALE;
+    const localePrefix = `/${curLocale}`;
+    const nextPath = `${localePrefix}/dashboard`;
     const qs = new URLSearchParams({ next: nextPath, reason: 'auth' });
-    redirect(`/login?${qs.toString()}`);
+    redirect(`${localePrefix}/login?${qs.toString()}`);
   }
 
   const c = cookieStore.get('locale')?.value as Locale | undefined;

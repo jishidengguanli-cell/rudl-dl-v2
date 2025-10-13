@@ -24,20 +24,37 @@ export default function LangNav() {
     }
   };
 
+  const localePrefix = (() => {
+    switch (locale) {
+      case 'en':
+        return '/en';
+      case 'zh-CN':
+        return '/zh-CN';
+      case 'zh-TW':
+      default:
+        return '/zh-TW';
+    }
+  })();
+  const resolveHref = (path: string) => {
+    if (path === '/') return localePrefix;
+    if (path.startsWith('/')) return `${localePrefix}${path}`;
+    return `${localePrefix}/${path}`;
+  };
+
   return (
     <header className="mb-6 flex items-center justify-between">
       <h1 className="text-xl font-semibold">{t('app.name')}</h1>
       <nav className="space-x-4 text-sm">
-        <Link className="underline" href="/">
+        <Link className="underline" href={resolveHref('/')}>
           {t('nav.home')}
         </Link>
-        <Link className="underline" href="/dashboard">
+        <Link className="underline" href={resolveHref('/dashboard')}>
           {t('nav.dashboard')}
         </Link>
-        <Link className="underline" href="/playground/bill">
+        <Link className="underline" href={resolveHref('/playground/bill')}>
           {t('nav.bill')}
         </Link>
-        <Link className="underline" href="/login">
+        <Link className="underline" href={resolveHref('/login')}>
           {t('nav.login')}
         </Link>
         <select

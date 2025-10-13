@@ -2,18 +2,30 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
+
+const SUPPORTED_LOCALES = new Set(['zh-TW', 'en', 'zh-CN']);
 
 export default function RegisterPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const localePrefix = useMemo(() => {
+    if (!pathname) return '';
+    const [firstSegment] = pathname.split('/').filter(Boolean);
+    return firstSegment && SUPPORTED_LOCALES.has(firstSegment) ? `/${firstSegment}` : '';
+  }, [pathname]);
   const nextRaw = searchParams.get('next');
+  const defaultNext = localePrefix ? `${localePrefix}/dashboard` : '/dashboard';
   const nextPath = useMemo(() => {
-    if (!nextRaw) return '/dashboard';
-    return nextRaw.startsWith('/') ? nextRaw : '/dashboard';
-  }, [nextRaw]);
+    if (!nextRaw) return defaultNext;
+    if (!nextRaw.startsWith('/')) return defaultNext;
+    if (!localePrefix) return nextRaw;
+    if (nextRaw === localePrefix || nextRaw.startsWith(`${localePrefix}/`)) return nextRaw;
+    return `${localePrefix}${nextRaw}`;
+  }, [defaultNext, localePrefix, nextRaw]);
 
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -39,7 +51,8 @@ export default function RegisterPage() {
         if (payload.ok) {
           setOut(t('auth.register.success') ?? 'Registered');
           const params = new URLSearchParams({ next: nextPath, reason: 'registered' });
-          location.href = `/login?${params.toString()}`;
+          const base = localePrefix || '';
+          location.href = `${base}/login?${params.toString()}`;
           return;
         }
         const message = typeof payload.error === 'string' ? payload.error : 'Register failed';
@@ -75,7 +88,7 @@ export default function RegisterPage() {
       </form>
       {out && <pre className="rounded bg-gray-100 p-3 text-xs whitespace-pre-wrap">{out}</pre>}
       <p className="text-sm text-gray-600">
-        <Link className="text-blue-600 underline" href={`/login?next=${encodeURIComponent(nextPath)}`}>
+        <Link className="text-blue-600 underline" href={`${localePrefix || ''}/login?next=${encodeURIComponent(nextPath)}`}>
           {t('auth.login.title') ?? 'Login'}
         </Link>
       </p>

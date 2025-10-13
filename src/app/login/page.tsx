@@ -2,19 +2,31 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
+
+const SUPPORTED_LOCALES = new Set(['zh-TW', 'en', 'zh-CN']);
 
 export default function LoginPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const localePrefix = useMemo(() => {
+    if (!pathname) return '';
+    const [firstSegment] = pathname.split('/').filter(Boolean);
+    return firstSegment && SUPPORTED_LOCALES.has(firstSegment) ? `/${firstSegment}` : '';
+  }, [pathname]);
   const nextRaw = searchParams.get('next');
   const reason = searchParams.get('reason');
+  const defaultNext = localePrefix ? `${localePrefix}/dashboard` : '/dashboard';
   const nextPath = useMemo(() => {
-    if (!nextRaw) return '/dashboard';
-    return nextRaw.startsWith('/') ? nextRaw : '/dashboard';
-  }, [nextRaw]);
+    if (!nextRaw) return defaultNext;
+    if (!nextRaw.startsWith('/')) return defaultNext;
+    if (!localePrefix) return nextRaw;
+    if (nextRaw === localePrefix || nextRaw.startsWith(`${localePrefix}/`)) return nextRaw;
+    return `${localePrefix}${nextRaw}`;
+  }, [defaultNext, localePrefix, nextRaw]);
 
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -62,8 +74,9 @@ export default function LoginPage() {
     const params = new URLSearchParams();
     if (nextPath) params.set('next', nextPath);
     const qs = params.toString();
-    return qs ? `/register?${qs}` : '/register';
-  }, [nextPath]);
+    const base = localePrefix || '';
+    return qs ? `${base}/register?${qs}` : `${base}/register`;
+  }, [localePrefix, nextPath]);
 
   return (
     <div className="mx-auto max-w-md rounded-lg border bg-white p-6 space-y-4">
