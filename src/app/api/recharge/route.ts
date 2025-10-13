@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 
@@ -25,12 +26,44 @@ export async function POST(req: Request) {
   const lid = crypto.randomUUID();
 
   try {
+    const hasBalance = await hasUsersBalanceColumn(DB);
     await DB.exec('BEGIN');
 
-    const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
+    if (hasBalance) {
+      const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
+        .bind(accountId)
+        .first<{ balance: number }>();
+      if (!current) {
+        await DB.exec('ROLLBACK');
+        return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
+      }
+
+      await DB.prepare(
+        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
+      )
+        .bind(lid, accountId, n, `recharge:${memo ?? ''}`, now)
+        .run();
+
+      await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
+        .bind(n, accountId)
+        .run();
+
+      await DB.exec('COMMIT');
+
+      const baseBalance = Number(current.balance ?? 0);
+      return NextResponse.json({
+        ok: true,
+        amount: n,
+        balance: baseBalance + n,
+        ledger_id: lid,
+      });
+    }
+
+    const currentLegacy = await DB.prepare('SELECT balance FROM point_accounts WHERE id=? LIMIT 1')
       .bind(accountId)
       .first<{ balance: number }>();
-    if (!current) {
+    if (!currentLegacy) {
       await DB.exec('ROLLBACK');
       return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
     }
@@ -42,17 +75,16 @@ export async function POST(req: Request) {
       .bind(lid, accountId, n, `recharge:${memo ?? ''}`, now)
       .run();
 
-    await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
-      .bind(n, accountId)
+    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
+      .bind(n, now, accountId)
       .run();
 
     await DB.exec('COMMIT');
 
-    const baseBalance = Number(current.balance ?? 0);
     return NextResponse.json({
       ok: true,
       amount: n,
-      balance: baseBalance + n,
+      balance: Number(currentLegacy.balance ?? 0) + n,
       ledger_id: lid,
     });
   } catch (error: unknown) {

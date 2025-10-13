@@ -45,8 +45,19 @@ export default function RegisterPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password: pw }),
       });
-      const json: unknown = await r.json();
-      if (typeof json === 'object' && json !== null && 'ok' in json && typeof (json as { ok: unknown }).ok === 'boolean') {
+      const contentType = r.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const text = await r.text();
+        setOut(text || 'Unexpected response');
+        return;
+      }
+      const json: unknown = await r.json().catch(() => null);
+      if (
+        typeof json === 'object' &&
+        json !== null &&
+        'ok' in json &&
+        typeof (json as { ok: unknown }).ok === 'boolean'
+      ) {
         const payload = json as { ok: boolean; error?: unknown };
         if (payload.ok) {
           setOut(t('auth.register.success') ?? 'Registered');
@@ -67,28 +78,52 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md rounded-lg border bg-white p-6 space-y-4">
-      <h2 className="text-lg font-medium">{t('auth.register.title') ?? 'Register'}</h2>
+    <div className="mx-auto w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-6 text-white shadow-lg shadow-black/40 space-y-4">
+      <h2 className="text-lg font-medium text-white">{t('auth.register.title') ?? 'Register'}</h2>
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.email') ?? 'Email'}</div>
-          <input className="w-full rounded border px-2 py-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="w-full rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-white placeholder-neutral-400"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </label>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.password') ?? 'Password'}</div>
-          <input className="w-full rounded border px-2 py-1" type="password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={6} />
+          <input
+            className="w-full rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-white placeholder-neutral-400"
+            type="password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            required
+            minLength={6}
+          />
         </label>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.password.confirm') ?? 'Confirm password'}</div>
-          <input className="w-full rounded border px-2 py-1" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={6} />
+          <input
+            className="w-full rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-white placeholder-neutral-400"
+            type="password"
+            value={pw2}
+            onChange={(e) => setPw2(e.target.value)}
+            required
+            minLength={6}
+          />
         </label>
-        <button className="rounded bg-black px-3 py-1 text-white" type="submit">
+        <button className="w-full rounded bg-white px-3 py-1 font-medium text-black transition hover:bg-neutral-200" type="submit">
           {t('auth.register.submit') ?? 'Sign up'}
         </button>
       </form>
-      {out && <pre className="rounded bg-gray-100 p-3 text-xs whitespace-pre-wrap">{out}</pre>}
-      <p className="text-sm text-gray-600">
-        <Link className="text-blue-600 underline" href={`${localePrefix || ''}/login?next=${encodeURIComponent(nextPath)}`}>
+      {out && (
+        <pre className="rounded bg-neutral-800 p-3 text-xs text-neutral-100 whitespace-pre-wrap border border-neutral-700">
+          {out}
+        </pre>
+      )}
+      <p className="text-sm text-neutral-300">
+        <Link className="text-blue-300 underline" href={`${localePrefix || ''}/login?next=${encodeURIComponent(nextPath)}`}>
           {t('auth.login.title') ?? 'Login'}
         </Link>
       </p>

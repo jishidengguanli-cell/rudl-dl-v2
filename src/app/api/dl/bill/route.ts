@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
   const cost = platform === 'ipa' ? 5 : 3;
 
   try {
+    const hasBalance = await hasUsersBalanceColumn(DB);
     await DB.exec('BEGIN');
 
     const exists = await DB.prepare(
@@ -42,9 +44,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, deduped: true });
     }
 
-    const acct = await DB.prepare(
-      `SELECT balance FROM users WHERE id=? LIMIT 1`
-    ).bind(account_id).first<{ balance: number }>();
+    const balanceQuery = hasBalance
+      ? 'SELECT balance FROM users WHERE id=? LIMIT 1'
+      : 'SELECT balance FROM point_accounts WHERE id=? LIMIT 1';
+
+    const acct = await DB.prepare(balanceQuery).bind(account_id).first<{ balance: number }>();
     if (!acct) {
       await DB.exec('ROLLBACK');
       return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
@@ -61,9 +65,13 @@ export async function POST(req: Request) {
        VALUES (?, ?, ?, 'download', ?, NULL, ?, ?, ?)`
     ).bind(id, account_id, -cost, link_id, bucket_minute, platform, now).run();
 
-    await DB.prepare(
-      `UPDATE users SET balance = balance - ? WHERE id=?`
-    ).bind(cost, account_id).run();
+    if (hasBalance) {
+      await DB.prepare(`UPDATE users SET balance = balance - ? WHERE id=?`).bind(cost, account_id).run();
+    } else {
+      await DB.prepare(`UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`)
+        .bind(cost, now, account_id)
+        .run();
+    }
 
     await DB.prepare(
       `INSERT INTO point_dedupe (account_id, link_id, bucket_minute, platform) VALUES (?, ?, ?, ?)`
