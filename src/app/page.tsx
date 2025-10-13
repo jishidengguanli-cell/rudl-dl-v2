@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { getT } from '@/i18n/provider';
+import { getTranslator } from '@/i18n/helpers';
 import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
@@ -8,7 +8,7 @@ export default async function Page() {
   const cookieStore = await cookies();
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
-  const t = getT(cur);
+  const t = getTranslator(cur);
   const linksCount = null;
 
   return (

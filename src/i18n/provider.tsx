@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { DEFAULT_LOCALE, dictionaries, type Locale } from './dictionary';
+import { DEFAULT_LOCALE, type Locale } from './dictionary';
+import { createTranslator, isLocale } from './helpers';
 
 type Ctx = {
   locale: Locale;
@@ -11,7 +12,6 @@ type Ctx = {
 
 const I18nCtx = createContext<Ctx | null>(null);
 const LS_KEY = 'locale';
-const isLocale = (value: string): value is Locale => value in dictionaries;
 
 export function I18nProvider({
   children,
@@ -25,7 +25,7 @@ export function I18nProvider({
   // Prefer the persisted locale on the client when available
   useEffect(() => {
     const saved = (typeof window !== 'undefined' && localStorage.getItem(LS_KEY)) as Locale | null;
-    if (saved && dictionaries[saved]) setLocaleState(saved);
+    if (saved && isLocale(saved)) setLocaleState(saved);
   }, []);
 
   const setLocale = (l: Locale) => {
@@ -36,10 +36,7 @@ export function I18nProvider({
     }
   };
 
-  const t = useMemo(() => {
-    const dict = dictionaries[locale] ?? {};
-    return (key: string) => dict[key] ?? key;
-  }, [locale]);
+  const t = useMemo(() => createTranslator(locale), [locale]);
 
   const value = useMemo(() => ({ locale, setLocale, t }), [locale, t]);
   return <I18nCtx.Provider value={value}>{children}</I18nCtx.Provider>;
@@ -49,11 +46,4 @@ export function useI18n() {
   const ctx = useContext(I18nCtx);
   if (!ctx) throw new Error('useI18n must be used within I18nProvider');
   return ctx;
-}
-
-// Server components helper: read dictionary by locale stored in cookies
-export function getT(locale: string | undefined) {
-  const resolved: Locale = locale && isLocale(locale) ? locale : DEFAULT_LOCALE;
-  const dict = dictionaries[resolved];
-  return (key: string) => dict[key] ?? key;
 }
