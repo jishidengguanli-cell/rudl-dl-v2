@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { getT } from '@/i18n/provider';
 import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 
@@ -15,6 +16,13 @@ type LinkRow = {
 
 export default async function Dashboard() {
   const cookieStore = await cookies();
+  const uid = cookieStore.get('uid')?.value;
+  if (!uid) {
+    const nextPath = '/dashboard';
+    const qs = new URLSearchParams({ next: nextPath, reason: 'auth' });
+    redirect(`/login?${qs.toString()}`);
+  }
+
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getT(cur);

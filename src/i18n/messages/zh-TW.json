@@ -1,12 +1,17 @@
 {
   "app.title": "DataruApp V2",
   "nav.home": "首頁",
-  "nav.dashboard": "控制台",
+  "nav.dashboard": "儀表板",
   "nav.billTest": "扣點測試",
+  "nav.login": "登入",
   "home.heading": "歡迎回來！",
-  "home.desc": "這是多語系範例。當前語系：{lang}。",
-  "dashboard.title": "連結列表",
+  "home.desc": "這是多語系示範。當前語系：{lang}。",
+  "dashboard.title": "連結",
   "bill.title": "扣點測試",
   "bill.submit": "送出",
-  "download.button": "下載"
+  "download.button": "下載",
+  "auth.login.required": "請先登入",
+  "auth.login.registerCta": "還沒有帳號嗎？",
+  "auth.login.registerLink": "立即註冊",
+  "auth.register.success": "註冊成功"
 }

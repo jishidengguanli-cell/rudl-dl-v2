@@ -37,6 +37,9 @@ export default function LangNav() {
         <Link className="underline" href="/playground/bill">
           {t('nav.bill')}
         </Link>
+        <Link className="underline" href="/login">
+          {t('nav.login')}
+        </Link>
         <select
           className="ml-3 rounded border px-2 py-1"
           value={locale}

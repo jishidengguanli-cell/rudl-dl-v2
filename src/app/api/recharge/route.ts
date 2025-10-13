@@ -18,27 +18,46 @@ export async function POST(req: Request) {
 
   const n = Number(amountValue);
   if (!accountId || !Number.isFinite(n) || n <= 0) {
-    return NextResponse.json({ ok:false, error:'bad request' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'bad request' }, { status: 400 });
   }
 
-  const now = Math.floor(Date.now()/1000);
+  const now = Math.floor(Date.now() / 1000);
   const lid = crypto.randomUUID();
 
   try {
     await DB.exec('BEGIN');
+
+    const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
+      .bind(accountId)
+      .first<{ balance: number }>();
+    if (!current) {
+      await DB.exec('ROLLBACK');
+      return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
+    }
+
     await DB.prepare(
       `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
        VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-    ).bind(lid, accountId, n, `recharge:${memo ?? ''}`, now).run();
+    )
+      .bind(lid, accountId, n, `recharge:${memo ?? ''}`, now)
+      .run();
 
-    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
-      .bind(n, now, accountId).run();
+    await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
+      .bind(n, accountId)
+      .run();
 
     await DB.exec('COMMIT');
-    return NextResponse.json({ ok:true, amount:n, ledger_id: lid });
+
+    const baseBalance = Number(current.balance ?? 0);
+    return NextResponse.json({
+      ok: true,
+      amount: n,
+      balance: baseBalance + n,
+      ledger_id: lid,
+    });
   } catch (error: unknown) {
     await DB.exec('ROLLBACK');
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ ok:false, error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

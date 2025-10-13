@@ -18,9 +18,23 @@ export function randomSaltHex(len = 16) {
   return bytesToHex(b);
 }
 
+export function encodePasswordRecord(saltHex: string, hashHex: string) {
+  return `${saltHex}:${hashHex}`;
+}
+
+export function decodePasswordRecord(record: string): { saltHex: string | null; hashHex: string } | null {
+  if (!record) return null;
+  const [first, second] = record.split(':');
+  if (second === undefined) {
+    return first ? { saltHex: null, hashHex: first } : null;
+  }
+  if (!first || !second) return null;
+  return { saltHex: first, hashHex: second };
+}
+
 function hexToBytes(hex: string) {
   const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i*2, 2), 16);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
   return arr;
 }
 function bytesToHex(b: Uint8Array) {

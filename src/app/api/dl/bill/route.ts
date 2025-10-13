@@ -43,9 +43,13 @@ export async function POST(req: Request) {
     }
 
     const acct = await DB.prepare(
-      `SELECT balance FROM point_accounts WHERE id=? LIMIT 1`
+      `SELECT balance FROM users WHERE id=? LIMIT 1`
     ).bind(account_id).first<{ balance: number }>();
-    const bal = Number(acct?.balance ?? 0);
+    if (!acct) {
+      await DB.exec('ROLLBACK');
+      return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
+    }
+    const bal = Number(acct.balance ?? 0);
     if (bal < cost) {
       await DB.exec('ROLLBACK');
       return NextResponse.json({ ok: false, error: 'INSUFFICIENT_POINTS' }, { status: 402 });
@@ -58,8 +62,8 @@ export async function POST(req: Request) {
     ).bind(id, account_id, -cost, link_id, bucket_minute, platform, now).run();
 
     await DB.prepare(
-      `UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`
-    ).bind(cost, now, account_id).run();
+      `UPDATE users SET balance = balance - ? WHERE id=?`
+    ).bind(cost, account_id).run();
 
     await DB.prepare(
       `INSERT INTO point_dedupe (account_id, link_id, bucket_minute, platform) VALUES (?, ?, ?, ?)`

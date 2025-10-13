@@ -3,10 +3,15 @@
   "nav.home": "Home",
   "nav.dashboard": "Dashboard",
   "nav.billTest": "Bill Test",
+  "nav.login": "Login",
   "home.heading": "Welcome back!",
   "home.desc": "This is the i18n demo. Current locale: {lang}.",
   "dashboard.title": "Links",
   "bill.title": "Bill Playground",
   "bill.submit": "Submit",
-  "download.button": "Download"
+  "download.button": "Download",
+  "auth.login.required": "Please sign in first",
+  "auth.login.registerCta": "Need an account?",
+  "auth.login.registerLink": "Create one",
+  "auth.register.success": "Registered successfully"
 }

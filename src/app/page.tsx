@@ -13,6 +13,10 @@ export default async function Page() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">{t('home.title')}</h1>
+        <p className="mt-1 text-sm text-gray-600">{t('home.desc')}</p>
+      </div>
       <div className="rounded-lg border bg-white p-4">
         <h2 className="mb-2 text-lg font-medium">{t('env.check')}</h2>
         <ul className="list-disc pl-6 text-sm">
@@ -32,7 +36,6 @@ export default async function Page() {
           </li>
         </ul>
       </div>
-      <p className="text-sm text-gray-600">{t('home.desc')}</p>
     </div>
   );
 }

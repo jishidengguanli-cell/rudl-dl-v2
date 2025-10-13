@@ -1,11 +1,20 @@
 'use client';
 export const runtime = 'edge';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 
 export default function RegisterPage() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
+  const nextRaw = searchParams.get('next');
+  const nextPath = useMemo(() => {
+    if (!nextRaw) return '/dashboard';
+    return nextRaw.startsWith('/') ? nextRaw : '/dashboard';
+  }, [nextRaw]);
+
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
@@ -29,7 +38,8 @@ export default function RegisterPage() {
         const payload = json as { ok: boolean; error?: unknown };
         if (payload.ok) {
           setOut(t('auth.register.success') ?? 'Registered');
-          location.href = '/login';
+          const params = new URLSearchParams({ next: nextPath, reason: 'registered' });
+          location.href = `/login?${params.toString()}`;
           return;
         }
         const message = typeof payload.error === 'string' ? payload.error : 'Register failed';
@@ -49,21 +59,26 @@ export default function RegisterPage() {
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.email') ?? 'Email'}</div>
-          <input className="w-full rounded border px-2 py-1" type="email" value={email} onChange={e=>setEmail(e.target.value)} required />
+          <input className="w-full rounded border px-2 py-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.password') ?? 'Password'}</div>
-          <input className="w-full rounded border px-2 py-1" type="password" value={pw} onChange={e=>setPw(e.target.value)} required minLength={6} />
+          <input className="w-full rounded border px-2 py-1" type="password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={6} />
         </label>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.password.confirm') ?? 'Confirm password'}</div>
-          <input className="w-full rounded border px-2 py-1" type="password" value={pw2} onChange={e=>setPw2(e.target.value)} required minLength={6} />
+          <input className="w-full rounded border px-2 py-1" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={6} />
         </label>
         <button className="rounded bg-black px-3 py-1 text-white" type="submit">
           {t('auth.register.submit') ?? 'Sign up'}
         </button>
       </form>
       {out && <pre className="rounded bg-gray-100 p-3 text-xs whitespace-pre-wrap">{out}</pre>}
+      <p className="text-sm text-gray-600">
+        <Link className="text-blue-600 underline" href={`/login?next=${encodeURIComponent(nextPath)}`}>
+          {t('auth.login.title') ?? 'Login'}
+        </Link>
+      </p>
     </div>
   );
 }
