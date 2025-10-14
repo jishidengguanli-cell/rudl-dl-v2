@@ -1,3 +1,5 @@
+const PBKDF2_ITERATIONS = 100_000; // Cloudflare Workers currently caps iterations at 100k
+
 export async function hashPassword(password: string, saltHex: string) {
   const enc = new TextEncoder();
   const salt = hexToBytes(saltHex);
@@ -5,7 +7,7 @@ export async function hashPassword(password: string, saltHex: string) {
     'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 120_000 },
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PBKDF2_ITERATIONS },
     keyMaterial,
     256
   );
