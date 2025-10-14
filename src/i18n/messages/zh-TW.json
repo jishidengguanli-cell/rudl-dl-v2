@@ -1,4 +1,4 @@
-{
+﻿{
   "app.title": "DataruApp V2",
   "nav.home": "首頁",
   "nav.dashboard": "儀表板",
@@ -13,5 +13,7 @@
   "auth.login.required": "請先登入",
   "auth.login.registerCta": "還沒有帳號嗎？",
   "auth.login.registerLink": "立即註冊",
-  "auth.register.success": "註冊成功"
+  "auth.register.success": "註冊成功",
+  "status.empty": "分發列表是空的"
 }
+

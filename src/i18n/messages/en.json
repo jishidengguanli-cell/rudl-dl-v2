@@ -1,4 +1,4 @@
-{
+﻿{
   "app.title": "DataruApp V2",
   "nav.home": "Home",
   "nav.dashboard": "Dashboard",
@@ -13,5 +13,7 @@
   "auth.login.required": "Please sign in first",
   "auth.login.registerCta": "Need an account?",
   "auth.login.registerLink": "Create one",
-  "auth.register.success": "Registered successfully"
+  "auth.register.success": "Registered successfully",
+  "status.empty": "Distribution list is empty."
 }
+

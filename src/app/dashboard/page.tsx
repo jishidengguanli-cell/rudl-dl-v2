@@ -47,9 +47,12 @@ export default async function Dashboard() {
     const result = await DB.prepare(
       `SELECT id, code, title, is_active, platform, created_at
        FROM links
+       WHERE owner_id = ?
        ORDER BY created_at DESC
        LIMIT 50`
-    ).all<LinkRow>();
+    )
+      .bind(uid)
+      .all<LinkRow>();
 
     rows = result.results ?? [];
   } catch (error: unknown) {
