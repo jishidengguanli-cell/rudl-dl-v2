@@ -1,19 +1,13 @@
-import { cookies } from 'next/headers';
+﻿import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getTranslator } from '@/i18n/helpers';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
+import DashboardClient from './DashboardClient';
+import { fetchDashboardPage } from '@/lib/dashboard';
 
 export const runtime = 'edge';
 
-type LinkRow = {
-  id: string;
-  code: string;
-  title: string | null;
-  is_active: number;
-  platform: string | null;
-  created_at: number | null;
-};
+const PAGE_SIZE = 10;
 
 type Env = {
   DB?: D1Database;
@@ -32,80 +26,18 @@ export default async function Dashboard() {
     redirect(`${localePrefix}/login?${qs.toString()}`);
   }
 
-  const c = cookieStore.get('locale')?.value as Locale | undefined;
-  const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
-  const t = getTranslator(cur);
-  let rows: LinkRow[] = [];
-  let dbError: string | null = null;
-
-  try {
-    const { env } = getRequestContext();
-    const bindings = env as Env;
-    const DB = bindings.DB ?? bindings['rudl-app'];
-    if (!DB) throw new Error('D1 binding DB is missing');
-
-    const result = await DB.prepare(
-      `SELECT id, code, title, is_active, platform, created_at
-       FROM links
-       WHERE owner_id = ?
-       ORDER BY created_at DESC
-       LIMIT 50`
-    )
-      .bind(uid)
-      .all<LinkRow>();
-
-    rows = result.results ?? [];
-  } catch (error: unknown) {
-    dbError = error instanceof Error ? error.message : String(error);
+  const { env } = getRequestContext();
+  const bindings = env as Env;
+  const DB = bindings.DB ?? bindings['rudl-app'];
+  if (!DB) {
+    throw new Error('D1 binding DB is missing');
   }
 
+  const initialData = await fetchDashboardPage(DB, uid!, 1, PAGE_SIZE);
+
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <h2 className="mb-3 text-lg font-medium">{t('dashboard.title')}</h2>
-      {dbError && (
-        <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {t('status.unreadable')}: {dbError}
-        </p>
-      )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2 pr-4">{t('table.code')}</th>
-              <th className="py-2 pr-4">{t('table.title')}</th>
-              <th className="py-2 pr-4">{t('table.platform')}</th>
-              <th className="py-2 pr-4">{t('table.active')}</th>
-              <th className="py-2 pr-4">{t('table.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-b last:border-none">
-                <td className="py-2 pr-4 font-mono">{r.code}</td>
-                <td className="py-2 pr-4">{r.title ?? '-'}</td>
-                <td className="py-2 pr-4">{r.platform ?? '-'}</td>
-                <td className="py-2 pr-4">{r.is_active ? 'YES' : 'NO'}</td>
-                <td className="py-2 pr-4">
-                  <a
-                    className="text-blue-600 underline"
-                    href={`/dl/${r.code}`}
-                    target="_blank"
-                  >
-                    {t('action.download')}
-                  </a>
-                </td>
-              </tr>
-            ))}
-            {!rows.length && (
-              <tr>
-                <td className="py-4 text-gray-500" colSpan={5}>
-                  {t('status.empty')}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="space-y-4">
+      <DashboardClient initialData={initialData} />
     </div>
   );
 }
