@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getTranslator } from '@/i18n/helpers';
+import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, type Locale, dictionaries } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
@@ -12,6 +13,11 @@ type LinkRow = {
   is_active: number;
   platform: string | null;
   created_at: number | null;
+};
+
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
 };
 
 export default async function Dashboard() {
@@ -29,8 +35,26 @@ export default async function Dashboard() {
   const c = cookieStore.get('locale')?.value as Locale | undefined;
   const cur = c && dictionaries[c] ? c : DEFAULT_LOCALE;
   const t = getTranslator(cur);
-  const dbError = 'D1 database not connected in this environment.';
-  const rows: LinkRow[] = [];
+  let rows: LinkRow[] = [];
+  let dbError: string | null = null;
+
+  try {
+    const { env } = getRequestContext();
+    const bindings = env as Env;
+    const DB = bindings.DB ?? bindings['rudl-app'];
+    if (!DB) throw new Error('D1 binding DB is missing');
+
+    const result = await DB.prepare(
+      `SELECT id, code, title, is_active, platform, created_at
+       FROM links
+       ORDER BY created_at DESC
+       LIMIT 50`
+    ).all<LinkRow>();
+
+    rows = result.results ?? [];
+  } catch (error: unknown) {
+    dbError = error instanceof Error ? error.message : String(error);
+  }
 
   return (
     <div className="rounded-lg border bg-white p-4">
