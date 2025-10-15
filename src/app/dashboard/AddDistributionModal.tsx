@@ -1,9 +1,10 @@
 'use client';
 
-import { Buffer } from 'buffer';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import JSZip from 'jszip';
 import plist from 'plist';
+import { parseBuffer as parseBinaryPlist } from 'bplist-parser';
+import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
 
 const DEFAULT_TITLE = 'APP';
@@ -25,6 +26,8 @@ type FileState = {
   file: File | null;
   metadata: FileMeta | null;
 };
+
+type UploadProgressMap = Record<Platform, number>;
 
 type SubmitState = 'idle' | 'submitting' | 'success';
 
@@ -132,17 +135,25 @@ function decodeUtf8Loose(input: Uint8Array): string {
 
 function tryParsePlistFromUint8(data: Uint8Array): Record<string, string> | null {
   if (!data.length) return null;
+  const header = decodeUtf8Loose(data.slice(0, 6));
+  const isBinary = header === 'bplist';
   try {
-    const asText = decodeUtf8Loose(data).trim();
-    if (asText.startsWith('<?xml') || asText.startsWith('<plist')) {
-      return plist.parse(asText) as Record<string, string>;
+    if (!isBinary) {
+      const asText = decodeUtf8Loose(data).trim();
+      if (asText.startsWith('<?xml') || asText.startsWith('<plist')) {
+        return plist.parse(asText) as Record<string, string>;
+      }
     }
   } catch (error) {
     console.warn('IPA metadata XML parse failed, falling back to binary plist', error);
   }
   try {
     const buffer = Buffer.from(data);
-    return plist.parse(buffer as unknown as string) as Record<string, string>;
+    const parsed = parseBinaryPlist(buffer);
+    if (Array.isArray(parsed)) {
+      return (parsed[0] ?? null) as Record<string, string> | null;
+    }
+    return parsed as unknown as Record<string, string>;
   } catch (error) {
     console.warn('IPA metadata binary parse failed', error);
     return null;
@@ -192,6 +203,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressMap>({ apk: 0, ipa: 0 });
 
   useEffect(() => {
     if (!open) {
@@ -204,6 +216,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       setIpaState({ file: null, metadata: null });
       setSubmitState('idle');
       setError(null);
+      setUploadProgress({ apk: 0, ipa: 0 });
     }
   }, [open]);
 
@@ -213,6 +226,14 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     if (ipaState.file) list.push('ipa');
     return list;
   }, [apkState.file, ipaState.file]);
+
+  const updateProgress = (platform: Platform, value: number) => {
+    setUploadProgress((prev) => {
+      const next = Math.max(0, Math.min(1, value));
+      if (prev[platform] === next) return prev;
+      return { ...prev, [platform]: next };
+    });
+  };
 
   if (!open) return null;
 
@@ -254,16 +275,16 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     if (!file) return;
 
     try {
-    const metadata =
-      platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
-    const normalized = normalizeMeta(metadata);
-    setter({ file, metadata: normalized });
-    applyMetadataToFields(platform, normalized);
-    setError(null);
-  } catch (err) {
-    console.warn(`Failed to process ${platform} file`, err);
-  }
-};
+      const metadata =
+        platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
+      const normalized = normalizeMeta(metadata);
+      setter({ file, metadata: normalized });
+      applyMetadataToFields(platform, normalized);
+      setError(null);
+    } catch (err) {
+      console.warn(`Failed to process ${platform} file`, err);
+    }
+  };
 
   const handleAutofillToggle = (next: boolean) => {
     setAutofill(next);
@@ -297,9 +318,13 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       return;
     }
 
+    const platformUploadOrder: Platform[] = [];
+    const sizeByPlatform: UploadProgressMap = { apk: 0, ipa: 0 };
+
     try {
       setSubmitState('submitting');
       setError(null);
+      setUploadProgress({ apk: 0, ipa: 0 });
       const formData = new FormData();
       formData.append('title', title.trim());
       formData.append('bundle_id', bundleId.trim());
@@ -309,6 +334,9 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
       const appendFile = async (platform: Platform, state: FileState) => {
         if (!state.file) return;
+        platformUploadOrder.push(platform);
+        sizeByPlatform[platform] = state.file.size;
+        updateProgress(platform, 0);
         formData.append(platform, state.file, state.file.name);
 
         const meta: FileMeta = { ...state.metadata };
@@ -327,11 +355,65 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       await appendFile('apk', apkState);
       await appendFile('ipa', ipaState);
 
-      const response = await fetch('/api/distributions', { method: 'POST', body: formData });
-      const json = (await response.json()) as { ok: boolean; error?: string };
+      const totalBytes = platformUploadOrder.reduce(
+        (sum, platform) => sum + (sizeByPlatform[platform] ?? 0),
+        0
+      );
+
+      const json = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/distributions');
+        xhr.responseType = 'text';
+        xhr.onload = () => {
+          const text = xhr.responseText ?? '';
+          let payload: { ok: boolean; error?: string } = { ok: false };
+          try {
+            payload = text ? (JSON.parse(text) as typeof payload) : { ok: xhr.status < 400 };
+          } catch {
+            reject(new Error('INVALID_RESPONSE'));
+            return;
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(payload);
+          } else {
+            reject(new Error(resolveErrorMessage(payload.error ?? `HTTP_${xhr.status}`)));
+          }
+        };
+        xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
+        if (xhr.upload && platformUploadOrder.length) {
+          xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable || !totalBytes) {
+              platformUploadOrder.forEach((platform) => {
+                updateProgress(platform, event.total ? event.loaded / event.total : 0);
+              });
+              return;
+            }
+            let accumulated = 0;
+            platformUploadOrder.forEach((platform, index) => {
+              const size = sizeByPlatform[platform] ?? 0;
+              if (!size) {
+                updateProgress(platform, 1);
+                return;
+              }
+              const start = accumulated;
+              const end = start + size;
+              let loadedForFile = Math.min(Math.max(event.loaded - start, 0), size);
+              if (index === platformUploadOrder.length - 1 && event.loaded > totalBytes) {
+                loadedForFile = size;
+              }
+              updateProgress(platform, loadedForFile / size);
+              accumulated = end;
+            });
+          };
+        }
+        xhr.send(formData);
+      });
+
       if (!json.ok) {
         throw new Error(resolveErrorMessage(json.error));
       }
+
+      platformUploadOrder.forEach((platform) => updateProgress(platform, 1));
 
       setSubmitState('success');
       const maybePromise = onCreated();
@@ -343,26 +425,53 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       setError(message);
       setSubmitState('idle');
       onError(message);
+      platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
     }
   };
 
   const closeDisabled = submitState === 'submitting';
 
-  const summaries = [
-    { platform: 'apk' as const, state: apkState },
-    { platform: 'ipa' as const, state: ipaState },
-  ].filter((item) => item.state.file);
+const summaries = [
+  { platform: 'apk' as const, state: apkState },
+  { platform: 'ipa' as const, state: ipaState },
+].filter((item) => item.state.file);
 
-  const renderSummaryContent = () => {
-    if (submitState === 'submitting') {
-      return <p className="text-sm text-gray-600">{t('status.loading')}</p>;
-    }
-    if (submitState === 'success') {
-      return <p className="text-sm text-green-600">{t('dashboard.toastCreated')}</p>;
-    }
-    if (!summaries.length) {
-      return <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>;
-    }
+const renderSummaryContent = () => {
+  if (submitState === 'success') {
+    return <p className="text-sm text-green-600">{t('dashboard.toastCreated')}</p>;
+  }
+  if (submitState === 'submitting' && summaries.length) {
+    return (
+      <div className="space-y-3">
+        {summaries.map(({ platform, state }) => {
+          const progress = uploadProgress[platform] ?? 0;
+          const label =
+            state.metadata?.title ??
+            state.file?.name ??
+            `${platform.toUpperCase()} ${t('dashboard.progressPlaceholder')}`;
+          return (
+            <div key={platform}>
+              <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
+                <span className="font-medium text-gray-700">
+                  {platform.toUpperCase()} · {label}
+                </span>
+                <span>{Math.round(progress * 100)}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-gray-200">
+                <div
+                  className="h-full rounded-full bg-black transition-all"
+                  style={{ width: `${Math.max(0, Math.min(100, Math.round(progress * 100)))}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if (!summaries.length) {
+    return <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>;
+  }
     return (
       <ul className="space-y-1 text-xs text-gray-600">
         {summaries.map(({ platform, state }) => {
