@@ -27,20 +27,22 @@ export default function DashboardClient({ initialData }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data.total ?? 0) / data.pageSize)),
     [data.total, data.pageSize]
   );
 
-  const handlePageChange = async (nextPage: number) => {
-    if (nextPage === data.page || nextPage < 1 || nextPage > totalPages) return;
+  const fetchPage = async (pageNumber: number) => {
+    const safePage = Math.min(Math.max(pageNumber, 1), totalPages || 1);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/dashboard/links?page=${nextPage}&pageSize=${data.pageSize}`, {
-        cache: 'no-store',
-      });
+      const res = await fetch(
+        `/api/dashboard/links?page=${safePage}&pageSize=${data.pageSize}`,
+        { cache: 'no-store' }
+      );
       const json: { ok: boolean; error?: string } & DashboardPage = await res.json();
       if (!json.ok) {
         throw new Error(json.error ?? 'UNKNOWN_ERROR');
@@ -52,6 +54,23 @@ export default function DashboardClient({ initialData }: Props) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = async (nextPage: number) => {
+    if (nextPage === data.page || nextPage < 1 || nextPage > totalPages) return;
+    await fetchPage(nextPage);
+  };
+
+  const handleCreated = async () => {
+    await fetchPage(1);
+    setShowModal(false);
+    setToast(t('dashboard.toastCreated'));
+    setTimeout(() => setToast(null), 5000);
+  };
+
+  const handleModalError = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 5000);
   };
 
   const renderPlatform = (link: DashboardLink) => {
@@ -197,13 +216,26 @@ export default function DashboardClient({ initialData }: Props) {
         </div>
       </div>
 
-      {showModal && <AddDistributionModal open={showModal} onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <AddDistributionModal
+          open={showModal}
+          onClose={() => setShowModal(false)}
+          onCreated={handleCreated}
+          onError={handleModalError}
+        />
+      )}
 
       {loading && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20">
           <div className="rounded bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow">
             {t('status.loading')}
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded bg-black px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
         </div>
       )}
     </div>

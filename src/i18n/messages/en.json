@@ -1,4 +1,4 @@
-﻿{
+{
   "app.title": "DataruApp V2",
   "nav.home": "Home",
   "nav.dashboard": "Dashboard",
@@ -24,7 +24,7 @@
   "auth.login.registerLink": "Create one",
   "auth.register.success": "Registered successfully",
   "status.empty": "Distribution list is empty.",
-  "status.loading": "Loading…",
+  "status.loading": "Loading�K",
   "pagination.previous": "Previous",
   "pagination.next": "Next",
   "form.title": "Title",
@@ -34,6 +34,8 @@
   "form.apkUpload": "APK upload",
   "form.ipaUpload": "IPA upload",
   "form.cancel": "Cancel",
-  "form.submit": "Submit"
+  "form.submit": "Submit",
+  "dashboard.toastCreated": "Distribution created successfully.",
+  "dashboard.errorNoFiles": "Please upload at least one package.",
+  "dashboard.errorAutofillMismatch": "Autofill failed: APK and IPA bundle identifiers do not match."
 }
-

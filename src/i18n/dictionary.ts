@@ -34,6 +34,9 @@ const baseDictionary: Dict = {
   'dashboard.paginationSummary': 'Page {page} of {pages}',
   'dashboard.autofill': 'Autofill from package metadata',
   'dashboard.progressPlaceholder': 'Upload progress will appear here.',
+  'dashboard.toastCreated': 'Distribution created successfully.',
+  'dashboard.errorNoFiles': 'Please upload at least one package.',
+  'dashboard.errorAutofillMismatch': 'Autofill failed: APK and IPA bundle identifiers do not match.',
   'env.adapter': 'Adapter: @cloudflare/next-on-pages',
   'env.check': 'Environment checks',
   'env.d1Binding': 'D1 binding: ',
@@ -74,7 +77,7 @@ const baseDictionary: Dict = {
 };
 
 export const dictionaries: Record<Locale, Dict> = {
-  'zh-TW': { ...baseDictionary },
+  'zh-TW': baseDictionary,
   en: baseDictionary,
-  'zh-CN': { ...baseDictionary },
+  'zh-CN': baseDictionary,
 };
