@@ -1,16 +1,134 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import JSZip from 'jszip';
+import plist from 'plist';
 import { useI18n } from '@/i18n/provider';
+
+const DEFAULT_TITLE = 'APP';
+const APK_METADATA_PATHS = [
+  'META-INF/com/android/build/gradle/app-metadata.properties',
+  'BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties',
+];
+
+type Platform = 'apk' | 'ipa';
+
+type FileMeta = {
+  title?: string | null;
+  bundleId?: string | null;
+  version?: string | null;
+  sha256?: string | null;
+};
+
+type FileState = {
+  file: File | null;
+  metadata: FileMeta | null;
+};
+
+type SubmitState = 'idle' | 'submitting' | 'success';
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: () => Promise<void> | void;
   onError: (message: string) => void;
 };
 
-type SubmitState = 'idle' | 'submitting' | 'success';
+async function computeSha256(file: File) {
+  const buffer = await file.arrayBuffer();
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function parseProperties(text: string): Map<string, string> {
+  const map = new Map<string, string>();
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .forEach((line) => {
+      const index = line.indexOf('=');
+      if (index === -1) return;
+      const key = line.slice(0, index).trim();
+      const value = line.slice(index + 1).trim();
+      if (key) map.set(key, value);
+    });
+  return map;
+}
+
+async function parseApkMetadata(file: File): Promise<FileMeta | null> {
+  try {
+    const zip = await JSZip.loadAsync(file);
+    for (const path of APK_METADATA_PATHS) {
+      const entry = zip.file(path);
+      if (!entry) continue;
+
+      const content = await entry.async('text');
+      const props = parseProperties(content);
+      const bundleId =
+        props.get('applicationId') ??
+        props.get('packageId') ??
+        props.get('package') ??
+        props.get('appId') ??
+        '';
+      const version =
+        props.get('versionName') ??
+        props.get('bundleVersion') ??
+        props.get('version') ??
+        props.get('versionNameMajor') ??
+        '';
+      const title =
+        props.get('appName') ??
+        props.get('bundleName') ??
+        props.get('displayName') ??
+        props.get('applicationLabel') ??
+        null;
+      if (bundleId || version || title) {
+        return {
+          title: title || null,
+          bundleId: bundleId || null,
+          version: version || null,
+        };
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to parse APK metadata', error);
+  }
+  return null;
+}
+
+async function parseIpaMetadata(file: File): Promise<FileMeta | null> {
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const plistEntry = Object.keys(zip.files).find((name) =>
+      /Payload\/[^/]+\.app\/Info\.plist$/i.test(name)
+    );
+    if (!plistEntry) return null;
+    const plistContent = await zip.file(plistEntry)!.async('text');
+    const info = plist.parse(plistContent) as Record<string, string>;
+    return {
+      title:
+        info.CFBundleDisplayName ??
+        info.CFBundleName ??
+        info.CFBundleExecutable ??
+        DEFAULT_TITLE,
+      bundleId: info.CFBundleIdentifier ?? '',
+      version: info.CFBundleShortVersionString ?? info.CFBundleVersion ?? '',
+    };
+  } catch (error) {
+    console.warn('Failed to parse IPA metadata', error);
+    return null;
+  }
+}
+
+function formatBytes(size: number | null | undefined) {
+  if (!size || Number.isNaN(size)) return '-';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function AddDistributionModal({ open, onClose, onCreated, onError }: Props) {
   const { t } = useI18n();
@@ -18,8 +136,9 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   const [bundleId, setBundleId] = useState('');
   const [apkVersion, setApkVersion] = useState('');
   const [ipaVersion, setIpaVersion] = useState('');
-  const [apkFile, setApkFile] = useState<File | null>(null);
-  const [ipaFile, setIpaFile] = useState<File | null>(null);
+  const [autofill, setAutofill] = useState(true);
+  const [apkState, setApkState] = useState<FileState>({ file: null, metadata: null });
+  const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -29,16 +148,22 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       setBundleId('');
       setApkVersion('');
       setIpaVersion('');
-      setApkFile(null);
-      setIpaFile(null);
+      setAutofill(true);
+      setApkState({ file: null, metadata: null });
+      setIpaState({ file: null, metadata: null });
       setSubmitState('idle');
       setError(null);
     }
   }, [open]);
 
-  if (!open) return null;
+  const selectedPlatforms = useMemo(() => {
+    const list: Platform[] = [];
+    if (apkState.file) list.push('apk');
+    if (ipaState.file) list.push('ipa');
+    return list;
+  }, [apkState.file, ipaState.file]);
 
-  const humanFileName = (file: File | null) => file?.name ?? t('dashboard.progressPlaceholder');
+  if (!open) return null;
 
   const resolveErrorMessage = (code: string | undefined | null) => {
     if (!code) return t('status.unreadable');
@@ -54,10 +179,61 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     }
   };
 
+  const applyMetadataToFields = (platform: Platform, metadata: FileMeta | null) => {
+    if (!autofill || !metadata) return;
+    if ((!title || title === DEFAULT_TITLE) && metadata.title) {
+      setTitle(metadata.title);
+    }
+    if (!bundleId && metadata.bundleId) {
+      setBundleId(metadata.bundleId);
+    }
+    if (platform === 'apk' && !apkVersion && metadata.version) {
+      setApkVersion(metadata.version);
+    }
+    if (platform === 'ipa' && !ipaVersion && metadata.version) {
+      setIpaVersion(metadata.version);
+    }
+  };
+
+  const handleFileChange = async (platform: Platform, list: FileList | null) => {
+    const file = list && list[0] ? list[0] : null;
+    const setter = platform === 'apk' ? setApkState : setIpaState;
+    setter({ file, metadata: null });
+
+    if (!file) return;
+
+    try {
+      const metadata =
+        platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
+      setter({ file, metadata });
+      applyMetadataToFields(platform, metadata);
+      setError(null);
+    } catch (err) {
+      console.warn(`Failed to process ${platform} file`, err);
+    }
+  };
+
+  const handleAutofillToggle = (next: boolean) => {
+    setAutofill(next);
+    if (!next) return;
+    applyMetadataToFields('apk', apkState.metadata);
+    applyMetadataToFields('ipa', ipaState.metadata);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!apkFile && !ipaFile) {
+
+    if (!selectedPlatforms.length) {
       const message = t('dashboard.errorNoFiles');
+      setError(message);
+      onError(message);
+      return;
+    }
+
+    const apkBundle = apkState.metadata?.bundleId?.trim();
+    const ipaBundle = ipaState.metadata?.bundleId?.trim();
+    if (autofill && apkBundle && ipaBundle && apkBundle !== ipaBundle) {
+      const message = t('dashboard.errorAutofillMismatch');
       setError(message);
       onError(message);
       return;
@@ -71,25 +247,39 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       formData.append('bundle_id', bundleId.trim());
       formData.append('apk_version', apkVersion.trim());
       formData.append('ipa_version', ipaVersion.trim());
-      formData.append('autofill', 'false');
-      if (apkFile) {
-        formData.append('apk', apkFile, apkFile.name);
-      }
-      if (ipaFile) {
-        formData.append('ipa', ipaFile, ipaFile.name);
-      }
+      formData.append('autofill', autofill ? 'true' : 'false');
 
-      const response = await fetch('/api/distributions', {
-        method: 'POST',
-        body: formData,
-      });
+      const appendFile = async (platform: Platform, state: FileState) => {
+        if (!state.file) return;
+        formData.append(platform, state.file, state.file.name);
+
+        const meta: FileMeta = { ...state.metadata };
+        if (!meta.sha256) {
+          try {
+            meta.sha256 = await computeSha256(state.file);
+          } catch (error) {
+            console.warn(`Failed to compute SHA-256 for ${platform}`, error);
+          }
+        }
+        if (Object.keys(meta).length) {
+          formData.append(`${platform}_meta`, JSON.stringify(meta));
+        }
+      };
+
+      await appendFile('apk', apkState);
+      await appendFile('ipa', ipaState);
+
+      const response = await fetch('/api/distributions', { method: 'POST', body: formData });
       const json = (await response.json()) as { ok: boolean; error?: string };
       if (!json.ok) {
         throw new Error(resolveErrorMessage(json.error));
       }
 
       setSubmitState('success');
-      onCreated();
+      const maybePromise = onCreated();
+      if (maybePromise && typeof (maybePromise as Promise<unknown>).then === 'function') {
+        await maybePromise;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : resolveErrorMessage(String(err));
       setError(message);
@@ -99,6 +289,44 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   };
 
   const closeDisabled = submitState === 'submitting';
+
+  const summaries = [
+    { platform: 'apk' as const, state: apkState },
+    { platform: 'ipa' as const, state: ipaState },
+  ].filter((item) => item.state.file);
+
+  const renderSummaryContent = () => {
+    if (submitState === 'submitting') {
+      return <p className="text-sm text-gray-600">{t('status.loading')}</p>;
+    }
+    if (submitState === 'success') {
+      return <p className="text-sm text-green-600">{t('dashboard.toastCreated')}</p>;
+    }
+    if (!summaries.length) {
+      return <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>;
+    }
+    return (
+      <ul className="space-y-1 text-xs text-gray-600">
+        {summaries.map(({ platform, state }) => {
+          const file = state.file!;
+          const meta = state.metadata;
+          const parts: string[] = [];
+          parts.push(platform.toUpperCase());
+          const label = meta?.title ?? file.name;
+          if (label) parts.push(label);
+          if (meta?.bundleId) parts.push(meta.bundleId);
+          if (meta?.version) parts.push(`v${meta.version}`);
+          parts.push(formatBytes(file.size));
+          return (
+            <li key={platform}>
+              <span className="font-semibold text-gray-700">{parts.shift()}</span>
+              <span> · {parts.join(' · ')}</span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   return (
     <div
@@ -127,7 +355,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
                 className="mt-1 rounded border px-3 py-2 text-sm outline-none focus:border-black"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="My App"
+                placeholder={DEFAULT_TITLE}
                 disabled={submitState === 'submitting'}
               />
             </label>
@@ -163,6 +391,17 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
             </label>
           </div>
 
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={autofill}
+              onChange={(event) => handleAutofillToggle(event.target.checked)}
+              disabled={submitState === 'submitting'}
+            />
+            {t('dashboard.autofill')}
+          </label>
+
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">
               {t('form.apkUpload')}
@@ -171,9 +410,11 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
                 accept=".apk"
                 className="mt-1 w-full text-sm"
                 disabled={submitState === 'submitting'}
-                onChange={(event) => setApkFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => handleFileChange('apk', event.target.files)}
               />
-              <p className="mt-1 text-xs text-gray-500">{humanFileName(apkFile)}</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {apkState.file ? apkState.file.name : t('dashboard.progressPlaceholder')}
+              </p>
             </label>
 
             <label className="block text-sm font-medium text-gray-700">
@@ -183,15 +424,17 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
                 accept=".ipa"
                 className="mt-1 w-full text-sm"
                 disabled={submitState === 'submitting'}
-                onChange={(event) => setIpaFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => handleFileChange('ipa', event.target.files)}
               />
-              <p className="mt-1 text-xs text-gray-500">{humanFileName(ipaFile)}</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {ipaState.file ? ipaState.file.name : t('dashboard.progressPlaceholder')}
+              </p>
             </label>
           </div>
 
-          <p className="rounded border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500">
-            {t('dashboard.addDistributionComingSoon')}
-          </p>
+          <div className="rounded border border-dashed border-gray-300 px-3 py-2">
+            {renderSummaryContent()}
+          </div>
 
           {error && (
             <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
