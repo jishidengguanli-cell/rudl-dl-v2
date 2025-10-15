@@ -1,15 +1,15 @@
 name = "rudl-dl-v2"
 compatibility_date = "2025-10-03"
-main = ".vercel/output/functions/index.js"  # Pages Functions build 輸出
+main = ".vercel/output/functions/index.js"
 pages_build_output_dir = ".vercel/output/static"
 
 [vars]
-# 需要的常數可以一起放這裡
+# Additional worker variables can be defined here.
 
 [[d1_databases]]
-"binding": "DB",
-"database_name": "rudl_app",
-"database_id": "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
+binding = "DB"
+database_name = "rudl_app"
+database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
 
 [[r2_buckets]]
 binding = "R2_BUCKET"
