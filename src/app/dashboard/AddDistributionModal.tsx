@@ -382,28 +382,42 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
         xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
         if (xhr.upload && platformUploadOrder.length) {
           xhr.upload.onprogress = (event) => {
-            if (!event.lengthComputable || !totalBytes) {
-              platformUploadOrder.forEach((platform) => {
-                updateProgress(platform, event.total ? event.loaded / event.total : 0);
-              });
+            const effectiveTotal =
+              (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
+            if (!effectiveTotal) {
+              platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
               return;
             }
+
+            const safeLoaded = Math.min(
+              event.loaded ?? 0,
+              effectiveTotal,
+              totalBytes || effectiveTotal
+            );
+
             let accumulated = 0;
-            platformUploadOrder.forEach((platform, index) => {
+            platformUploadOrder.forEach((platform) => {
               const size = sizeByPlatform[platform] ?? 0;
               if (!size) {
                 updateProgress(platform, 1);
                 return;
               }
-              const start = accumulated;
-              const end = start + size;
-              let loadedForFile = Math.min(Math.max(event.loaded - start, 0), size);
-              if (index === platformUploadOrder.length - 1 && event.loaded > totalBytes) {
+              const fileStart = accumulated;
+              const fileEnd = fileStart + size;
+              let loadedForFile = 0;
+              if (safeLoaded <= fileStart) {
+                loadedForFile = 0;
+              } else if (safeLoaded >= fileEnd) {
                 loadedForFile = size;
+              } else {
+                loadedForFile = safeLoaded - fileStart;
               }
               updateProgress(platform, loadedForFile / size);
-              accumulated = end;
+              accumulated = fileEnd;
             });
+          };
+          xhr.upload.onload = () => {
+            platformUploadOrder.forEach((platform) => updateProgress(platform, 1));
           };
         }
         xhr.send(formData);
