@@ -1,5 +1,6 @@
 name = "rudl-dl-v2"
 compatibility_date = "2025-10-03"
+compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
 [vars]
