@@ -381,6 +381,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
         };
         xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
         if (xhr.upload && platformUploadOrder.length) {
+          const uploadProgress: UploadProgressMap = { apk: 0, ipa: 0 };
           xhr.upload.onprogress = (event) => {
             const effectiveTotal =
               (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
@@ -389,35 +390,38 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
               return;
             }
 
-            const safeLoaded = Math.min(
-              event.loaded ?? 0,
-              effectiveTotal,
-              totalBytes || effectiveTotal
-            );
-
+            const loaded = Math.min(event.loaded ?? 0, effectiveTotal);
             let accumulated = 0;
             platformUploadOrder.forEach((platform) => {
               const size = sizeByPlatform[platform] ?? 0;
               if (!size) {
-                updateProgress(platform, 1);
+                uploadProgress[platform] = 1;
                 return;
               }
-              const fileStart = accumulated;
-              const fileEnd = fileStart + size;
-              let loadedForFile = 0;
-              if (safeLoaded <= fileStart) {
-                loadedForFile = 0;
-              } else if (safeLoaded >= fileEnd) {
-                loadedForFile = size;
-              } else {
-                loadedForFile = safeLoaded - fileStart;
-              }
-              updateProgress(platform, loadedForFile / size);
-              accumulated = fileEnd;
+              const start = accumulated;
+              const end = start + size;
+              let value = 0;
+              if (loaded <= start) value = 0;
+              else if (loaded >= end) value = 1;
+              else value = (loaded - start) / size;
+              uploadProgress[platform] = value;
+              accumulated = end;
             });
+            platformUploadOrder.forEach((platform) =>
+              updateProgress(platform, uploadProgress[platform] ?? 0)
+            );
           };
+
+          xhr.upload.onloadstart = () => {
+            platformUploadOrder.forEach((platform) => updateProgress(platform, 0.01));
+          };
+
           xhr.upload.onload = () => {
             platformUploadOrder.forEach((platform) => updateProgress(platform, 1));
+          };
+
+          xhr.upload.onabort = () => {
+            platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
           };
         }
         xhr.send(formData);
