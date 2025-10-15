@@ -20,6 +20,41 @@ type FileMeta = {
 const SUPPORTED_PLATFORMS: Array<'apk' | 'ipa'> = ['apk', 'ipa'];
 const DEFAULT_TITLE = 'APP';
 
+type TableInfo = {
+  columns: Set<string>;
+  types: Record<string, string>;
+};
+
+const tableInfoCache: Partial<Record<'links' | 'files', TableInfo>> = {};
+
+async function getTableInfo(DB: D1Database, table: 'links' | 'files'): Promise<TableInfo> {
+  const cached = tableInfoCache[table];
+  if (cached) return cached;
+  const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
+  const columns = new Set<string>();
+  const types: Record<string, string> = {};
+  const rows = (results.results as Array<{ name?: string; type?: string }> | undefined) ?? [];
+  for (const row of rows) {
+    if (!row?.name) continue;
+    columns.add(row.name);
+    if (row.type) {
+      types[row.name] = row.type;
+    }
+  }
+  const info: TableInfo = { columns, types };
+  tableInfoCache[table] = info;
+  return info;
+}
+
+function hasColumn(info: TableInfo, column: string): boolean {
+  return info.columns.has(column);
+}
+
+function isTextColumn(info: TableInfo, column: string): boolean {
+  const type = info.types[column]?.toUpperCase() ?? '';
+  return type.includes('CHAR') || type.includes('CLOB') || type.includes('TEXT');
+}
+
 function parseUid(req: Request): string | null {
   const cookie = req.headers.get('cookie') ?? '';
   const pair = cookie
@@ -53,10 +88,10 @@ export async function POST(req: Request) {
 
   const form = await req.formData();
 
-  const titleInput = (form.get('title') as string | null) ?? '';
-  const bundleIdInput = (form.get('bundle_id') as string | null) ?? '';
-  const apkVersionInput = (form.get('apk_version') as string | null) ?? '';
-  const ipaVersionInput = (form.get('ipa_version') as string | null) ?? '';
+  const titleInput = ((form.get('title') as string | null) ?? '').trim();
+  const bundleIdInput = ((form.get('bundle_id') as string | null) ?? '').trim();
+  const apkVersionInput = ((form.get('apk_version') as string | null) ?? '').trim();
+  const ipaVersionInput = ((form.get('ipa_version') as string | null) ?? '').trim();
   const autofill = ((form.get('autofill') as string | null) ?? 'true').toLowerCase() === 'true';
 
   type FilePayload = {
@@ -98,46 +133,91 @@ export async function POST(req: Request) {
     }
   }
 
-  const now = Math.floor(Date.now() / 1000);
   const linkId = crypto.randomUUID();
   const code = generateLinkCode();
-  const platformString = files.map((f) => f.platform).join(',');
+  const platformString = Array.from(new Set(files.map((f) => f.platform))).join(',');
 
   const derivedTitle =
-    (autofill && files.find((f) => f.meta?.title)?.meta?.title) ||
+    (autofill && files.find((f) => f.meta?.title)?.meta?.title?.trim()) ||
     titleInput ||
     DEFAULT_TITLE;
   const derivedBundleId =
-    (autofill && files.find((f) => f.meta?.bundleId)?.meta?.bundleId) || bundleIdInput || '';
+    (autofill && files.find((f) => f.meta?.bundleId)?.meta?.bundleId?.trim()) ||
+    bundleIdInput ||
+    '';
   const derivedApkVersion =
-    (autofill && files.find((f) => f.platform === 'apk' && f.meta?.version)?.meta?.version) ||
+    (autofill &&
+      files.find((f) => f.platform === 'apk' && f.meta?.version)?.meta?.version?.trim()) ||
     apkVersionInput ||
     '';
   const derivedIpaVersion =
-    (autofill && files.find((f) => f.platform === 'ipa' && f.meta?.version)?.meta?.version) ||
+    (autofill &&
+      files.find((f) => f.platform === 'ipa' && f.meta?.version)?.meta?.version?.trim()) ||
     ipaVersionInput ||
     '';
 
   const r2KeysToDelete: string[] = [];
 
   try {
+    const linksInfo = await getTableInfo(DB, 'links');
+    const filesInfo = await getTableInfo(DB, 'files');
+    const hasFileIdColumn = hasColumn(linksInfo, 'file_id');
+    const createdAt = Date.now();
+    const createdAtIso = new Date(createdAt).toISOString();
+    const linkCreatedAtValue = hasColumn(linksInfo, 'created_at')
+      ? isTextColumn(linksInfo, 'created_at')
+        ? createdAtIso
+        : Math.floor(createdAt / 1000)
+      : undefined;
+    const fileCreatedAtValue = hasColumn(filesInfo, 'created_at')
+      ? isTextColumn(filesInfo, 'created_at')
+        ? createdAtIso
+        : Math.floor(createdAt / 1000)
+      : undefined;
+    const isActiveValue = hasColumn(linksInfo, 'is_active')
+      ? isTextColumn(linksInfo, 'is_active')
+        ? '0'
+        : 0
+      : undefined;
+
     await DB.prepare('BEGIN').run();
-    await DB.prepare(
-      `INSERT INTO links (id, code, owner_id, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
-    )
-      .bind(
-        linkId,
-        code,
-        uid,
-        derivedTitle,
-        derivedBundleId,
-        derivedApkVersion,
-        derivedIpaVersion,
-        platformString,
-        now
-      )
-      .run();
+
+    const linkColumnPairs: Array<[string, unknown]> = [
+      ['id', linkId],
+      ['code', code],
+      ['owner_id', uid],
+      ['title', derivedTitle],
+      ['bundle_id', derivedBundleId],
+      ['apk_version', derivedApkVersion],
+      ['ipa_version', derivedIpaVersion],
+      ['platform', platformString],
+    ];
+    if (linkCreatedAtValue !== undefined) {
+      linkColumnPairs.push(['created_at', linkCreatedAtValue]);
+    }
+    if (isActiveValue !== undefined) {
+      linkColumnPairs.push(['is_active', isActiveValue]);
+    }
+    if (hasFileIdColumn) {
+      linkColumnPairs.push(['file_id', null]);
+    }
+
+    const linkColumns = linkColumnPairs
+      .filter(([column]) => hasColumn(linksInfo, column))
+      .map(([column]) => column);
+    const linkValues = linkColumnPairs
+      .filter(([column]) => hasColumn(linksInfo, column))
+      .map(([, value]) => value);
+
+    if (!linkColumns.length) {
+      throw new Error('LINK_TABLE_UNSUPPORTED');
+    }
+
+    const linkPlaceholders = linkColumns.map(() => '?').join(', ');
+    const linkQuery = `INSERT INTO links (${linkColumns.join(', ')}) VALUES (${linkPlaceholders})`;
+    await DB.prepare(linkQuery).bind(...linkValues).run();
+
+    let firstFileId: string | null = null;
 
     for (const entry of files) {
       const buffer = await entry.file.arrayBuffer();
@@ -151,28 +231,66 @@ export async function POST(req: Request) {
         },
       });
 
-      await DB.prepare(
-        `INSERT INTO files (id, owner_id, link_id, platform, title, bundle_id, version, size, sha256, content_type, created_at, r2_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-        .bind(
-          crypto.randomUUID(),
-          uid,
-          linkId,
-          entry.platform,
-          entry.meta?.title ?? entry.file.name ?? DEFAULT_TITLE,
-          entry.meta?.bundleId ?? '',
-          entry.meta?.version ?? '',
-          entry.file.size,
-          sha,
-          entry.file.type || 'application/octet-stream',
-          now,
-          key
-        )
+      const fileId = crypto.randomUUID();
+      if (!firstFileId) {
+        firstFileId = fileId;
+      }
+
+      const metaTitle = entry.meta?.title?.trim() || null;
+      const metaBundleId = entry.meta?.bundleId?.trim() || null;
+      const metaVersion = entry.meta?.version?.trim() || null;
+
+      const fileColumnPairs: Array<[string, unknown]> = [
+        ['id', fileId],
+        ['owner_id', uid],
+        ['platform', entry.platform],
+        ['version', metaVersion ?? ''],
+        ['size', entry.file.size],
+        ['title', metaTitle ?? entry.file.name ?? DEFAULT_TITLE],
+        ['bundle_id', metaBundleId ?? ''],
+        ['link_id', linkId],
+      ];
+      if (fileCreatedAtValue !== undefined) {
+        fileColumnPairs.push(['created_at', fileCreatedAtValue]);
+      }
+      if (hasColumn(filesInfo, 'sha256')) {
+        fileColumnPairs.push(['sha256', sha]);
+      }
+      if (hasColumn(filesInfo, 'content_type')) {
+        fileColumnPairs.push(['content_type', entry.file.type || 'application/octet-stream']);
+      }
+      if (hasColumn(filesInfo, 'r2_key')) {
+        fileColumnPairs.push(['r2_key', key]);
+      }
+
+      const fileColumns = fileColumnPairs
+        .filter(([column]) => hasColumn(filesInfo, column))
+        .map(([column]) => column);
+      const fileValues = fileColumnPairs
+        .filter(([column]) => hasColumn(filesInfo, column))
+        .map(([, value]) => value);
+
+      if (!fileColumns.length) {
+        throw new Error('FILE_TABLE_UNSUPPORTED');
+      }
+
+      const filePlaceholders = fileColumns.map(() => '?').join(', ');
+      const fileQuery = `INSERT INTO files (${fileColumns.join(', ')}) VALUES (${filePlaceholders})`;
+      await DB.prepare(fileQuery).bind(...fileValues).run();
+    }
+
+    if (hasFileIdColumn && firstFileId) {
+      await DB.prepare('UPDATE links SET file_id=? WHERE id=?')
+        .bind(firstFileId, linkId)
         .run();
     }
 
-    await DB.prepare('UPDATE links SET is_active=1 WHERE id=?').bind(linkId).run();
+    if (hasColumn(linksInfo, 'is_active')) {
+      const activeValue = isTextColumn(linksInfo, 'is_active') ? '1' : 1;
+      await DB.prepare('UPDATE links SET is_active=? WHERE id=?')
+        .bind(activeValue, linkId)
+        .run();
+    }
     await DB.prepare('COMMIT').run();
 
     return NextResponse.json({ ok: true, linkId, code });

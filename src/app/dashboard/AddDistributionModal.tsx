@@ -1,5 +1,6 @@
 'use client';
 
+import { Buffer } from 'buffer';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import JSZip from 'jszip';
 import plist from 'plist';
@@ -58,6 +59,28 @@ function parseProperties(text: string): Map<string, string> {
   return map;
 }
 
+function normalizeMeta(meta: FileMeta | null): FileMeta | null {
+  if (!meta) return null;
+  const normalized: FileMeta = { ...meta };
+  if (typeof normalized.title === 'string') {
+    const value = normalized.title.trim();
+    normalized.title = value || null;
+  }
+  if (typeof normalized.bundleId === 'string') {
+    const value = normalized.bundleId.trim();
+    normalized.bundleId = value || null;
+  }
+  if (typeof normalized.version === 'string') {
+    const value = normalized.version.trim();
+    normalized.version = value || null;
+  }
+  if (typeof normalized.sha256 === 'string') {
+    const value = normalized.sha256.trim();
+    normalized.sha256 = value || undefined;
+  }
+  return normalized;
+}
+
 async function parseApkMetadata(file: File): Promise<FileMeta | null> {
   try {
     const zip = await JSZip.loadAsync(file);
@@ -99,6 +122,33 @@ async function parseApkMetadata(file: File): Promise<FileMeta | null> {
   return null;
 }
 
+function decodeUtf8Loose(input: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: false }).decode(input);
+  } catch {
+    return '';
+  }
+}
+
+function tryParsePlistFromUint8(data: Uint8Array): Record<string, string> | null {
+  if (!data.length) return null;
+  try {
+    const asText = decodeUtf8Loose(data).trim();
+    if (asText.startsWith('<?xml') || asText.startsWith('<plist')) {
+      return plist.parse(asText) as Record<string, string>;
+    }
+  } catch (error) {
+    console.warn('IPA metadata XML parse failed, falling back to binary plist', error);
+  }
+  try {
+    const buffer = Buffer.from(data);
+    return plist.parse(buffer as unknown as string) as Record<string, string>;
+  } catch (error) {
+    console.warn('IPA metadata binary parse failed', error);
+    return null;
+  }
+}
+
 async function parseIpaMetadata(file: File): Promise<FileMeta | null> {
   try {
     const zip = await JSZip.loadAsync(file);
@@ -106,8 +156,9 @@ async function parseIpaMetadata(file: File): Promise<FileMeta | null> {
       /Payload\/[^/]+\.app\/Info\.plist$/i.test(name)
     );
     if (!plistEntry) return null;
-    const plistContent = await zip.file(plistEntry)!.async('text');
-    const info = plist.parse(plistContent) as Record<string, string>;
+    const plistBytes = await zip.file(plistEntry)!.async('uint8array');
+    const info = tryParsePlistFromUint8(plistBytes);
+    if (!info) return null;
     return {
       title:
         info.CFBundleDisplayName ??
@@ -203,15 +254,16 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     if (!file) return;
 
     try {
-      const metadata =
-        platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
-      setter({ file, metadata });
-      applyMetadataToFields(platform, metadata);
-      setError(null);
-    } catch (err) {
-      console.warn(`Failed to process ${platform} file`, err);
-    }
-  };
+    const metadata =
+      platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
+    const normalized = normalizeMeta(metadata);
+    setter({ file, metadata: normalized });
+    applyMetadataToFields(platform, normalized);
+    setError(null);
+  } catch (err) {
+    console.warn(`Failed to process ${platform} file`, err);
+  }
+};
 
   const handleAutofillToggle = (next: boolean) => {
     setAutofill(next);
@@ -232,7 +284,13 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
     const apkBundle = apkState.metadata?.bundleId?.trim();
     const ipaBundle = ipaState.metadata?.bundleId?.trim();
-    if (autofill && apkBundle && ipaBundle && apkBundle !== ipaBundle) {
+    const apkTitleMeta = apkState.metadata?.title?.trim();
+    const ipaTitleMeta = ipaState.metadata?.title?.trim();
+    if (
+      autofill &&
+      ((apkBundle && ipaBundle && apkBundle !== ipaBundle) ||
+        (apkTitleMeta && ipaTitleMeta && apkTitleMeta !== ipaTitleMeta))
+    ) {
       const message = t('dashboard.errorAutofillMismatch');
       setError(message);
       onError(message);

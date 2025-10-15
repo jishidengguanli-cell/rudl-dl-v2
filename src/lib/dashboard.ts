@@ -39,8 +39,8 @@ type LinkRow = {
   apk_version: string | null;
   ipa_version: string | null;
   platform: string;
-  is_active: number;
-  created_at: number;
+  is_active: number | string | null;
+  created_at: number | string | null;
 };
 
 type FileRow = {
@@ -50,7 +50,24 @@ type FileRow = {
   bundle_id: string | null;
   version: string | null;
   size: number | null;
-  created_at: number;
+  created_at: number | string | null;
+};
+
+const toEpochSeconds = (value: number | string | null | undefined): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return Math.floor(parsed / 1000);
+    }
+  }
+  return 0;
 };
 
 export async function fetchDashboardPage(
@@ -102,7 +119,7 @@ export async function fetchDashboardPage(
         bundleId: file.bundle_id,
         version: file.version,
         size: file.size ?? null,
-        createdAt: file.created_at,
+        createdAt: toEpochSeconds(file.created_at),
       })) ?? [];
 
     links.push({
@@ -113,8 +130,12 @@ export async function fetchDashboardPage(
       apkVersion: link.apk_version,
       ipaVersion: link.ipa_version,
       platform: link.platform,
-      isActive: !!link.is_active,
-      createdAt: link.created_at,
+      isActive: Boolean(
+        typeof link.is_active === 'string'
+          ? Number(link.is_active)
+          : Number(link.is_active ?? 0)
+      ),
+      createdAt: toEpochSeconds(link.created_at),
       files,
     });
   }
