@@ -1,6 +1,5 @@
 name = "rudl-dl-v2"
 compatibility_date = "2025-10-03"
-main = ".vercel/output/functions/index.js"
 pages_build_output_dir = ".vercel/output/static"
 
 [vars]
@@ -14,3 +13,4 @@ database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "dataruapp-files"
+
