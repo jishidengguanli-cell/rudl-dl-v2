@@ -463,18 +463,20 @@ const renderSummaryContent = () => {
             state.metadata?.title ??
             state.file?.name ??
             `${platform.toUpperCase()} ${t('dashboard.progressPlaceholder')}`;
+          const percent = Math.max(0, Math.min(100, progress * 100));
+          const percentLabel = percent < 1 && percent > 0 ? percent.toFixed(1) : Math.round(percent).toString();
           return (
             <div key={platform}>
               <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
                 <span className="font-medium text-gray-700">
                   {platform.toUpperCase()} · {label}
                 </span>
-                <span>{Math.round(progress * 100)}%</span>
+                <span>{percentLabel}%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-gray-200">
                 <div
                   className="h-full rounded-full bg-black transition-all"
-                  style={{ width: `${Math.max(0, Math.min(100, Math.round(progress * 100)))}%` }}
+                  style={{ width: `${percent}%` }}
                 />
               </div>
             </div>
