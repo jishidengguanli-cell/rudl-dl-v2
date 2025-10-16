@@ -217,8 +217,6 @@ export async function POST(req: Request) {
       })
     );
 
-    await DB.prepare('BEGIN').run();
-
     const linkColumnPairs: Array<[string, unknown]> = [
       ['id', linkId],
       ['code', code],
@@ -236,33 +234,12 @@ export async function POST(req: Request) {
     if (isActiveValue !== undefined) {
       linkColumnPairs.push(['is_active', isActiveValue]);
     }
-    if (hasFileIdColumn) {
-      linkColumnPairs.push(['file_id', null]);
-    }
 
-    const linkColumns = linkColumnPairs
-      .filter(([column]) => hasColumn(linksInfo, column))
-      .map(([column]) => column);
-    const linkValues = linkColumnPairs
-      .filter(([column]) => hasColumn(linksInfo, column))
-      .map(([, value]) => value);
-
-    if (!linkColumns.length) {
-      throw new Error('LINK_TABLE_UNSUPPORTED');
-    }
-
-    const linkPlaceholders = linkColumns.map(() => '?').join(', ');
-    const linkQuery = `INSERT INTO links (${linkColumns.join(', ')}) VALUES (${linkPlaceholders})`;
-    await DB.prepare(linkQuery).bind(...linkValues).run();
-
-    let firstFileId: string | null = null;
-
+    const fileStatements: D1PreparedStatement[] = [];
+    const fileIds: string[] = [];
     for (const upload of uploads) {
       const fileId = crypto.randomUUID();
-      if (!firstFileId) {
-        firstFileId = fileId;
-      }
-
+      fileIds.push(fileId);
       const metaTitle = upload.title?.trim() || sanitizeTitleFromKey(upload.key);
       const metaBundleId = upload.bundleId?.trim() ?? '';
       const metaVersion = upload.version?.trim() ?? '';
@@ -306,27 +283,47 @@ export async function POST(req: Request) {
 
       const filePlaceholders = fileColumns.map(() => '?').join(', ');
       const fileQuery = `INSERT INTO files (${fileColumns.join(', ')}) VALUES (${filePlaceholders})`;
-      await DB.prepare(fileQuery).bind(...fileValues).run();
+      fileStatements.push(DB.prepare(fileQuery).bind(...fileValues));
     }
 
-    if (hasFileIdColumn && firstFileId) {
-      await DB.prepare('UPDATE links SET file_id=? WHERE id=?')
-        .bind(firstFileId, linkId)
-        .run();
+    const firstFileId = fileIds[0] ?? null;
+    if (hasFileIdColumn) {
+      linkColumnPairs.push(['file_id', firstFileId]);
     }
+
+    const linkColumns = linkColumnPairs
+      .filter(([column]) => hasColumn(linksInfo, column))
+      .map(([column]) => column);
+    const linkValues = linkColumnPairs
+      .filter(([column]) => hasColumn(linksInfo, column))
+      .map(([, value]) => value);
+
+    if (!linkColumns.length) {
+      throw new Error('LINK_TABLE_UNSUPPORTED');
+    }
+
+    const linkPlaceholders = linkColumns.map(() => '?').join(', ');
+    const linkQuery = `INSERT INTO links (${linkColumns.join(', ')}) VALUES (${linkPlaceholders})`;
+
+    const linkStatement = DB.prepare(linkQuery).bind(...linkValues);
+
+    const statements: D1PreparedStatement[] = [linkStatement, ...fileStatements];
 
     if (hasColumn(linksInfo, 'is_active')) {
       const activeValue = isTextColumn(linksInfo, 'is_active') ? '1' : 1;
-      await DB.prepare('UPDATE links SET is_active=? WHERE id=?')
-        .bind(activeValue, linkId)
-        .run();
+      statements.push(
+        DB.prepare('UPDATE links SET is_active=? WHERE id=?').bind(activeValue, linkId)
+      );
     }
 
-    await DB.prepare('COMMIT').run();
+    await DB.batch(statements);
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
-    await DB.prepare('ROLLBACK').run().catch(() => null);
+    await DB.batch([
+      DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
+      DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
+    ]).catch(() => null);
     await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
