@@ -5,33 +5,30 @@ export const runtime = 'edge';
 
 type Env = {
   R2_BUCKET?: R2Bucket;
+  R2_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_BUCKET_NAME?: string;
 };
 
 type Platform = 'apk' | 'ipa';
 
-type UploadInitResponse = {
-  ok: true;
-  linkId: string;
-  uploadId: string;
-  key: string;
-  partSize: number;
-  metadata: {
-    title: string | null;
-    bundleId: string | null;
-    version: string | null;
-    contentType: string;
-  };
+type UploadRequestBody = {
+  platform?: string;
+  linkId?: string | null;
+  fileName?: string | null;
+  size?: number | null;
+  contentType?: string | null;
+  title?: string | null;
+  bundleId?: string | null;
+  version?: string | null;
 };
 
-type UploadPartResponse = {
-  ok: true;
-  etag: string;
-  partNumber: number;
-};
-
-type UploadCompleteResponse = {
+type UploadResponse = {
   ok: true;
   linkId: string;
+  uploadUrl: string;
+  uploadHeaders: Record<string, string>;
   upload: {
     platform: Platform;
     key: string;
@@ -42,11 +39,6 @@ type UploadCompleteResponse = {
     contentType: string;
     sha256: string | null;
   };
-};
-
-type UploadErrorResponse = {
-  ok: false;
-  error: string;
 };
 
 function parseUid(req: Request): string | null {
@@ -66,6 +58,124 @@ function sanitizeFileName(value: string, fallback: string): string {
     .replace(/[^a-zA-Z0-9._-]/g, '') || fallback;
 }
 
+function toAmzDate(date: Date) {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const yyyy = date.getUTCFullYear();
+  const mm = pad(date.getUTCMonth() + 1);
+  const dd = pad(date.getUTCDate());
+  const hh = pad(date.getUTCHours());
+  const mi = pad(date.getUTCMinutes());
+  const ss = pad(date.getUTCSeconds());
+  return `${yyyy}${mm}${dd}T${hh}${mi}${ss}Z`;
+}
+
+function encodeRfc3986Path(path: string) {
+  return path
+    .split('/')
+    .map((segment) =>
+      encodeURIComponent(segment).replace(
+        /[!'()*]/g,
+        (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+      )
+    )
+    .join('/');
+}
+
+async function sha256Hex(input: string | ArrayBuffer) {
+  const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const bytes = new Uint8Array(digest);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmac(key: ArrayBuffer | ArrayBufferView, data: string) {
+  const sourceView =
+    key instanceof ArrayBuffer
+      ? new Uint8Array(key)
+      : new Uint8Array(key.buffer, key.byteOffset, key.byteLength);
+  const keyView = new Uint8Array(sourceView);
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyView,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data));
+  return signature;
+}
+
+async function getSigningKey(secretKey: string, date: string, region: string, service: string) {
+  const kDate = await hmac(new TextEncoder().encode(`AWS4${secretKey}`), date);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  const kSigning = await hmac(kService, 'aws4_request');
+  return kSigning;
+}
+
+async function hmacHex(key: ArrayBuffer, data: string) {
+  const signature = await hmac(key, data);
+  const bytes = new Uint8Array(signature);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function presignPutUrl(options: {
+  accountId: string;
+  accessKeyId: string;
+  secretKey: string;
+  bucket: string;
+  key: string;
+  contentType: string;
+  expires: number;
+}) {
+  const { accountId, accessKeyId, secretKey, bucket, key, contentType, expires } = options;
+  const service = 's3';
+  const region = 'auto';
+  const host = `${accountId}.r2.cloudflarestorage.com`;
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+
+  const canonicalUri = `/${encodeURIComponent(bucket)}/${encodeRfc3986Path(key)}`;
+
+  const queryPairs: Array<[string, string]> = [
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', `${accessKeyId}/${credentialScope}`],
+    ['X-Amz-Date', amzDate],
+    ['X-Amz-Expires', String(expires)],
+    ['X-Amz-SignedHeaders', 'content-type;host'],
+  ];
+
+  const canonicalQuery = queryPairs
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .sort()
+    .join('&');
+
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n`;
+  const signedHeaders = 'content-type;host';
+  const payloadHash = 'UNSIGNED-PAYLOAD';
+
+  const canonicalRequest = [
+    'PUT',
+    canonicalUri,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join('\n');
+
+  const hashCanonical = await sha256Hex(canonicalRequest);
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hashCanonical}`;
+  const signingKey = await getSigningKey(secretKey, dateStamp, region, service);
+  const signature = await hmacHex(signingKey, stringToSign);
+
+  const baseUrl = `https://${host}${canonicalUri}`;
+  const signedUrl = `${baseUrl}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+
+  return signedUrl;
+}
+
 export async function POST(req: Request) {
   const uid = parseUid(req);
   if (!uid) {
@@ -75,76 +185,45 @@ export async function POST(req: Request) {
   const { env } = getRequestContext();
   const bindings = env as Env;
   const R2 = bindings.R2_BUCKET;
-  if (!R2) {
-    return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
+  const accountId = bindings.R2_ACCOUNT_ID;
+  const accessKeyId = bindings.R2_ACCESS_KEY_ID;
+  const secretKey = bindings.R2_SECRET_ACCESS_KEY;
+  const bucketName = bindings.R2_BUCKET_NAME;
+  if (!R2 || !accountId || !accessKeyId || !secretKey || !bucketName) {
+    return NextResponse.json({ ok: false, error: 'Missing R2 credentials' }, { status: 500 });
   }
 
-  const phase = (req.headers.get('x-upload-phase') ?? '').toLowerCase();
-
+  let payload: UploadRequestBody | undefined;
   try {
-    if (phase === 'init') {
-      return await handleInitPhase(req, uid, R2);
-    }
-    if (phase === 'part') {
-      return await handlePartPhase(req, uid, R2);
-    }
-    if (phase === 'complete') {
-      return await handleCompletePhase(req, uid, R2);
-    }
-    if (phase === 'abort') {
-      return await handleAbortPhase(req, uid, R2);
-    }
-    return NextResponse.json({ ok: false, error: 'INVALID_PHASE' }, { status: 400 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
-  }
-}
-
-async function handleInitPhase(req: Request, uid: string, R2: R2Bucket) {
-  let body: unknown;
-  try {
-    body = await req.json();
+    payload = (await req.json()) as UploadRequestBody;
   } catch {
-    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
+    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' }, { status: 400 });
   }
 
-  const payload = body as Partial<{
-    platform: string;
-    linkId: string | null;
-    fileName: string;
-    size: number;
-    contentType: string | null;
-    title: string | null;
-    bundleId: string | null;
-    version: string | null;
-  }>;
+  if (!payload) {
+    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' }, { status: 400 });
+  }
 
-  const platform = (payload.platform ?? '').trim().toLowerCase();
+  const platform = (payload.platform ?? '').trim().toLowerCase() as Platform;
   if (platform !== 'apk' && platform !== 'ipa') {
-    return NextResponse.json({ ok: false, error: 'INVALID_PLATFORM' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
+    return NextResponse.json({ ok: false, error: 'INVALID_PLATFORM' }, { status: 400 });
   }
 
-  const rawFileName = payload.fileName ?? '';
-  const fileName = rawFileName.trim();
+  const fileName = (payload.fileName ?? '').trim();
   if (!fileName) {
-    return NextResponse.json({ ok: false, error: 'FILENAME_REQUIRED' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
+    return NextResponse.json({ ok: false, error: 'FILENAME_REQUIRED' }, { status: 400 });
   }
 
-  const size = typeof payload.size === 'number' ? payload.size : Number(payload.size);
-  if (!Number.isFinite(size) || size <= 0) {
-    return NextResponse.json({ ok: false, error: 'INVALID_SIZE' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
+  const size = typeof payload.size === 'number' && Number.isFinite(payload.size) ? payload.size : null;
+  if (!size || size <= 0) {
+    return NextResponse.json({ ok: false, error: 'INVALID_SIZE' }, { status: 400 });
   }
 
-  const contentType = (payload.contentType ?? '').trim() || 'application/octet-stream';
+  const rawContentType = (payload.contentType ?? '').trim();
+  const contentType =
+    rawContentType ||
+    (platform === 'apk' ? 'application/vnd.android.package-archive' : 'application/octet-stream');
+
   const title = (payload.title ?? '').trim() || null;
   const bundleId = (payload.bundleId ?? '').trim() || null;
   const version = (payload.version ?? '').trim() || null;
@@ -157,139 +236,28 @@ async function handleInitPhase(req: Request, uid: string, R2: R2Bucket) {
   const safeName = sanitizeFileName(fileName, `${platform}.bin`);
   const key = `links/${uid}/${linkId}/${platform}/${Date.now()}-${safeName}`;
 
-  const DEFAULT_PART_SIZE = 8 * 1024 * 1024; // 8 MB
-  const MAX_PART_SIZE = 32 * 1024 * 1024; // 32 MB
-  const MIN_PART_SIZE = 5 * 1024 * 1024; // 5 MB
-  const partSize = Math.max(MIN_PART_SIZE, Math.min(MAX_PART_SIZE, DEFAULT_PART_SIZE));
+  const exists = await R2.head(key);
+  if (exists) {
+    await R2.delete(key).catch(() => null);
+  }
 
-  const upload = await R2.createMultipartUpload(key, {
-    httpMetadata: {
-      contentType,
-    },
+  const uploadUrl = await presignPutUrl({
+    accountId,
+    accessKeyId,
+    secretKey,
+    bucket: bucketName,
+    key,
+    contentType,
+    expires: 600,
   });
 
-  return NextResponse.json({
+  const response: UploadResponse = {
     ok: true,
     linkId,
-    uploadId: upload.uploadId,
-    key,
-    partSize,
-    metadata: {
-      title,
-      bundleId,
-      version,
-      contentType,
+    uploadUrl,
+    uploadHeaders: {
+      'Content-Type': contentType,
     },
-  } satisfies UploadInitResponse);
-}
-
-async function handlePartPhase(req: Request, uid: string, R2: R2Bucket) {
-  void uid; // uid is already validated by caller; unused otherwise
-  const uploadId = (req.headers.get('x-upload-id') ?? '').trim();
-  const key = req.headers.get('x-key') ?? '';
-  const partNumberValue = req.headers.get('x-part-number') ?? '';
-
-  if (!uploadId || !key || !partNumberValue) {
-    return NextResponse.json({ ok: false, error: 'MISSING_PART_HEADERS' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const partNumber = Number(partNumberValue);
-  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
-    return NextResponse.json({ ok: false, error: 'INVALID_PART_NUMBER' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const bodyStream = req.body;
-  if (!bodyStream) {
-    return NextResponse.json({ ok: false, error: 'EMPTY_CHUNK' } satisfies UploadErrorResponse, { status: 400 });
-  }
-
-  const upload = R2.resumeMultipartUpload(key, uploadId);
-  const uploadedPart = await upload.uploadPart(partNumber, bodyStream);
-
-  return NextResponse.json({
-    ok: true,
-    etag: uploadedPart.etag,
-    partNumber: uploadedPart.partNumber,
-  } satisfies UploadPartResponse);
-}
-
-async function handleCompletePhase(req: Request, uid: string, R2: R2Bucket) {
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const payload = body as Partial<{
-    platform: string;
-    linkId: string;
-    uploadId: string;
-    key: string;
-    size: number;
-    contentType: string | null;
-    title: string | null;
-    bundleId: string | null;
-    version: string | null;
-    parts: Array<{ partNumber?: number; etag?: string }>;
-  }>;
-
-  const platform = (payload.platform ?? '').trim().toLowerCase();
-  if (platform !== 'apk' && platform !== 'ipa') {
-    return NextResponse.json({ ok: false, error: 'INVALID_PLATFORM' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const linkId = (payload.linkId ?? '').trim();
-  if (!linkId) {
-    return NextResponse.json({ ok: false, error: 'INVALID_LINK_ID' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const uploadId = (payload.uploadId ?? '').trim();
-  const key = (payload.key ?? '').trim();
-  if (!uploadId || !key) {
-    return NextResponse.json({ ok: false, error: 'MISSING_UPLOAD_INFO' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const size = typeof payload.size === 'number' ? payload.size : Number(payload.size);
-  if (!Number.isFinite(size) || size <= 0) {
-    return NextResponse.json({ ok: false, error: 'INVALID_SIZE' } satisfies UploadErrorResponse, { status: 400 });
-  }
-
-  const contentType = (payload.contentType ?? '').trim() || 'application/octet-stream';
-  const title = (payload.title ?? '').trim() || null;
-  const bundleId = (payload.bundleId ?? '').trim() || null;
-  const version = (payload.version ?? '').trim() || null;
-
-  const partsRaw = Array.isArray(payload.parts) ? payload.parts : [];
-  const parts = partsRaw
-    .map((part) => ({
-      partNumber: Number(part.partNumber),
-      etag: typeof part.etag === 'string' ? part.etag : '',
-    }))
-    .filter((part) => Number.isInteger(part.partNumber) && part.partNumber >= 1 && part.etag);
-
-  if (!parts.length) {
-    return NextResponse.json({ ok: false, error: 'NO_PARTS' } satisfies UploadErrorResponse, { status: 400 });
-  }
-
-  const upload = R2.resumeMultipartUpload(key, uploadId);
-  await upload.complete(parts);
-
-  const response: UploadCompleteResponse = {
-    ok: true,
-    linkId,
     upload: {
       platform,
       key,
@@ -303,30 +271,4 @@ async function handleCompletePhase(req: Request, uid: string, R2: R2Bucket) {
   };
 
   return NextResponse.json(response);
-}
-
-async function handleAbortPhase(req: Request, uid: string, R2: R2Bucket) {
-  void uid;
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const payload = body as Partial<{ uploadId: string; key: string }>;
-  const uploadId = (payload.uploadId ?? '').trim();
-  const key = (payload.key ?? '').trim();
-  if (!uploadId || !key) {
-    return NextResponse.json({ ok: false, error: 'MISSING_UPLOAD_INFO' } satisfies UploadErrorResponse, {
-      status: 400,
-    });
-  }
-
-  const upload = R2.resumeMultipartUpload(key, uploadId);
-  await upload.abort().catch(() => null);
-
-  return NextResponse.json({ ok: true } satisfies { ok: true });
 }

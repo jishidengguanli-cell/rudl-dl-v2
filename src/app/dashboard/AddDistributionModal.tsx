@@ -58,29 +58,11 @@ type FinalizeResponse = {
   error?: string;
 };
 
-type UploadInitResponse = {
+type UploadSuccessResponse = {
   ok: true;
   linkId: string;
-  uploadId: string;
-  key: string;
-  partSize: number;
-  metadata: {
-    title: string | null;
-    bundleId: string | null;
-    version: string | null;
-    contentType: string;
-  };
-};
-
-type UploadPartResponse = {
-  ok: true;
-  etag: string;
-  partNumber: number;
-};
-
-type UploadCompleteResponse = {
-  ok: true;
-  linkId: string;
+  uploadUrl: string;
+  uploadHeaders: Record<string, string>;
   upload: FinalizeUploadPayload;
 };
 
@@ -445,7 +427,6 @@ export default function AddDistributionModal({
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-upload-phase': 'init',
           },
           body: JSON.stringify({
             platform,
@@ -458,9 +439,9 @@ export default function AddDistributionModal({
             version: baseMetadata.version,
           }),
         });
-        let initParsed: UploadInitResponse | UploadErrorResponse;
+        let initParsed: UploadSuccessResponse | UploadErrorResponse;
         try {
-          initParsed = (await initRes.json()) as UploadInitResponse | UploadErrorResponse;
+          initParsed = (await initRes.json()) as UploadSuccessResponse | UploadErrorResponse;
         } catch {
           throw new Error(`HTTP_${initRes.status}`);
         }
@@ -468,92 +449,101 @@ export default function AddDistributionModal({
           throw new Error(initParsed.error ?? `HTTP_${initRes.status}`);
         }
 
-        const { linkId: sessionLinkId, uploadId, key, partSize, metadata } = initParsed;
-        const effectiveMetadata = {
-          title: metadata.title ?? baseMetadata.title,
-          bundleId: metadata.bundleId ?? baseMetadata.bundleId,
-          version: metadata.version ?? baseMetadata.version,
-          contentType: metadata.contentType || contentType,
+        const uploadHeaders: Record<string, string> = {
+          'Content-Type': contentType,
+          ...(initParsed.uploadHeaders ?? {}),
         };
 
-        const safePartSize = partSize > 0 ? partSize : Math.max(5 * 1024 * 1024, Math.min(file.size, 32 * 1024 * 1024));
-        const totalParts = Math.max(1, Math.ceil(file.size / safePartSize));
-        const parts: Array<{ partNumber: number; etag: string }> = [];
-        const initialRatio = safePartSize > 0 ? Math.min(0.05, safePartSize / file.size) : 0.01;
-        updateProgress(platform, Math.max(0.01, Math.min(0.99, initialRatio)));
-
-        for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
-          const start = (partNumber - 1) * safePartSize;
-          const end = Math.min(start + safePartSize, file.size);
-          const chunk = file.slice(start, end);
-
-          const partRes = await fetch('/api/distributions/upload', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/octet-stream',
-              'x-upload-phase': 'part',
-              'x-upload-id': uploadId,
-              'x-key': key,
-              'x-part-number': String(partNumber),
-              'x-platform': platform,
-              'x-link-id': sessionLinkId,
-            },
-            body: chunk,
-          });
-          let partParsed: UploadPartResponse | UploadErrorResponse;
+        const streamingSupported = (() => {
+          if (typeof window === 'undefined' || typeof ReadableStream === 'undefined') {
+            return false;
+          }
           try {
-            partParsed = (await partRes.json()) as UploadPartResponse | UploadErrorResponse;
-          } catch {
-            partParsed = { ok: false, error: `HTTP_${partRes.status}` };
-          }
-          if (!partParsed.ok) {
-            await fetch('/api/distributions/upload', {
+            const testStream = new ReadableStream();
+            void new Request('https://example.com', {
               method: 'POST',
-              headers: { 'content-type': 'application/json', 'x-upload-phase': 'abort' },
-              body: JSON.stringify({ uploadId, key }),
-            }).catch(() => null);
-            throw new Error(partParsed.error ?? `HTTP_${partRes.status}`);
+              body: testStream as unknown as BodyInit,
+              duplex: 'half',
+            } as RequestInit & { duplex: 'half' });
+            return true;
+          } catch {
+            return false;
           }
-          parts.push({ partNumber: partParsed.partNumber, etag: partParsed.etag });
+        })();
 
-          const uploadedRatio = end / file.size;
-          updateProgress(platform, Math.min(0.99, uploadedRatio));
-        }
+        updateProgress(platform, 0.01);
 
-        const completeRes = await fetch('/api/distributions/upload', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-upload-phase': 'complete',
-          },
-          body: JSON.stringify({
-            platform,
-            linkId: sessionLinkId,
-            uploadId,
-            key,
-            size: file.size,
-            contentType: effectiveMetadata.contentType,
-            title: effectiveMetadata.title,
-            bundleId: effectiveMetadata.bundleId,
-            version: effectiveMetadata.version,
-            parts,
-          }),
-        });
-        let completeParsed: UploadCompleteResponse | UploadErrorResponse;
-        try {
-          completeParsed = (await completeRes.json()) as UploadCompleteResponse | UploadErrorResponse;
-        } catch {
-          throw new Error(`HTTP_${completeRes.status}`);
-        }
-        if (!completeParsed.ok) {
-          throw new Error(completeParsed.error ?? `HTTP_${completeRes.status}`);
-        }
-        if (!completeParsed.upload || !completeParsed.linkId) {
-          throw new Error(`HTTP_${completeRes.status}`);
+        if (streamingSupported) {
+          const total = file.size || 1;
+          let uploaded = 0;
+
+          const bodyStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              const reader = file.stream().getReader();
+              const pump = (): void => {
+                reader
+                  .read()
+                  .then(({ done, value }) => {
+                    if (done) {
+                      controller.close();
+                      return;
+                    }
+                    if (value) {
+                      uploaded += value.byteLength;
+                      updateProgress(platform, Math.min(0.99, uploaded / total));
+                      controller.enqueue(value);
+                    }
+                    pump();
+                  })
+                  .catch((error) => controller.error(error));
+              };
+              pump();
+            },
+          });
+
+          const requestInit: RequestInit & { duplex?: 'half' } = {
+            method: 'PUT',
+            headers: uploadHeaders,
+            body: bodyStream as unknown as BodyInit,
+          };
+          (requestInit as { duplex: 'half' }).duplex = 'half';
+
+          const uploadResponse = await fetch(initParsed.uploadUrl, requestInit);
+          if (!uploadResponse.ok) {
+            throw new Error(uploadResponse.statusText || `UPLOAD_FAILED_${uploadResponse.status}`);
+          }
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', initParsed.uploadUrl);
+            Object.entries(uploadHeaders).forEach(([header, value]) => {
+              try {
+                xhr.setRequestHeader(header, value);
+              } catch {
+                // Ignore browsers that disallow setting certain headers.
+              }
+            });
+            xhr.upload.onprogress = (event) => {
+              if (!event.lengthComputable || event.total === 0) return;
+              const ratio = event.loaded / event.total;
+              updateProgress(platform, Math.min(0.99, ratio));
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+              } else {
+                reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
+              }
+            };
+            xhr.onerror = () => {
+              reject(new Error('NETWORK_ERROR'));
+            };
+            xhr.send(file);
+          });
         }
 
         updateProgress(platform, 1);
-        return { linkId: completeParsed.linkId, upload: completeParsed.upload };
+        return { linkId: initParsed.linkId, upload: { ...initParsed.upload, size: file.size } };
       };
 
       for (const platform of platforms) {
@@ -793,4 +783,3 @@ export default function AddDistributionModal({
     </div>
   );
 }
-
