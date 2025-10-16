@@ -435,7 +435,11 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
   const applyMetadataToFields = (platform: Platform, metadata: FileMeta | null) => {
     if (!autofill || !metadata) return;
-    if ((!title || title === DEFAULT_TITLE) && metadata.title) {
+    if (
+      platform === 'ipa' &&
+      (!title || title === DEFAULT_TITLE) &&
+      metadata.title
+    ) {
       setTitle(metadata.title);
     }
     if (!bundleId && metadata.bundleId) {
@@ -487,13 +491,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
     const apkBundle = apkState.metadata?.bundleId?.trim();
     const ipaBundle = ipaState.metadata?.bundleId?.trim();
-    const apkTitleMeta = apkState.metadata?.title?.trim();
-    const ipaTitleMeta = ipaState.metadata?.title?.trim();
-    if (
-      autofill &&
-      ((apkBundle && ipaBundle && apkBundle !== ipaBundle) ||
-        (apkTitleMeta && ipaTitleMeta && apkTitleMeta !== ipaTitleMeta))
-    ) {
+    if (autofill && apkBundle && ipaBundle && apkBundle !== ipaBundle) {
       const message = t('dashboard.errorAutofillMismatch');
       setError(message);
       onError(message);
