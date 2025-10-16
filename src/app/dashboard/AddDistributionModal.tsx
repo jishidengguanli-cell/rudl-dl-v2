@@ -353,7 +353,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   const fallbackIntervals = useRef<Partial<Record<Platform, number>>>({});
 
   const incrementProgress = useCallback(
-    (platform: Platform, delta: number, ceiling = 0.95) => {
+    (platform: Platform, delta: number, ceiling = 0.99) => {
       setUploadProgress((prev) => {
         const current = prev[platform] ?? 0;
         const next = Math.min(ceiling, Math.max(0, current + delta));
@@ -592,13 +592,15 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
         };
         xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
         if (xhr.upload && platformUploadOrder.length) {
-            const uploadSnapshot: UploadProgressMap = { apk: 0, ipa: 0 };
-            xhr.upload.onloadstart = () => {
-              platformUploadOrder.forEach((platform) => {
-                enqueueFallback(platform);
-                updateProgress(platform, Math.max(uploadProgress[platform] ?? 0, 0.01));
-              });
-            };
+          const uploadSnapshot: UploadProgressMap = { apk: 0, ipa: 0 };
+          xhr.upload.onloadstart = () => {
+            platformUploadOrder.forEach((platform) => {
+              enqueueFallback(platform);
+              if (fallbackQueue.current[0] === platform) {
+                updateProgress(platform, Math.max(uploadProgress[platform] ?? 0, 0.02));
+              }
+            });
+          };
             xhr.upload.onprogress = (event) => {
               const effectiveTotal =
               (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
