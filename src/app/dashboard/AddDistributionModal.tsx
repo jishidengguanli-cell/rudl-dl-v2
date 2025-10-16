@@ -51,20 +51,17 @@ type Props = {
   onError: (message: string) => void;
 };
 
-type PresignResponse = {
-  ok: boolean;
-  linkId: string;
-  uploads: Record<
-    Platform,
-    { key: string; url: string; headers?: Record<string, string> } | undefined
-  >;
-  error?: string;
-};
-
 type FinalizeResponse = {
   ok: boolean;
   linkId?: string;
   code?: string;
+  error?: string;
+};
+
+type UploadResponse = {
+  ok: boolean;
+  linkId?: string;
+  upload?: FinalizeUploadPayload;
   error?: string;
 };
 
@@ -252,71 +249,6 @@ async function parseIpaMetadata(file: File): Promise<FileMeta | null> {
   }
 }
 
-function sanitizeFileName(value: string, fallback: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9._-]/g, '') || fallback;
-}
-
-type PresignFileRequest = {
-  platform: Platform;
-  fileName: string;
-  contentType?: string;
-};
-
-async function requestPresign(body: { files: PresignFileRequest[] }): Promise<PresignResponse> {
-  const res = await fetch('/api/distributions/presign', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const json = (await res.json()) as PresignResponse;
-  if (!res.ok || !json.ok) {
-    throw new Error(json.error ?? `HTTP_${res.status}`);
-  }
-  return json;
-}
-
-type UploadInfo = {
-  key: string;
-  url: string;
-  headers?: Record<string, string>;
-};
-
-async function uploadWithProgress(
-  info: UploadInfo,
-  file: File,
-  onProgress: (value: number) => void
-) {
-  await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', info.url);
-    if (info.headers) {
-      for (const [header, value] of Object.entries(info.headers)) {
-        if (value) {
-          xhr.setRequestHeader(header, value);
-        }
-      }
-    }
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        onProgress(event.loaded / event.total);
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(1);
-        resolve();
-      } else {
-        reject(new Error(`UPLOAD_FAILED_${xhr.status}`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
-    xhr.send(file);
-  });
-}
-
 type FinalizeUploadPayload = {
   platform: Platform;
   key: string;
@@ -325,6 +257,7 @@ type FinalizeUploadPayload = {
   bundleId: string | null;
   version: string | null;
   contentType: string;
+  sha256: string | null;
 };
 
 async function finalizeDistribution(body: {
@@ -468,44 +401,66 @@ export default function AddDistributionModal({
       setUploadProgress({ apk: 0, ipa: 0 });
       setToast(null);
 
-      const presign = await requestPresign({
-        files: platforms.map((platform) => {
+      let linkId: string | null = null;
+      const uploadsPayload: FinalizeUploadPayload[] = [];
+
+      const uploadPlatform = (platform: Platform, existingLinkId: string | null) =>
+        new Promise<{ linkId: string; upload: FinalizeUploadPayload }>((resolve, reject) => {
           const state = platform === 'apk' ? apkState : ipaState;
           const file = state.file!;
-          return {
-            platform,
-            fileName: sanitizeFileName(file.name, `${platform}.bin`),
-            contentType: file.type || 'application/octet-stream',
-          };
-        }),
-      });
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('platform', platform);
+          if (existingLinkId) formData.append('linkId', existingLinkId);
+          formData.append('contentType', file.type || 'application/octet-stream');
+          if (state.metadata?.title) formData.append('title', state.metadata.title);
+          if (state.metadata?.bundleId) formData.append('bundleId', state.metadata.bundleId);
+          if (state.metadata?.version) formData.append('version', state.metadata.version);
 
-      const uploadsPayload: FinalizeUploadPayload[] = [];
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/distributions/upload');
+          xhr.responseType = 'json';
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              updateProgress(platform, event.loaded / event.total);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const body = xhr.response as UploadResponse | null;
+              if (!body?.ok || !body.upload || !body.linkId) {
+                const message = body?.error ?? xhr.responseText ?? 'UPLOAD_FAILED';
+                reject(new Error(message));
+                return;
+              }
+              updateProgress(platform, 1);
+              resolve({ linkId: body.linkId, upload: body.upload });
+            } else {
+              reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
+
+          xhr.send(formData);
+        });
+
       for (const platform of platforms) {
         const state = platform === 'apk' ? apkState : ipaState;
-        const file = state.file;
-        const info = presign.uploads[platform];
-        if (!file || !info?.url || !info?.key) {
-          throw new Error('MISSING_UPLOAD_INFO');
-        }
+        if (!state.file) continue;
+        const result = await uploadPlatform(platform, linkId);
+        linkId = result.linkId;
+        uploadsPayload.push(result.upload);
+      }
 
-        updateProgress(platform, 0);
-        await uploadWithProgress(info, file, (ratio) => updateProgress(platform, ratio));
-        updateProgress(platform, 1);
-
-        uploadsPayload.push({
-          platform,
-          key: info.key,
-          size: file.size,
-          title: state.metadata?.title ?? null,
-          bundleId: state.metadata?.bundleId ?? null,
-          version: state.metadata?.version ?? null,
-          contentType: file.type || 'application/octet-stream',
-        });
+      if (!linkId) {
+        throw new Error('UPLOAD_MISSING');
       }
 
       const finalize = await finalizeDistribution({
-        linkId: presign.linkId,
+        linkId,
         title: title.trim(),
         bundleId: bundleId.trim(),
         apkVersion: apkVersion.trim(),
