@@ -58,10 +58,34 @@ type FinalizeResponse = {
   error?: string;
 };
 
-type UploadResponse = {
-  ok: boolean;
-  linkId?: string;
-  upload?: FinalizeUploadPayload;
+type UploadInitResponse = {
+  ok: true;
+  linkId: string;
+  uploadId: string;
+  key: string;
+  partSize: number;
+  metadata: {
+    title: string | null;
+    bundleId: string | null;
+    version: string | null;
+    contentType: string;
+  };
+};
+
+type UploadPartResponse = {
+  ok: true;
+  etag: string;
+  partNumber: number;
+};
+
+type UploadCompleteResponse = {
+  ok: true;
+  linkId: string;
+  upload: FinalizeUploadPayload;
+};
+
+type UploadErrorResponse = {
+  ok: false;
   error?: string;
 };
 
@@ -404,105 +428,133 @@ export default function AddDistributionModal({
       let linkId: string | null = null;
       const uploadsPayload: FinalizeUploadPayload[] = [];
 
-      const uploadPlatform = (platform: Platform, existingLinkId: string | null) =>
-        new Promise<{ linkId: string; upload: FinalizeUploadPayload }>((resolve, reject) => {
-          const state = platform === 'apk' ? apkState : ipaState;
-          const file = state.file!;
-          const contentType = file.type || 'application/octet-stream';
+      const uploadPlatform = async (
+        platform: Platform,
+        existingLinkId: string | null
+      ): Promise<{ linkId: string; upload: FinalizeUploadPayload }> => {
+        const state = platform === 'apk' ? apkState : ipaState;
+        const file = state.file!;
+        const contentType = file.type || 'application/octet-stream';
+        const baseMetadata = {
+          title: state.metadata?.title?.trim() || null,
+          bundleId: state.metadata?.bundleId?.trim() || null,
+          version: state.metadata?.version?.trim() || null,
+        };
 
-          let fallbackTimer: number | null = null;
-
-          const stopFallback = () => {
-            if (fallbackTimer !== null) {
-              window.clearInterval(fallbackTimer);
-              fallbackTimer = null;
-            }
-          };
-
-          const ensureFallback = () => {
-            if (fallbackTimer !== null) return;
-            fallbackTimer = window.setInterval(() => {
-              setUploadProgress((prev) => {
-                const current = prev[platform] ?? 0;
-                if (current >= 0.99) {
-                  stopFallback();
-                  return prev;
-                }
-                const next = Math.min(0.99, current + 0.01);
-                return { ...prev, [platform]: next };
-              });
-            }, 900);
-          };
-
-          updateProgress(platform, 0.01);
-          ensureFallback();
-
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', '/api/distributions/upload');
-          xhr.responseType = 'json';
-          xhr.setRequestHeader('Content-Type', contentType);
-          xhr.setRequestHeader('X-Platform', platform);
-          xhr.setRequestHeader('X-File-Size', String(file.size));
-          let encodedFileName: string;
-          try {
-            encodedFileName = encodeURIComponent(file.name || `${platform}.bin`);
-          } catch {
-            encodedFileName = encodeURIComponent(`${platform}.bin`);
-          }
-          xhr.setRequestHeader('X-File-Name', encodedFileName);
-          if (existingLinkId) {
-            xhr.setRequestHeader('X-Link-Id', existingLinkId);
-          }
-
-          const setEncodedHeader = (name: string, rawValue: string | null | undefined) => {
-            if (typeof rawValue !== 'string') return;
-            const trimmed = rawValue.trim();
-            if (!trimmed) return;
-            try {
-              xhr.setRequestHeader(name, encodeURIComponent(trimmed));
-            } catch {
-              // Ignore header encoding errors and skip the value.
-            }
-          };
-
-          setEncodedHeader('X-Title', state.metadata?.title ?? null);
-          setEncodedHeader('X-Bundle-Id', state.metadata?.bundleId ?? null);
-          setEncodedHeader('X-Version', state.metadata?.version ?? null);
-
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable && event.total > 0) {
-              const ratio = event.loaded / event.total;
-              stopFallback();
-              updateProgress(platform, Math.min(0.99, ratio));
-              ensureFallback();
-            }
-          };
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              const body = xhr.response as UploadResponse | null;
-              if (!body?.ok || !body.upload || !body.linkId) {
-                const message = body?.error ?? xhr.responseText ?? 'UPLOAD_FAILED';
-                stopFallback();
-                reject(new Error(message));
-                return;
-              }
-              stopFallback();
-              updateProgress(platform, 1);
-              resolve({ linkId: body.linkId, upload: body.upload });
-            } else {
-              stopFallback();
-              reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
-            }
-          };
-
-          xhr.onerror = () => {
-            stopFallback();
-            reject(new Error('NETWORK_ERROR'));
-          };
-
-          xhr.send(file);
+        const initRes = await fetch('/api/distributions/upload', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-upload-phase': 'init',
+          },
+          body: JSON.stringify({
+            platform,
+            linkId: existingLinkId,
+            fileName: file.name,
+            size: file.size,
+            contentType,
+            title: baseMetadata.title,
+            bundleId: baseMetadata.bundleId,
+            version: baseMetadata.version,
+          }),
         });
+        let initParsed: UploadInitResponse | UploadErrorResponse;
+        try {
+          initParsed = (await initRes.json()) as UploadInitResponse | UploadErrorResponse;
+        } catch {
+          throw new Error(`HTTP_${initRes.status}`);
+        }
+        if (!initParsed.ok) {
+          throw new Error(initParsed.error ?? `HTTP_${initRes.status}`);
+        }
+
+        const { linkId: sessionLinkId, uploadId, key, partSize, metadata } = initParsed;
+        const effectiveMetadata = {
+          title: metadata.title ?? baseMetadata.title,
+          bundleId: metadata.bundleId ?? baseMetadata.bundleId,
+          version: metadata.version ?? baseMetadata.version,
+          contentType: metadata.contentType || contentType,
+        };
+
+        const safePartSize = partSize > 0 ? partSize : Math.max(5 * 1024 * 1024, Math.min(file.size, 32 * 1024 * 1024));
+        const totalParts = Math.max(1, Math.ceil(file.size / safePartSize));
+        const parts: Array<{ partNumber: number; etag: string }> = [];
+        const initialRatio = safePartSize > 0 ? Math.min(0.05, safePartSize / file.size) : 0.01;
+        updateProgress(platform, Math.max(0.01, Math.min(0.99, initialRatio)));
+
+        for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+          const start = (partNumber - 1) * safePartSize;
+          const end = Math.min(start + safePartSize, file.size);
+          const chunk = file.slice(start, end);
+
+          const partRes = await fetch('/api/distributions/upload', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/octet-stream',
+              'x-upload-phase': 'part',
+              'x-upload-id': uploadId,
+              'x-key': key,
+              'x-part-number': String(partNumber),
+              'x-platform': platform,
+              'x-link-id': sessionLinkId,
+            },
+            body: chunk,
+          });
+          let partParsed: UploadPartResponse | UploadErrorResponse;
+          try {
+            partParsed = (await partRes.json()) as UploadPartResponse | UploadErrorResponse;
+          } catch {
+            partParsed = { ok: false, error: `HTTP_${partRes.status}` };
+          }
+          if (!partParsed.ok) {
+            await fetch('/api/distributions/upload', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-upload-phase': 'abort' },
+              body: JSON.stringify({ uploadId, key }),
+            }).catch(() => null);
+            throw new Error(partParsed.error ?? `HTTP_${partRes.status}`);
+          }
+          parts.push({ partNumber: partParsed.partNumber, etag: partParsed.etag });
+
+          const uploadedRatio = end / file.size;
+          updateProgress(platform, Math.min(0.99, uploadedRatio));
+        }
+
+        const completeRes = await fetch('/api/distributions/upload', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-upload-phase': 'complete',
+          },
+          body: JSON.stringify({
+            platform,
+            linkId: sessionLinkId,
+            uploadId,
+            key,
+            size: file.size,
+            contentType: effectiveMetadata.contentType,
+            title: effectiveMetadata.title,
+            bundleId: effectiveMetadata.bundleId,
+            version: effectiveMetadata.version,
+            parts,
+          }),
+        });
+        let completeParsed: UploadCompleteResponse | UploadErrorResponse;
+        try {
+          completeParsed = (await completeRes.json()) as UploadCompleteResponse | UploadErrorResponse;
+        } catch {
+          throw new Error(`HTTP_${completeRes.status}`);
+        }
+        if (!completeParsed.ok) {
+          throw new Error(completeParsed.error ?? `HTTP_${completeRes.status}`);
+        }
+        if (!completeParsed.upload || !completeParsed.linkId) {
+          throw new Error(`HTTP_${completeRes.status}`);
+        }
+
+        updateProgress(platform, 1);
+        return { linkId: completeParsed.linkId, upload: completeParsed.upload };
+      };
 
       for (const platform of platforms) {
         const state = platform === 'apk' ? apkState : ipaState;
