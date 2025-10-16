@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import JSZip from 'jszip';
@@ -15,10 +14,6 @@ import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
 
 const DEFAULT_TITLE = 'APP';
-const APK_METADATA_PATHS = [
-  'META-INF/com/android/build/gradle/app-metadata.properties',
-  'BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties',
-];
 
 type Platform = 'apk' | 'ipa';
 
@@ -26,7 +21,6 @@ type FileMeta = {
   title?: string | null;
   bundleId?: string | null;
   version?: string | null;
-  sha256?: string | null;
 };
 
 type FileState = {
@@ -38,6 +32,18 @@ type UploadProgressMap = Record<Platform, number>;
 
 type SubmitState = 'idle' | 'submitting' | 'success';
 
+type BinaryXmlAttributeRaw = {
+  name?: string;
+  nodeName?: string;
+  value?: string;
+};
+
+type BinaryXmlNodeRaw = {
+  nodeName?: string;
+  attributes?: BinaryXmlAttributeRaw[];
+  childNodes?: BinaryXmlNodeRaw[];
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -45,207 +51,65 @@ type Props = {
   onError: (message: string) => void;
 };
 
-async function computeSha256(file: File) {
-  const buffer = await file.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(hash))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function parseProperties(text: string): Map<string, string> {
-  const map = new Map<string, string>();
-  text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'))
-    .forEach((line) => {
-      const index = line.indexOf('=');
-      if (index === -1) return;
-      const key = line.slice(0, index).trim();
-      const value = line.slice(index + 1).trim();
-      if (key) map.set(key, value);
-    });
-  return map;
-}
-
-function normalizeMeta(meta: FileMeta | null): FileMeta | null {
-  if (!meta) return null;
-  const normalized: FileMeta = { ...meta };
-  if (typeof normalized.title === 'string') {
-    const value = normalized.title.trim();
-    normalized.title = value || null;
-  }
-  if (typeof normalized.bundleId === 'string') {
-    const value = normalized.bundleId.trim();
-    normalized.bundleId = value || null;
-  }
-  if (typeof normalized.version === 'string') {
-    const value = normalized.version.trim();
-    normalized.version = value || null;
-  }
-  if (typeof normalized.sha256 === 'string') {
-    const value = normalized.sha256.trim();
-    normalized.sha256 = value || undefined;
-  }
-  return normalized;
-}
-
-type BinaryXmlAttribute = {
-  name: string;
-  nodeName?: string | null;
-  value?: string | null;
-  typedValue?: {
-    value: unknown;
-    type: string | null;
-  };
+type PresignResponse = {
+  ok: boolean;
+  linkId: string;
+  uploads: Record<
+    Platform,
+    { key: string; url: string; headers?: Record<string, string> } | undefined
+  >;
+  error?: string;
 };
 
-type BinaryXmlNode = {
-  nodeName: string | null;
-  attributes?: BinaryXmlAttribute[];
-  childNodes?: BinaryXmlNode[];
+type FinalizeResponse = {
+  ok: boolean;
+  linkId?: string;
+  code?: string;
+  error?: string;
 };
-
-type BinaryXmlParserCtor = new (buffer: Buffer, options?: { debug?: boolean }) => {
-  parse(): unknown;
-};
-
-function normalizeBinaryAttribute(raw: unknown): BinaryXmlAttribute | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const attr = raw as Record<string, unknown>;
-  const name =
-    typeof attr.name === 'string'
-      ? attr.name
-      : typeof attr.nodeName === 'string'
-        ? attr.nodeName
-        : '';
-  const nodeName = typeof attr.nodeName === 'string' ? attr.nodeName : null;
-  const value = typeof attr.value === 'string' ? attr.value : null;
-  let typedValue: BinaryXmlAttribute['typedValue'];
-  if (attr.typedValue && typeof attr.typedValue === 'object') {
-    const typed = attr.typedValue as Record<string, unknown>;
-    typedValue = {
-      value: typed.value as unknown,
-      type: typeof typed.type === 'string' ? typed.type : null,
-    };
-  }
-  return { name, nodeName, value, typedValue };
-}
-
-function normalizeBinaryNode(raw: unknown): BinaryXmlNode | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const node = raw as Record<string, unknown>;
-  const attributes: BinaryXmlAttribute[] = Array.isArray(node.attributes)
-    ? node.attributes
-        .map((attr) => normalizeBinaryAttribute(attr))
-        .filter((attr): attr is BinaryXmlAttribute => Boolean(attr))
-    : [];
-
-  const childNodes: BinaryXmlNode[] = Array.isArray(node.childNodes)
-    ? node.childNodes
-        .map((child) => normalizeBinaryNode(child))
-        .filter((child): child is BinaryXmlNode => Boolean(child))
-    : [];
-
-  return {
-    nodeName: typeof node.nodeName === 'string' ? node.nodeName : null,
-    attributes,
-    childNodes,
-  };
-}
-
-function pickAttributeValue(
-  node: BinaryXmlNode | null | undefined,
-  name: string
-): string | null {
-  if (!node?.attributes?.length) return null;
-  const candidates = new Set<string>([
-    name,
-    name.startsWith('android:') ? name.slice('android:'.length) : `android:${name}`,
-  ]);
-  const target = node.attributes.find((attr) => {
-    const attrName =
-      attr.name && attr.name.includes(':')
-        ? attr.name
-        : attr.nodeName ?? attr.name ?? '';
-    return candidates.has(attr.name ?? '') || candidates.has(attrName);
-  });
-  if (!target) return null;
-  if (typeof target.value === 'string' && target.value.length) {
-    return target.value;
-  }
-  if (target.typedValue?.value != null) {
-    return String(target.typedValue.value);
-  }
-  return null;
-}
-
-async function parseApkManifest(zip: JSZip): Promise<FileMeta | null> {
-  try {
-    const manifestEntry = zip.file('AndroidManifest.xml');
-    if (!manifestEntry) return null;
-    const manifestBuffer = Buffer.from(await manifestEntry.async('arraybuffer'));
-    const BinaryXmlParserModule = await import('binary-xml');
-    const BinaryXmlParserCtor =
-      (BinaryXmlParserModule.default ?? BinaryXmlParserModule) as BinaryXmlParserCtor;
-    const parser = new BinaryXmlParserCtor(manifestBuffer);
-    const rawDocument = parser.parse();
-    const root = normalizeBinaryNode(rawDocument);
-    if (!root) return null;
-
-    const bundleId = pickAttributeValue(root, 'package');
-    const versionName =
-      pickAttributeValue(root, 'android:versionName') ??
-      pickAttributeValue(root, 'versionName') ??
-      null;
-    const versionCode =
-      pickAttributeValue(root, 'android:versionCode') ??
-      pickAttributeValue(root, 'versionCode') ??
-      null;
-
-    const application =
-      root.childNodes?.find((child) => child.nodeName === 'application') ?? null;
-    const appLabel =
-      pickAttributeValue(application, 'android:label') ??
-      pickAttributeValue(application, 'label');
-
-    return {
-      title: appLabel ?? null,
-      bundleId: bundleId ?? null,
-      version: versionName ?? versionCode ?? null,
-    };
-  } catch (error) {
-    console.warn('Failed to parse APK AndroidManifest.xml', error);
-    return null;
-  }
-}
 
 async function parseGradleMetadata(zip: JSZip): Promise<FileMeta | null> {
-  for (const path of APK_METADATA_PATHS) {
+  const metadataPaths = [
+    'META-INF/com/android/build/gradle/app-metadata.properties',
+    'BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties',
+  ];
+
+  for (const path of metadataPaths) {
     const entry = zip.file(path);
     if (!entry) continue;
+    const raw = await entry.async('text');
+    const map = new Map<string, string>();
+    raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .forEach((line) => {
+        const idx = line.indexOf('=');
+        if (idx === -1) return;
+        const key = line.slice(0, idx).trim();
+        const value = line.slice(idx + 1).trim();
+        if (key) map.set(key, value);
+      });
 
-    const content = await entry.async('text');
-    const props = parseProperties(content);
     const bundleId =
-      props.get('applicationId') ??
-      props.get('packageId') ??
-      props.get('package') ??
-      props.get('appId') ??
+      map.get('applicationId') ??
+      map.get('packageId') ??
+      map.get('package') ??
+      map.get('appId') ??
       '';
     const version =
-      props.get('versionName') ??
-      props.get('bundleVersion') ??
-      props.get('version') ??
-      props.get('versionNameMajor') ??
+      map.get('versionName') ??
+      map.get('bundleVersion') ??
+      map.get('version') ??
+      map.get('versionNameMajor') ??
       '';
     const title =
-      props.get('appName') ??
-      props.get('bundleName') ??
-      props.get('displayName') ??
-      props.get('applicationLabel') ??
+      map.get('appName') ??
+      map.get('bundleName') ??
+      map.get('displayName') ??
+      map.get('applicationLabel') ??
       null;
+
     if (bundleId || version || title) {
       return {
         title: title || null,
@@ -254,7 +118,65 @@ async function parseGradleMetadata(zip: JSZip): Promise<FileMeta | null> {
       };
     }
   }
+
   return null;
+}
+
+async function parseApkManifest(zip: JSZip): Promise<FileMeta | null> {
+  const manifestEntry = zip.file('AndroidManifest.xml');
+  if (!manifestEntry) return null;
+  const manifestBuffer = Buffer.from(await manifestEntry.async('arraybuffer'));
+  const BinaryXmlParserModule = await import('binary-xml');
+  const BinaryXmlParserCtor =
+    (BinaryXmlParserModule.default ?? BinaryXmlParserModule) as new (
+      buffer: Buffer,
+      options?: { debug?: boolean }
+    ) => { parse(): unknown };
+  const parser = new BinaryXmlParserCtor(manifestBuffer);
+  const document = parser.parse() as BinaryXmlNodeRaw | null;
+  if (!document) return null;
+
+  const findAttribute = (node: BinaryXmlNodeRaw | null | undefined, name: string): string | null => {
+    if (!node?.attributes) return null;
+    for (const attr of node.attributes) {
+      const attrName =
+        typeof attr?.name === 'string'
+          ? attr.name
+          : typeof attr?.nodeName === 'string'
+            ? attr.nodeName
+            : '';
+      if (
+        attrName === name ||
+        attrName === `android:${name}` ||
+        (name.startsWith('android:') && attrName === name.replace('android:', ''))
+      ) {
+        if (typeof attr?.value === 'string') return attr.value;
+      }
+    }
+    return null;
+  };
+
+  const bundleId = findAttribute(document, 'package') ?? '';
+  const version =
+    findAttribute(document, 'android:versionName') ??
+    findAttribute(document, 'versionName') ??
+    findAttribute(document, 'android:versionCode') ??
+    findAttribute(document, 'versionCode') ??
+    '';
+
+  const application =
+    document.childNodes?.find((child) => child?.nodeName === 'application') ?? null;
+  const title =
+    findAttribute(application, 'android:label') ??
+    findAttribute(application, 'label') ??
+    null;
+
+  if (!bundleId && !version && !title) return null;
+  return {
+    bundleId: bundleId || null,
+    version: version || null,
+    title,
+  };
 }
 
 async function parseApkMetadata(file: File): Promise<FileMeta | null> {
@@ -330,14 +252,108 @@ async function parseIpaMetadata(file: File): Promise<FileMeta | null> {
   }
 }
 
-function formatBytes(size: number | null | undefined) {
-  if (!size || Number.isNaN(size)) return '-';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+function sanitizeFileName(value: string, fallback: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '') || fallback;
 }
 
-export default function AddDistributionModal({ open, onClose, onCreated, onError }: Props) {
+type PresignFileRequest = {
+  platform: Platform;
+  fileName: string;
+  contentType?: string;
+};
+
+async function requestPresign(body: { files: PresignFileRequest[] }): Promise<PresignResponse> {
+  const res = await fetch('/api/distributions/presign', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as PresignResponse;
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error ?? `HTTP_${res.status}`);
+  }
+  return json;
+}
+
+type UploadInfo = {
+  key: string;
+  url: string;
+  headers?: Record<string, string>;
+};
+
+async function uploadWithProgress(
+  info: UploadInfo,
+  file: File,
+  onProgress: (value: number) => void
+) {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', info.url);
+    if (info.headers) {
+      for (const [header, value] of Object.entries(info.headers)) {
+        if (value) {
+          xhr.setRequestHeader(header, value);
+        }
+      }
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(event.loaded / event.total);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(1);
+        resolve();
+      } else {
+        reject(new Error(`UPLOAD_FAILED_${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
+    xhr.send(file);
+  });
+}
+
+type FinalizeUploadPayload = {
+  platform: Platform;
+  key: string;
+  size: number;
+  title: string | null;
+  bundleId: string | null;
+  version: string | null;
+  contentType: string;
+};
+
+async function finalizeDistribution(body: {
+  linkId: string;
+  title: string;
+  bundleId: string;
+  apkVersion: string;
+  ipaVersion: string;
+  autofill: boolean;
+  uploads: FinalizeUploadPayload[];
+}) {
+  const res = await fetch('/api/distributions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as FinalizeResponse;
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error ?? `HTTP_${res.status}`);
+  }
+  return json;
+}
+
+export default function AddDistributionModal({
+  open,
+  onClose,
+  onCreated,
+  onError,
+}: Props) {
   const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [bundleId, setBundleId] = useState('');
@@ -348,79 +364,11 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressMap>({ apk: 0, ipa: 0 });
-  const fallbackQueue = useRef<Platform[]>([]);
-  const fallbackIntervals = useRef<Partial<Record<Platform, number>>>({});
-
-  const incrementProgress = useCallback(
-    (platform: Platform, delta: number, ceiling = 0.99) => {
-      setUploadProgress((prev) => {
-        const current = prev[platform] ?? 0;
-        const next = Math.min(ceiling, Math.max(0, current + delta));
-        if (next === current) return prev;
-        return { ...prev, [platform]: next };
-      });
-    },
-    []
-  );
-
-  const updateProgress = useCallback((platform: Platform, value: number) => {
-    setUploadProgress((prev) => {
-      const desired = Math.max(0, Math.min(1, value));
-      const current = prev[platform] ?? 0;
-      const next = Math.max(current, desired);
-      if (current === next) return prev;
-      return { ...prev, [platform]: next };
-    });
-  }, []);
-
-  const stopFallbackTimer = useCallback((platform: Platform) => {
-    const timer = fallbackIntervals.current[platform];
-    if (timer !== undefined) {
-      clearInterval(timer);
-      delete fallbackIntervals.current[platform];
-    }
-  }, []);
-
-  const startNextFallback = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const current = fallbackQueue.current[0];
-    if (!current) return;
-    if (fallbackIntervals.current[current] !== undefined) return;
-    fallbackIntervals.current[current] = window.setInterval(() => {
-      incrementProgress(current, 0.01);
-    }, 800);
-  }, [incrementProgress]);
-
-  const enqueueFallback = useCallback(
-    (platform: Platform) => {
-      if (!fallbackQueue.current.includes(platform)) {
-        fallbackQueue.current.push(platform);
-      }
-      startNextFallback();
-    },
-    [startNextFallback]
-  );
-
-  const completeFallback = useCallback(
-    (platform: Platform) => {
-      stopFallbackTimer(platform);
-      fallbackQueue.current = fallbackQueue.current.filter((item) => item !== platform);
-      startNextFallback();
-    },
-    [stopFallbackTimer, startNextFallback]
-  );
-
-  const clearAllFallbackTimers = useCallback(() => {
-    (Object.keys(fallbackIntervals.current) as Platform[]).forEach((platform) =>
-      stopFallbackTimer(platform)
-    );
-    fallbackQueue.current = [];
-  }, [stopFallbackTimer]);
 
   useEffect(() => {
     if (!open) {
-      clearAllFallbackTimers();
       setTitle('');
       setBundleId('');
       setApkVersion('');
@@ -430,13 +378,10 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       setIpaState({ file: null, metadata: null });
       setSubmitState('idle');
       setError(null);
+      setToast(null);
       setUploadProgress({ apk: 0, ipa: 0 });
     }
-  }, [open, clearAllFallbackTimers]);
-
-  useEffect(() => {
-    return () => clearAllFallbackTimers();
-  }, [clearAllFallbackTimers]);
+  }, [open]);
 
   const selectedPlatforms = useMemo(() => {
     const list: Platform[] = [];
@@ -445,72 +390,64 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     return list;
   }, [apkState.file, ipaState.file]);
 
-  if (!open) return null;
+  const updateProgress = useCallback((platform: Platform, value: number) => {
+    setUploadProgress((prev) => ({
+      ...prev,
+      [platform]: Math.max(0, Math.min(1, value)),
+    }));
+  }, []);
 
-  const resolveErrorMessage = (code: string | undefined | null) => {
-    if (!code) return t('status.unreadable');
-    switch (code) {
-      case 'NO_FILES':
-        return t('dashboard.errorNoFiles');
-      case 'AUTOFILL_MISMATCH':
-        return t('dashboard.errorAutofillMismatch');
-      case 'UNAUTHENTICATED':
-        return t('auth.login.required');
-      default:
-        return code;
-    }
-  };
-
-  const applyMetadataToFields = (platform: Platform, metadata: FileMeta | null) => {
-    if (!autofill || !metadata) return;
-    if (
-      platform === 'ipa' &&
-      (!title || title === DEFAULT_TITLE) &&
-      metadata.title
-    ) {
-      setTitle(metadata.title);
-    }
-    if (!bundleId && metadata.bundleId) {
-      setBundleId(metadata.bundleId);
-    }
-    if (platform === 'apk' && !apkVersion && metadata.version) {
-      setApkVersion(metadata.version);
-    }
-    if (platform === 'ipa' && !ipaVersion && metadata.version) {
-      setIpaVersion(metadata.version);
-    }
-  };
-
-  const handleFileChange = async (platform: Platform, list: FileList | null) => {
-    const file = list && list[0] ? list[0] : null;
+  const handleFileChange = async (platform: Platform, files: FileList | null) => {
+    const file = files && files[0] ? files[0] : null;
     const setter = platform === 'apk' ? setApkState : setIpaState;
     setter({ file, metadata: null });
-
     if (!file) return;
 
     try {
-      const metadata =
-        platform === 'ipa' ? await parseIpaMetadata(file) : await parseApkMetadata(file);
-      const normalized = normalizeMeta(metadata);
-      setter({ file, metadata: normalized });
-      applyMetadataToFields(platform, normalized);
-      setError(null);
+      const metadata = platform === 'apk' ? await parseApkMetadata(file) : await parseIpaMetadata(file);
+      setter({ file, metadata });
+      if (autofill) {
+        if (platform === 'ipa' && metadata?.title && (!title || title === DEFAULT_TITLE)) {
+          setTitle(metadata.title);
+        }
+        if (!bundleId && metadata?.bundleId) {
+          setBundleId(metadata.bundleId);
+        }
+        if (platform === 'apk' && !apkVersion && metadata?.version) {
+          setApkVersion(metadata.version);
+        }
+        if (platform === 'ipa' && !ipaVersion && metadata?.version) {
+          setIpaVersion(metadata.version);
+        }
+      }
     } catch (err) {
-      console.warn(`Failed to process ${platform} file`, err);
+      console.warn(`Failed to parse ${platform} metadata`, err);
     }
   };
 
-  const handleAutofillToggle = (next: boolean) => {
-    setAutofill(next);
-    if (!next) return;
-    applyMetadataToFields('apk', apkState.metadata);
-    applyMetadataToFields('ipa', ipaState.metadata);
+  const handleAutofillToggle = (checked: boolean) => {
+    setAutofill(checked);
+    if (!checked) return;
+    if (ipaState.metadata?.title && (!title || title === DEFAULT_TITLE)) {
+      setTitle(ipaState.metadata.title);
+    }
+    if (!bundleId && (apkState.metadata?.bundleId || ipaState.metadata?.bundleId)) {
+      setBundleId(apkState.metadata?.bundleId ?? ipaState.metadata?.bundleId ?? '');
+    }
+    if (!apkVersion && apkState.metadata?.version) {
+      setApkVersion(apkState.metadata.version);
+    }
+    if (!ipaVersion && ipaState.metadata?.version) {
+      setIpaVersion(ipaState.metadata.version);
+    }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError(null);
 
-    if (!selectedPlatforms.length) {
+    const platforms = selectedPlatforms;
+    if (!platforms.length) {
       const message = t('dashboard.errorNoFiles');
       setError(message);
       onError(message);
@@ -526,153 +463,71 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
       return;
     }
 
-    const platformUploadOrder: Platform[] = [];
-    const sizeByPlatform: Record<Platform, number> = { apk: 0, ipa: 0 };
-
     try {
       setSubmitState('submitting');
-      setError(null);
       setUploadProgress({ apk: 0, ipa: 0 });
-      clearAllFallbackTimers();
+      setToast(null);
 
-      const formData = new FormData();
-      formData.append('title', title.trim());
-      formData.append('bundle_id', bundleId.trim());
-      formData.append('apk_version', apkVersion.trim());
-      formData.append('ipa_version', ipaVersion.trim());
-      formData.append('autofill', autofill ? 'true' : 'false');
-
-      const appendFile = async (platform: Platform, state: FileState) => {
-        if (!state.file) return;
-        platformUploadOrder.push(platform);
-        sizeByPlatform[platform] = state.file.size;
-          updateProgress(platform, 0);
-          enqueueFallback(platform);
-        formData.append(platform, state.file, state.file.name);
-
-        const meta: FileMeta = { ...state.metadata };
-        if (!meta.sha256) {
-          try {
-            meta.sha256 = await computeSha256(state.file);
-          } catch (error) {
-            console.warn(`Failed to compute SHA-256 for ${platform}`, error);
-          }
-        }
-        if (Object.keys(meta).length) {
-          formData.append(`${platform}_meta`, JSON.stringify(meta));
-        }
-      };
-
-      await appendFile('apk', apkState);
-      await appendFile('ipa', ipaState);
-
-      const totalBytes = platformUploadOrder.reduce(
-        (sum, platform) => sum + (sizeByPlatform[platform] ?? 0),
-        0
-      );
-
-      const json = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/distributions');
-        xhr.responseType = 'text';
-        xhr.onload = () => {
-          const text = xhr.responseText ?? '';
-          let payload: { ok: boolean; error?: string } = { ok: false };
-          try {
-            payload = text ? (JSON.parse(text) as typeof payload) : { ok: xhr.status < 400 };
-          } catch {
-            reject(new Error('INVALID_RESPONSE'));
-            return;
-          }
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(payload);
-          } else {
-            reject(new Error(resolveErrorMessage(payload.error ?? `HTTP_${xhr.status}`)));
-          }
-        };
-        xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
-        if (xhr.upload && platformUploadOrder.length) {
-          const uploadSnapshot: UploadProgressMap = { apk: 0, ipa: 0 };
-          xhr.upload.onloadstart = () => {
-            platformUploadOrder.forEach((platform) => {
-              enqueueFallback(platform);
-              if (fallbackQueue.current[0] === platform) {
-                updateProgress(platform, Math.max(uploadProgress[platform] ?? 0, 0.02));
-              }
-            });
+      const presign = await requestPresign({
+        files: platforms.map((platform) => {
+          const state = platform === 'apk' ? apkState : ipaState;
+          const file = state.file!;
+          return {
+            platform,
+            fileName: sanitizeFileName(file.name, `${platform}.bin`),
+            contentType: file.type || 'application/octet-stream',
           };
-            xhr.upload.onprogress = (event) => {
-            const effectiveTotal =
-              (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
-            if (!effectiveTotal) {
-              platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
-              return;
-            }
-
-            const loaded = Math.min(event.loaded ?? 0, effectiveTotal);
-            let accumulated = 0;
-            platformUploadOrder.forEach((platform) => {
-              const size = sizeByPlatform[platform] ?? 0;
-              if (!size) {
-                uploadSnapshot[platform] = 1;
-                completeFallback(platform);
-                return;
-              }
-              const start = accumulated;
-              const end = start + size;
-              let value = 0;
-              if (loaded <= start) value = 0;
-              else if (loaded >= end) value = 1;
-              else value = (loaded - start) / size;
-              if (value >= 0.99) {
-                value = 1;
-                completeFallback(platform);
-              }
-              uploadSnapshot[platform] = Math.max(uploadSnapshot[platform] ?? 0, value);
-              accumulated = end;
-            });
-            platformUploadOrder.forEach((platform) =>
-              updateProgress(platform, uploadSnapshot[platform] ?? 0)
-            );
-          };
-
-            xhr.upload.onload = () => {
-              platformUploadOrder.forEach((platform) => {
-                completeFallback(platform);
-                updateProgress(platform, 1);
-              });
-            };
-
-            xhr.upload.onabort = () => {
-              platformUploadOrder.forEach((platform) => {
-                completeFallback(platform);
-                updateProgress(platform, 0);
-              });
-            };
-          }
-        xhr.send(formData);
+        }),
       });
 
-      if (!json.ok) {
-        throw new Error(resolveErrorMessage(json.error));
+      const uploadsPayload: FinalizeUploadPayload[] = [];
+      for (const platform of platforms) {
+        const state = platform === 'apk' ? apkState : ipaState;
+        const file = state.file;
+        const info = presign.uploads[platform];
+        if (!file || !info?.url || !info?.key) {
+          throw new Error('MISSING_UPLOAD_INFO');
+        }
+
+        updateProgress(platform, 0);
+        await uploadWithProgress(info, file, (ratio) => updateProgress(platform, ratio));
+        updateProgress(platform, 1);
+
+        uploadsPayload.push({
+          platform,
+          key: info.key,
+          size: file.size,
+          title: state.metadata?.title ?? null,
+          bundleId: state.metadata?.bundleId ?? null,
+          version: state.metadata?.version ?? null,
+          contentType: file.type || 'application/octet-stream',
+        });
       }
 
-      platformUploadOrder.forEach((platform) => updateProgress(platform, 1));
-      clearAllFallbackTimers();
+      const finalize = await finalizeDistribution({
+        linkId: presign.linkId,
+        title: title.trim(),
+        bundleId: bundleId.trim(),
+        apkVersion: apkVersion.trim(),
+        ipaVersion: ipaVersion.trim(),
+        autofill,
+        uploads: uploadsPayload,
+      });
 
-      setSubmitState('success');
-      const maybePromise = onCreated();
-      if (maybePromise && typeof (maybePromise as Promise<unknown>).then === 'function') {
-        await maybePromise;
+      if (finalize.ok) {
+        setToast(t('dashboard.toastCreated'));
+        setSubmitState('success');
+        const maybePromise = onCreated();
+        if (maybePromise instanceof Promise) {
+          await maybePromise;
+        }
+        setTimeout(() => setToast(null), 5000);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : resolveErrorMessage(String(err));
+      const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      setSubmitState('idle');
       onError(message);
-      platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
-    } finally {
-      clearAllFallbackTimers();
+      setSubmitState('idle');
     }
   };
 
@@ -687,57 +542,33 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     if (submitState === 'success') {
       return <p className="text-sm text-green-600">{t('dashboard.toastCreated')}</p>;
     }
-    if (submitState === 'submitting' && summaries.length) {
-      return (
-        <div className="space-y-3">
-          {summaries.map(({ platform, state }) => {
-            const progress = uploadProgress[platform] ?? 0;
-            const percent = Math.max(0, Math.min(100, progress * 100));
-            const percentLabel =
-              percent > 0 && percent < 1 ? percent.toFixed(1) : Math.round(percent).toString();
-            const label =
-              state.metadata?.title ??
-              state.file?.name ??
-              `${platform.toUpperCase()} ${t('dashboard.progressPlaceholder')}`;
-            return (
-              <div key={platform}>
-                <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
-                  <span className="font-medium text-gray-700">
-                    {platform.toUpperCase()} · {label}
-                  </span>
-                  <span>{percentLabel}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-gray-200">
-                  <div
-                    className="h-full rounded-full bg-black transition-all"
-                    style={{ width: `${percent}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
     if (!summaries.length) {
       return <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>;
     }
     return (
       <ul className="space-y-1 text-xs text-gray-600">
         {summaries.map(({ platform, state }) => {
-          const file = state.file!;
-          const meta = state.metadata;
-          const parts: string[] = [];
-          parts.push(platform.toUpperCase());
-          const label = meta?.title ?? file.name;
-          if (label) parts.push(label);
-          if (meta?.bundleId) parts.push(meta.bundleId);
-          if (meta?.version) parts.push(`v${meta.version}`);
-          parts.push(formatBytes(file.size));
+          const progress = uploadProgress[platform] ?? 0;
+          const percent = Math.round(progress * 100);
+          const label =
+            state.metadata?.title ??
+            state.file?.name ??
+            `${platform.toUpperCase()} ${t('dashboard.progressPlaceholder')}`;
+
           return (
             <li key={platform}>
-              <span className="font-semibold text-gray-700">{parts.shift()}</span>
-              <span> · {parts.join(' · ')}</span>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-semibold text-gray-700">
+                  {platform.toUpperCase()} · {label}
+                </span>
+                <span>{percent}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-gray-200">
+                <div
+                  className="h-full rounded-full bg-black transition-all"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
             </li>
           );
         })}
@@ -859,6 +690,12 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
             </p>
           )}
 
+          {toast && (
+            <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {toast}
+            </p>
+          )}
+
           <div className="flex items-center justify-end gap-3">
             <button
               type="button"
@@ -883,3 +720,4 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     </div>
   );
 }
+

@@ -10,14 +10,27 @@ type Env = {
   R2_BUCKET?: R2Bucket;
 };
 
-type FileMeta = {
+type UploadInput = {
+  platform: 'apk' | 'ipa';
+  key: string;
+  size: number;
   title?: string | null;
   bundleId?: string | null;
   version?: string | null;
+  contentType?: string | null;
   sha256?: string | null;
 };
 
-const SUPPORTED_PLATFORMS: Array<'apk' | 'ipa'> = ['apk', 'ipa'];
+type FinalizeBody = {
+  linkId: string;
+  title: string;
+  bundleId: string;
+  apkVersion: string;
+  ipaVersion: string;
+  autofill: boolean;
+  uploads: UploadInput[];
+};
+
 const DEFAULT_TITLE = 'APP';
 
 type TableInfo = {
@@ -65,11 +78,10 @@ function parseUid(req: Request): string | null {
   return pair.slice(4);
 }
 
-async function sha256(buffer: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+function sanitizeTitleFromKey(key: string): string | null {
+  const parts = key.split('/');
+  const fileName = parts[parts.length - 1] ?? '';
+  return fileName.replace(/^\d+-/, '').replace(/\.[^.]+$/, '') || null;
 }
 
 export async function POST(req: Request) {
@@ -86,44 +98,56 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Missing DB or R2 binding' }, { status: 500 });
   }
 
-  const form = await req.formData();
-
-  const titleInput = ((form.get('title') as string | null) ?? '').trim();
-  const bundleIdInput = ((form.get('bundle_id') as string | null) ?? '').trim();
-  const apkVersionInput = ((form.get('apk_version') as string | null) ?? '').trim();
-  const ipaVersionInput = ((form.get('ipa_version') as string | null) ?? '').trim();
-  const autofill = ((form.get('autofill') as string | null) ?? 'true').toLowerCase() === 'true';
-
-  type FilePayload = {
-    platform: 'apk' | 'ipa';
-    file: File;
-    meta: FileMeta;
-  };
-  const files: FilePayload[] = [];
-
-  for (const platform of SUPPORTED_PLATFORMS) {
-    const value = form.get(platform);
-    if (value instanceof File && value.size > 0) {
-      let meta: FileMeta = {};
-      const metaRaw = form.get(`${platform}_meta`);
-      if (typeof metaRaw === 'string' && metaRaw.trim()) {
-        try {
-          meta = JSON.parse(metaRaw) as FileMeta;
-        } catch (error) {
-          console.warn('Failed to parse metadata for platform', platform, error);
-        }
-      }
-      files.push({ platform, file: value, meta });
-    }
+  let payload: FinalizeBody | undefined;
+  try {
+    payload = (await req.json()) as FinalizeBody;
+  } catch {
+    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' }, { status: 400 });
   }
 
-  if (!files.length) {
+  if (!payload) {
+    return NextResponse.json({ ok: false, error: 'INVALID_PAYLOAD' }, { status: 400 });
+  }
+
+  const {
+    linkId,
+    title: titleInputRaw,
+    bundleId: bundleIdInputRaw,
+    apkVersion: apkVersionInputRaw,
+    ipaVersion: ipaVersionInputRaw,
+    autofill,
+    uploads: uploadsInput,
+  } = payload;
+
+  if (!linkId || typeof linkId !== 'string') {
+    return NextResponse.json({ ok: false, error: 'INVALID_LINK_ID' }, { status: 400 });
+  }
+  if (!Array.isArray(uploadsInput) || uploadsInput.length === 0) {
+    return NextResponse.json({ ok: false, error: 'NO_FILES' }, { status: 400 });
+  }
+
+  const uploads: UploadInput[] = []
+  for (const raw of uploadsInput ?? []) {
+    if (!raw || (raw.platform !== 'apk' && raw.platform !== 'ipa') || !raw.key) continue;
+    uploads.push({
+      platform: raw.platform,
+      key: String(raw.key),
+      size: Number(raw.size ?? 0),
+      title: raw.title ?? null,
+      bundleId: raw.bundleId ?? null,
+      version: raw.version ?? null,
+      contentType: raw.contentType ?? 'application/octet-stream',
+      sha256: raw.sha256 ?? null,
+    });
+  }
+
+  if (!uploads.length) {
     return NextResponse.json({ ok: false, error: 'NO_FILES' }, { status: 400 });
   }
 
   if (autofill) {
-    const bundleValues = files
-      .map((entry) => entry.meta?.bundleId)
+    const bundleValues = uploads
+      .map((entry) => entry.bundleId?.trim())
       .filter((value): value is string => Boolean(value));
     if (bundleValues.length > 1) {
       const unique = new Set(bundleValues);
@@ -133,52 +157,65 @@ export async function POST(req: Request) {
     }
   }
 
-  const linkId = crypto.randomUUID();
-  const code = generateLinkCode();
-  const platformString = Array.from(new Set(files.map((f) => f.platform))).join(',');
+  const now = Date.now();
+  const titleInput = (titleInputRaw ?? '').trim();
+  const bundleIdInput = (bundleIdInputRaw ?? '').trim();
+  const apkVersionInput = (apkVersionInputRaw ?? '').trim();
+  const ipaVersionInput = (ipaVersionInputRaw ?? '').trim();
+  const platformString = uploads.map((upload) => upload.platform).join(',');
 
   const derivedTitle =
-    (autofill && files.find((f) => f.meta?.title)?.meta?.title?.trim()) ||
+    (autofill && uploads.find((upload) => upload.title)?.title?.trim()) ||
     titleInput ||
     DEFAULT_TITLE;
   const derivedBundleId =
-    (autofill && files.find((f) => f.meta?.bundleId)?.meta?.bundleId?.trim()) ||
+    (autofill && uploads.find((upload) => upload.bundleId)?.bundleId?.trim()) ||
     bundleIdInput ||
     '';
   const derivedApkVersion =
     (autofill &&
-      files.find((f) => f.platform === 'apk' && f.meta?.version)?.meta?.version?.trim()) ||
+      uploads.find((upload) => upload.platform === 'apk' && upload.version)?.version?.trim()) ||
     apkVersionInput ||
     '';
   const derivedIpaVersion =
     (autofill &&
-      files.find((f) => f.platform === 'ipa' && f.meta?.version)?.meta?.version?.trim()) ||
+      uploads.find((upload) => upload.platform === 'ipa' && upload.version)?.version?.trim()) ||
     ipaVersionInput ||
     '';
 
-  const r2KeysToDelete: string[] = [];
+  const r2KeysToDelete = uploads.map((upload) => upload.key);
+  const code = generateLinkCode();
 
   try {
     const linksInfo = await getTableInfo(DB, 'links');
     const filesInfo = await getTableInfo(DB, 'files');
     const hasFileIdColumn = hasColumn(linksInfo, 'file_id');
-    const createdAt = Date.now();
-    const createdAtIso = new Date(createdAt).toISOString();
+    const createdAtIso = new Date(now).toISOString();
+    const createdAtEpoch = Math.floor(now / 1000);
     const linkCreatedAtValue = hasColumn(linksInfo, 'created_at')
       ? isTextColumn(linksInfo, 'created_at')
         ? createdAtIso
-        : Math.floor(createdAt / 1000)
+        : createdAtEpoch
       : undefined;
     const fileCreatedAtValue = hasColumn(filesInfo, 'created_at')
       ? isTextColumn(filesInfo, 'created_at')
         ? createdAtIso
-        : Math.floor(createdAt / 1000)
+        : createdAtEpoch
       : undefined;
     const isActiveValue = hasColumn(linksInfo, 'is_active')
       ? isTextColumn(linksInfo, 'is_active')
         ? '0'
         : 0
       : undefined;
+
+    await Promise.all(
+      uploads.map(async (upload) => {
+        const head = await R2.head(upload.key);
+        if (!head) {
+          throw new Error(`MISSING_OBJECT:${upload.platform}`);
+        }
+      })
+    );
 
     await DB.prepare('BEGIN').run();
 
@@ -192,6 +229,7 @@ export async function POST(req: Request) {
       ['ipa_version', derivedIpaVersion],
       ['platform', platformString],
     ];
+
     if (linkCreatedAtValue !== undefined) {
       linkColumnPairs.push(['created_at', linkCreatedAtValue]);
     }
@@ -219,48 +257,40 @@ export async function POST(req: Request) {
 
     let firstFileId: string | null = null;
 
-    for (const entry of files) {
-      const buffer = await entry.file.arrayBuffer();
-      const sha = entry.meta?.sha256 ?? (await sha256(buffer));
-      const key = `links/${uid}/${linkId}/${entry.platform}/${Date.now()}-${entry.file.name}`;
-      r2KeysToDelete.push(key);
-
-      await R2.put(key, buffer, {
-        httpMetadata: {
-          contentType: entry.file.type || 'application/octet-stream',
-        },
-      });
-
+    for (const upload of uploads) {
       const fileId = crypto.randomUUID();
       if (!firstFileId) {
         firstFileId = fileId;
       }
 
-      const metaTitle = entry.meta?.title?.trim() || null;
-      const metaBundleId = entry.meta?.bundleId?.trim() || null;
-      const metaVersion = entry.meta?.version?.trim() || null;
+      const metaTitle = upload.title?.trim() || sanitizeTitleFromKey(upload.key);
+      const metaBundleId = upload.bundleId?.trim() ?? '';
+      const metaVersion = upload.version?.trim() ?? '';
 
       const fileColumnPairs: Array<[string, unknown]> = [
         ['id', fileId],
         ['owner_id', uid],
-        ['platform', entry.platform],
-        ['version', metaVersion ?? ''],
-        ['size', entry.file.size],
-        ['title', metaTitle ?? entry.file.name ?? DEFAULT_TITLE],
-        ['bundle_id', metaBundleId ?? ''],
+        ['platform', upload.platform],
+        ['version', metaVersion],
+        ['size', upload.size],
+        ['title', metaTitle ?? DEFAULT_TITLE],
+        ['bundle_id', metaBundleId],
         ['link_id', linkId],
       ];
       if (fileCreatedAtValue !== undefined) {
         fileColumnPairs.push(['created_at', fileCreatedAtValue]);
       }
       if (hasColumn(filesInfo, 'sha256')) {
-        fileColumnPairs.push(['sha256', sha]);
+        fileColumnPairs.push(['sha256', upload.sha256 ?? '']);
       }
       if (hasColumn(filesInfo, 'content_type')) {
-        fileColumnPairs.push(['content_type', entry.file.type || 'application/octet-stream']);
+        fileColumnPairs.push([
+          'content_type',
+          upload.contentType ?? 'application/octet-stream',
+        ]);
       }
       if (hasColumn(filesInfo, 'r2_key')) {
-        fileColumnPairs.push(['r2_key', key]);
+        fileColumnPairs.push(['r2_key', upload.key]);
       }
 
       const fileColumns = fileColumnPairs
@@ -291,14 +321,13 @@ export async function POST(req: Request) {
         .bind(activeValue, linkId)
         .run();
     }
+
     await DB.prepare('COMMIT').run();
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
     await DB.prepare('ROLLBACK').run().catch(() => null);
-    for (const key of r2KeysToDelete) {
-      await R2.delete(key).catch(() => null);
-    }
+    await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
