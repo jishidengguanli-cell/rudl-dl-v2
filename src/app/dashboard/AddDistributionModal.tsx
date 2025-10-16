@@ -602,7 +602,7 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
             });
           };
             xhr.upload.onprogress = (event) => {
-              const effectiveTotal =
+            const effectiveTotal =
               (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
             if (!effectiveTotal) {
               platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
@@ -611,29 +611,30 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
             const loaded = Math.min(event.loaded ?? 0, effectiveTotal);
             let accumulated = 0;
-              platformUploadOrder.forEach((platform) => {
-                const size = sizeByPlatform[platform] ?? 0;
-                if (!size) {
-                  uploadSnapshot[platform] = 1;
-                  completeFallback(platform);
-                  return;
-                }
-                const start = accumulated;
-                const end = start + size;
-                let value = 0;
-                if (loaded <= start) value = 0;
-                else if (loaded >= end) value = 1;
-                else value = (loaded - start) / size;
-                uploadSnapshot[platform] = value;
-                accumulated = end;
-                if (value >= 1) {
-                  completeFallback(platform);
-                }
-              });
-              platformUploadOrder.forEach((platform) =>
-                updateProgress(platform, uploadSnapshot[platform] ?? 0)
-              );
-            };
+            platformUploadOrder.forEach((platform) => {
+              const size = sizeByPlatform[platform] ?? 0;
+              if (!size) {
+                uploadSnapshot[platform] = 1;
+                completeFallback(platform);
+                return;
+              }
+              const start = accumulated;
+              const end = start + size;
+              let value = 0;
+              if (loaded <= start) value = 0;
+              else if (loaded >= end) value = 1;
+              else value = (loaded - start) / size;
+              if (value >= 0.99) {
+                value = 1;
+                completeFallback(platform);
+              }
+              uploadSnapshot[platform] = Math.max(uploadSnapshot[platform] ?? 0, value);
+              accumulated = end;
+            });
+            platformUploadOrder.forEach((platform) =>
+              updateProgress(platform, uploadSnapshot[platform] ?? 0)
+            );
+          };
 
             xhr.upload.onload = () => {
               platformUploadOrder.forEach((platform) => {
