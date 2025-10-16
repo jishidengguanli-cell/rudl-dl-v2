@@ -11,7 +11,6 @@ import {
 import JSZip from 'jszip';
 import plist from 'plist';
 import { parseBuffer as parseBinaryPlist } from 'bplist-parser';
-import BinaryXmlParser from 'binary-xml';
 import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
 
@@ -108,6 +107,10 @@ type BinaryXmlNode = {
   childNodes?: BinaryXmlNode[];
 };
 
+type BinaryXmlParserCtor = new (buffer: Buffer, options?: { debug?: boolean }) => {
+  parse(): unknown;
+};
+
 function normalizeBinaryAttribute(raw: unknown): BinaryXmlAttribute | null {
   if (!raw || typeof raw !== 'object') return null;
   const attr = raw as Record<string, unknown>;
@@ -183,7 +186,10 @@ async function parseApkManifest(zip: JSZip): Promise<FileMeta | null> {
     const manifestEntry = zip.file('AndroidManifest.xml');
     if (!manifestEntry) return null;
     const manifestBuffer = Buffer.from(await manifestEntry.async('arraybuffer'));
-    const parser = new BinaryXmlParser(manifestBuffer);
+    const BinaryXmlParserModule = await import('binary-xml');
+    const BinaryXmlParserCtor =
+      (BinaryXmlParserModule.default ?? BinaryXmlParserModule) as BinaryXmlParserCtor;
+    const parser = new BinaryXmlParserCtor(manifestBuffer);
     const rawDocument = parser.parse();
     const root = normalizeBinaryNode(rawDocument);
     if (!root) return null;
@@ -343,7 +349,8 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressMap>({ apk: 0, ipa: 0 });
-  const fallbackTimers = useRef<{ apk?: number; ipa?: number }>({});
+  const fallbackQueue = useRef<Platform[]>([]);
+  const fallbackIntervals = useRef<Partial<Record<Platform, number>>>({});
 
   const incrementProgress = useCallback(
     (platform: Platform, delta: number, ceiling = 0.95) => {
@@ -367,30 +374,49 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
     });
   }, []);
 
-  const clearFallbackTimer = useCallback((platform: Platform) => {
-    const timer = fallbackTimers.current[platform];
+  const stopFallbackTimer = useCallback((platform: Platform) => {
+    const timer = fallbackIntervals.current[platform];
     if (timer !== undefined) {
       clearInterval(timer);
-      delete fallbackTimers.current[platform];
+      delete fallbackIntervals.current[platform];
     }
   }, []);
 
-  const clearAllFallbackTimers = useCallback(() => {
-    (Object.keys(fallbackTimers.current) as Platform[]).forEach((platform) =>
-      clearFallbackTimer(platform)
-    );
-  }, [clearFallbackTimer]);
+  const startNextFallback = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const current = fallbackQueue.current[0];
+    if (!current) return;
+    if (fallbackIntervals.current[current] !== undefined) return;
+    fallbackIntervals.current[current] = window.setInterval(() => {
+      incrementProgress(current, 0.01);
+    }, 800);
+  }, [incrementProgress]);
 
-  const startFallbackTimer = useCallback(
+  const enqueueFallback = useCallback(
     (platform: Platform) => {
-      if (typeof window === 'undefined') return;
-      clearFallbackTimer(platform);
-      fallbackTimers.current[platform] = window.setInterval(() => {
-        incrementProgress(platform, 0.01);
-      }, 800);
+      if (!fallbackQueue.current.includes(platform)) {
+        fallbackQueue.current.push(platform);
+      }
+      startNextFallback();
     },
-    [clearFallbackTimer, incrementProgress]
+    [startNextFallback]
   );
+
+  const completeFallback = useCallback(
+    (platform: Platform) => {
+      stopFallbackTimer(platform);
+      fallbackQueue.current = fallbackQueue.current.filter((item) => item !== platform);
+      startNextFallback();
+    },
+    [stopFallbackTimer, startNextFallback]
+  );
+
+  const clearAllFallbackTimers = useCallback(() => {
+    (Object.keys(fallbackIntervals.current) as Platform[]).forEach((platform) =>
+      stopFallbackTimer(platform)
+    );
+    fallbackQueue.current = [];
+  }, [stopFallbackTimer]);
 
   useEffect(() => {
     if (!open) {
@@ -520,8 +546,8 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
         if (!state.file) return;
         platformUploadOrder.push(platform);
         sizeByPlatform[platform] = state.file.size;
-        updateProgress(platform, 0);
-        startFallbackTimer(platform);
+          updateProgress(platform, 0);
+          enqueueFallback(platform);
         formData.append(platform, state.file, state.file.name);
 
         const meta: FileMeta = { ...state.metadata };
@@ -566,15 +592,15 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
         };
         xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
         if (xhr.upload && platformUploadOrder.length) {
-          const uploadSnapshot: UploadProgressMap = { apk: 0, ipa: 0 };
-          xhr.upload.onloadstart = () => {
-            platformUploadOrder.forEach((platform) => {
-              startFallbackTimer(platform);
-              updateProgress(platform, Math.max(uploadProgress[platform] ?? 0, 0.01));
-            });
-          };
-          xhr.upload.onprogress = (event) => {
-            const effectiveTotal =
+            const uploadSnapshot: UploadProgressMap = { apk: 0, ipa: 0 };
+            xhr.upload.onloadstart = () => {
+              platformUploadOrder.forEach((platform) => {
+                enqueueFallback(platform);
+                updateProgress(platform, Math.max(uploadProgress[platform] ?? 0, 0.01));
+              });
+            };
+            xhr.upload.onprogress = (event) => {
+              const effectiveTotal =
               (event.lengthComputable && event.total ? event.total : totalBytes) || totalBytes;
             if (!effectiveTotal) {
               platformUploadOrder.forEach((platform) => updateProgress(platform, 0));
@@ -583,42 +609,44 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
             const loaded = Math.min(event.loaded ?? 0, effectiveTotal);
             let accumulated = 0;
-            platformUploadOrder.forEach((platform) => {
-              const size = sizeByPlatform[platform] ?? 0;
-              if (!size) {
-                uploadSnapshot[platform] = 1;
-                clearFallbackTimer(platform);
-                return;
-              }
-              const start = accumulated;
-              const end = start + size;
-              let value = 0;
-              if (loaded <= start) value = 0;
-              else if (loaded >= end) value = 1;
-              else value = (loaded - start) / size;
-              uploadSnapshot[platform] = value;
-              accumulated = end;
-              clearFallbackTimer(platform);
-            });
-            platformUploadOrder.forEach((platform) =>
-              updateProgress(platform, uploadSnapshot[platform] ?? 0)
-            );
-          };
+              platformUploadOrder.forEach((platform) => {
+                const size = sizeByPlatform[platform] ?? 0;
+                if (!size) {
+                  uploadSnapshot[platform] = 1;
+                  completeFallback(platform);
+                  return;
+                }
+                const start = accumulated;
+                const end = start + size;
+                let value = 0;
+                if (loaded <= start) value = 0;
+                else if (loaded >= end) value = 1;
+                else value = (loaded - start) / size;
+                uploadSnapshot[platform] = value;
+                accumulated = end;
+                if (value >= 1) {
+                  completeFallback(platform);
+                }
+              });
+              platformUploadOrder.forEach((platform) =>
+                updateProgress(platform, uploadSnapshot[platform] ?? 0)
+              );
+            };
 
-          xhr.upload.onload = () => {
-            platformUploadOrder.forEach((platform) => {
-              clearFallbackTimer(platform);
-              updateProgress(platform, 1);
-            });
-          };
+            xhr.upload.onload = () => {
+              platformUploadOrder.forEach((platform) => {
+                completeFallback(platform);
+                updateProgress(platform, 1);
+              });
+            };
 
-          xhr.upload.onabort = () => {
-            platformUploadOrder.forEach((platform) => {
-              clearFallbackTimer(platform);
-              updateProgress(platform, 0);
-            });
-          };
-        }
+            xhr.upload.onabort = () => {
+              platformUploadOrder.forEach((platform) => {
+                completeFallback(platform);
+                updateProgress(platform, 0);
+              });
+            };
+          }
         xhr.send(formData);
       });
 
