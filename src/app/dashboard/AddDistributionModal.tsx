@@ -359,8 +359,10 @@ export default function AddDistributionModal({ open, onClose, onCreated, onError
 
   const updateProgress = useCallback((platform: Platform, value: number) => {
     setUploadProgress((prev) => {
-      const next = Math.max(0, Math.min(1, value));
-      if (prev[platform] === next) return prev;
+      const desired = Math.max(0, Math.min(1, value));
+      const current = prev[platform] ?? 0;
+      const next = Math.max(current, desired);
+      if (current === next) return prev;
       return { ...prev, [platform]: next };
     });
   }, []);

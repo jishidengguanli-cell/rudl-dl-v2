@@ -1,0 +1,1087 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>控制台 - RU Download</title>
+<body class="dashboard">
+<style>
+  body{margin:0;background:#0f172a;color:#e5e7eb;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{background:#0b1222;border-bottom:1px solid #1f2937}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  nav{display:flex;align-items:center;gap:12px}
+  nav .right{margin-left:auto;display:flex;gap:10px}
+  a{color:#93c5fd;text-decoration:none}
+  .btn{padding:8px 12px;border-radius:10px;border:0;background:#3b82f6;color:#fff;cursor:pointer}
+  .btn.red{background:#ef4444}
+  .card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:24px;margin-top:20px}
+  .muted{color:#9ca3af}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{border-bottom:1px solid #1f2937;padding:10px;text-align:left}
+  th{color:#9ca3af;font-weight:600}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;background:#0b1222;border:1px solid #334155;color:#e5e7eb;font-size:12px}
+  .right-ctrls{display:flex;gap:8px}
+  .danger{background:#ef4444;border:1px solid #b91c1c}
+  .small2{font-size:12px;color:#9ca3af}
+  /* Modal */
+  .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.5);z-index:50}
+  .modal .panel{width:min(680px,92vw);background:#111827;border:1px solid #1f2937;border-radius:16px;padding:20px}
+  label{display:block;margin:10px 0 4px;color:#9ca3af}
+  input[type="text"],input[type="file"]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1222;color:#e5e7eb}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+  .bar{height:6px;background:#0b1222;border:1px solid #334155;border-radius:999px;overflow:hidden}
+  .bar>i{display:block;height:100%;width:0;background:#3b82f6}
+  .small{font-size:12px;color:#9ca3af}
+  .copy{margin-left:8px;padding:4px 8px;background:#374151;border:1px solid #4b5563;border-radius:8px;color:#e5e7eb;cursor:pointer;font-size:12px}
+  /* 只影響控制台頁 */
+  body.dashboard .wrap{ max-width:1500px; margin:0 auto; }
+  /* 讓 modal 抬頭右側可以放一個窄欄（語系選擇） */
+  .panel .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 180px; /* 左寬右窄 */
+    column-gap: 12px;
+    align-items: end;
+  }
+  .panel .grid-2 .field {
+    display: flex; 
+    flex-direction: column;
+  }
+  
+  /* 分發列表外框：跟表格同寬（左右不留空），上方內容自己加邊距 */
+  #list-panel{
+    max-width:1500px;
+    margin:20px auto;
+    padding:12px 0 16px;         /* 左右 0，框寬 = 表格寬 */
+    overflow:hidden;             /* 圓角不外溢 */
+  }
+  
+  /* 上方標題＋右側按鈕：自己補左右 padding，就不影響表格對齊 */
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:0 16px 8px;
+  }
+  
+  #list-panel #me,
+  #list-panel #empty{ padding:0 16px; }
+  
+  /* 表格卡片化：用分離模式 + 陰影畫分隔線，邊線會「接」起來 */
+  #tbl{
+    width:100%;
+    table-layout:fixed;
+    border-collapse:separate;
+    border-spacing:0 12px;       /* 列與列之間的縫隙 */
+  }
+  #tbl th,#tbl td{ border:none; }
+  
+  /* 表頭 */
+  #tbl thead th{
+    position:sticky; top:0; z-index:1;
+    background:#0f172a;
+    font-weight:600; font-size:14.5px; padding:12px 14px;
+    box-shadow: inset 0 -1px 0 #1f2937;     /* 底線 */
+  }
+  
+  /* 每列像卡片：圓角 + 內距 + 內部分隔線 */
+  #tbl tbody td{
+    background:#0b1220;
+    padding:14px 16px;
+    vertical-align:middle;
+    font-size:14.5px; line-height:1.6;
+    box-shadow: inset 0 -1px 0 #1f2937;      /* 每列底線 */
+  }
+  #tbl tbody td+td{
+    /* 加上垂直分隔線，讓邊線視覺上「接」在一起 */
+    box-shadow: inset 0 -1px 0 #1f2937, inset 1px 0 0 #1f2937;
+  }
+  #tbl tbody tr:hover td{ background:#0f1830; }
+  #tbl tbody td:first-child{ border-radius:12px 0 0 12px; }
+  #tbl tbody td:last-child{  border-radius:0 12px 12px 0; }
+  
+  /* 欄寬（總寬控制在 ~1260，1280 裡面就不會橫向捲動） */
+  #tbl th:nth-child(1), #tbl td:nth-child(1){ width: 70px; }  /* 短碼 */
+  #tbl th:nth-child(2), #tbl td:nth-child(2){ width: 70px; }  /* 標題 */
+  #tbl th:nth-child(3), #tbl td:nth-child(3){ width: 70px; }  /* 版本 */
+  #tbl th:nth-child(4), #tbl td:nth-child(4){ width: 70px; }  /* 語系 */
+  #tbl th:nth-child(5), #tbl td:nth-child(5){ width: 70px; }  /* 檔案 */
+  #tbl th:nth-child(6), #tbl td:nth-child(6){ width:150px; }  /* 建立時間 */
+  #tbl th:nth-child(7), #tbl td:nth-child(7){ width:350px; }  /* 下載數 */
+  #tbl th:nth-child(8), #tbl td:nth-child(8){ width:100px; }  /* 操作 */
+  #tbl th:nth-child(9), #tbl td:nth-child(9){ width:300px; }  /* 下載頁 */
+  
+  /* 下載頁顯示完整網址，但避免超出邊框時還是能優雅截斷 */
+  .small .link{ display:inline-block; max-width: 228px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  
+  /* 小元件間距（沿用你現有風格） */
+  .tag{ margin-right:6px; margin-top:4px; display:inline-flex; }
+  .btn, .copy, .edit, .danger{ margin-right:8px; }
+  .small2{ font-size:12.5px; color:#9ca3af; line-height:1.7; }
+  .points-badge{
+    margin-left:8px;
+    font-size:14px;
+    line-height:20px;
+    color:#cbd5e1;
+    display:inline;
+    font-weight:600;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<header>
+  <div class="wrap">
+    <nav>
+      <strong>控制台</strong>
+      <div class="right">
+        <a href="/dashboard.html">分發列表</a>
+        <a href="#" id="logout">登出</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="card" id="list-panel">
+    <div class="panel-head">
+      <h2>分發列表</h2>
+      <div id="me" class="muted">讀取中…</div>
+      <div class="right-ctrls">
+        <span id="points-badge" class="points-badge" aria-live="polite">-- 剩餘點數</span>
+        <a class="btn" id="btn-topup" href="/recharge.html">充值</a>
+        <button class="btn" id="btn-new">＋ 新增分發</button>
+      </div>
+    </div>
+
+    <div id="empty" class="muted" style="margin-top:14px;display:none">目前沒有分發，按右上「新增分發」開始。</div>
+    <table id="tbl" style="display:none">
+      <thead>
+        <tr>
+          <th>短碼</th><th>標題</th><th>版本</th><th>語系</th><th>檔案</th><th>建立時間</th><th>下載數</th><th>操作</th><th>下載頁</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<!-- 新增分發 Modal -->
+<div class="modal" id="modal">
+  <div class="panel">
+    <div class="grid-2">
+      <div>
+        <h3 style="margin:0 0 8px">新增分發</h3>
+        <p class="small">上傳 APK 或 IPA（可擇一或兩者都上傳）。上傳完成後會建立一個短碼。</p>
+      </div>
+      <div class="field">
+        <label>預覽語系（下載頁）</label>
+        <select id="lang">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+          <option value="vi">Tiếng Việt</option>
+          <option value="zh-TW">繁中</option>
+          <option value="zh-CN">简体</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>標題（顯示用，可選）</label>
+        <input id="title" type="text" placeholder="例如：My App" />
+      </div>
+      <div>
+        <label>版本（顯示用，可選）</label>
+        <input id="version" type="text" placeholder="例如：1.0.0（僅顯示，不影響 iOS 安裝）" />
+      </div>
+    </div>
+
+    <label>Bundle ID（顯示用，可選）</label>
+    <input id="bundle" type="text" placeholder="例如：com.example.app（僅顯示，不影響 iOS 安裝）" />
+
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>APK 檔（android）</label>
+        <input id="apk" type="file" accept=".apk" />
+        <div class="bar" style="margin-top:8px"><i id="p-apk"></i></div>
+        <div class="small" id="t-apk"></div>
+      </div>
+      <div>
+        <label>IPA 檔（iOS）</label>
+        <input id="ipa" type="file" accept=".ipa" />
+        <div class="bar" style="margin-top:8px"><i id="p-ipa"></i></div>
+        <div class="small" id="t-ipa"></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn red" id="btn-cancel">取消</button>
+      <button class="btn" id="btn-create">上傳並建立</button>
+    </div>
+    <div class="small" id="err" style="color:#fca5a5;margin-top:6px;min-height:18px"></div>
+  </div>
+</div>
+
+
+<!-- 編輯分發 Modal -->
+<div class="modal" id="modal-edit">
+  <div class="panel">
+    <div class="grid-2">
+      <div>
+        <h3 style="margin:0 0 8px">編輯分發（顯示用欄位）</h3>
+        <p class="small">這些欄位僅影響下載頁顯示；iOS 安裝資訊仍以 IPA 內的 Info.plist 為準。</p>
+      </div>
+      <div class="field">
+        <label>預設語系（下載頁）</label>
+        <select id="e-lang">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+          <option value="vi">Tiếng Việt</option>
+          <option value="zh-TW">繁中</option>
+          <option value="zh-CN">简体</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>標題</label>
+        <input id="e-title" type="text" placeholder="例如：My App" />
+      </div>
+      <div>
+        <label>版本</label>
+        <input id="e-version" type="text" placeholder="例如：1.0.0" />
+      </div>
+    </div>
+
+    <label>Bundle ID（顯示用）</label>
+    <input id="e-bundle" type="text" placeholder="例如：com.example.app" />
+    
+    <input type="hidden" id="edit-code" name="code" value="">
+    
+    <section id="replace-section" style="margin-top:16px; border-top:1px dashed #444; padding-top:12px;">
+      <h3 style="margin:0 0 8px;">重新上傳並覆蓋安裝包</h3>
+    
+      <!-- APK -->
+      <div style="margin-bottom:12px;">
+        <label style="display:block; margin-bottom:6px;">Android (APK)</label>
+        <input id="fileApk" type="file" accept=".apk" />
+        <button id="btnUploadApk" style="margin-left:8px;">上傳並覆蓋 APK</button>
+        <div style="margin-top:6px;">
+          <progress id="barApk" value="0" max="100" style="width:100%;"></progress>
+          <span id="progressApk" style="margin-left:8px; opacity:.8;"></span>
+        </div>
+      </div>
+    
+      <!-- IPA -->
+      <div>
+        <label style="display:block; margin-bottom:6px;">iOS (IPA)</label>
+        <input id="fileIpa" type="file" accept=".ipa" />
+        <button id="btnUploadIpa" style="margin-left:8px;">上傳並覆蓋 IPA</button>
+        <div style="margin-top:6px;">
+          <progress id="barIpa" value="0" max="100" style="width:100%;"></progress>
+          <span id="progressIpa" style="margin-left:8px; opacity:.8;"></span>
+        </div>
+      </div>
+    </section>
+
+
+    <div class="actions">
+      <button class="btn red" id="btn-edit-cancel">取消</button>
+      <button class="btn" id="btn-edit-save">儲存</button>
+    </div>
+    <div class="small" id="e-err" style="color:#fca5a5;margin-top:6px;min-height:18px"></div>
+  </div>
+</div>
+
+
+<!-- 刪除確認 Modal -->
+<div class="modal" id="modal-del">
+  <div class="panel">
+    <h3 style="margin:0 0 8px">刪除分發</h3>
+    <p class="small">將刪除此分發的資料與統計。此操作不可恢復。</p>
+    <div class="small">短碼：<code id="d-code"></code></div>
+    <div class="small">標題：<span id="d-title"></span></div>
+    <div class="actions">
+      <button class="btn" id="btn-del-cancel">取消</button>
+      <button class="btn red" id="btn-del-confirm">刪除</button>
+    </div>
+    <div class="small" id="d-err" style="color:#fca5a5;margin-top:6px;min-height:18px"></div>
+  </div>
+</div>
+<script>
+let itemsByCode = {};        // 供編輯彈窗帶入資料
+let currentEditCode = null;  // 目前在編輯哪一筆
+let pendingDeleteCode = null;
+
+// ---- 下載統計欄位正規化（前端相容多套命名；優先後台命名） ----
+function num(v){ const n=parseInt(v,10); return Number.isFinite(n)?n:0; }
+function extractStats(it){
+  const S = it && it.stats ? it.stats : {};
+  const P = (S && S.platforms) ? S.platforms : {};
+  const val = (...cands) => {
+    for (const v of cands) {
+      if (v !== undefined && v !== null) {
+        const x = parseInt(v,10);
+        if (Number.isFinite(x)) return x;
+      }
+    }
+    return 0;
+  };
+
+  // 1) 後台命名（首選）
+  let today     = val(it.today, S?.today);
+  let total     = val(it.total, S?.total);
+  let apk_today = val(it.apkToday, S?.apk_today, S?.android_today, S?.apk?.today, P?.apk?.today);
+  let ipa_today = val(it.ipaToday, S?.ipa_today,  S?.ios_today,    S?.ipa?.today, S?.ios?.today, P?.ios?.today);
+  let apk_total = val(it.apkTotal, S?.apk_total, S?.android_total, S?.apk?.total, P?.apk?.total);
+  let ipa_total = val(it.ipaTotal, S?.ipa_total, S?.ios_total,     S?.ipa?.total, S?.ios?.total, P?.ios?.total);
+
+  // 2) 舊版頂層鍵（仍相容）
+  today     = val(today, it.cnt_today);
+  total     = val(total, it.cnt_total);
+  apk_today = val(apk_today, it.apk_today, it.android_today, it.cnt_apk_today, it.cnt_android_today);
+  ipa_today = val(ipa_today, it.ipa_today, it.ios_today,     it.cnt_ipa_today, it.cnt_ios_today);
+  apk_total = val(apk_total, it.apk_total, it.android_total, it.cnt_apk_total, it.cnt_android_total);
+  ipa_total = val(ipa_total, it.ipa_total, it.ios_total,     it.cnt_ipa_total, it.cnt_ios_total);
+
+  // 若平台加總 > 整體，使用平台加總（避免不同步導致顯示 0）
+  const sumToday = apk_today + ipa_today;
+  const sumTotal = apk_total + ipa_total;
+  if (sumToday > today) today = sumToday;
+  if (sumTotal > total) total = sumTotal;
+
+  return { today, total, apk_today, ipa_today, apk_total, ipa_total };
+}
+
+// ===== 登入保護 & 初始載入 =====
+(async () => {
+  const meEl = document.getElementById("me");
+  try {
+    const r = await fetch("/api/auth/me", { credentials: "include" });
+    const txt = await r.text();
+    let me;
+    try { me = JSON.parse(txt); }
+    catch { throw new Error("/api/auth/me 非 JSON，回傳： " + txt.slice(0, 160)); }
+
+    if (!r.ok || !me?.authenticated) {
+      location.href = "/login.html?next=/dashboard.html";
+      return;
+    }
+    meEl.textContent = `目前登入：${me.email}`;
+    await loadList();
+    window.PointsUI?.refresh?.();
+  } catch (err) {
+    meEl.textContent = "載入失敗：" + (err?.message || err);
+  }
+})();
+
+// 登出
+document.getElementById("logout").addEventListener("click", async (e) => {
+  e.preventDefault();
+  try { await fetch("/api/auth/logout", { method:"POST", credentials:"include" }); } catch {}
+  location.href = "/login.html";
+});
+
+// ===== 分發列表 =====
+async function loadList() {
+  const tbl = document.getElementById("tbl");
+  const tbody = document.getElementById("tbody");
+  const empty = document.getElementById("empty");
+  tbody.innerHTML = "";
+
+  try {
+    const r = await fetch(`/api/links/list?ts=${Date.now()}`, {
+      credentials: "include",
+      cache: "no-store"
+    });
+
+    const txt = await r.text();
+    let data;
+    try { data = JSON.parse(txt); }
+    catch { throw new Error("/api/links/list 非 JSON，回傳： " + txt.slice(0, 160)); }
+
+    if (!r.ok) throw new Error(data?.error || "讀取清單失敗");
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      tbl.style.display = "none";
+      empty.style.display = "block";
+      empty.textContent = "目前沒有分發，按右上「新增分發」開始。";
+      return;
+    }
+    empty.style.display = "none";
+    tbl.style.display = "table";
+
+    for (const it of items) {
+      itemsByCode[it.code] = it;
+      const hasApk = !!it.apk_key, hasIpa = !!it.ipa_key;
+
+      const S = extractStats(it);
+      const { today, total, apk_today:tApk, ipa_today:tIpa, apk_total:aApk, ipa_total:aIpa } = S;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><code>${it.code}</code></td>
+        <td>${esc(it.title||"")}</td>
+        <td>${esc(it.version||"")}</td>
+        <td>${langLabel(it.lang)}</td> 
+        <td>
+          ${hasApk?'<span class="tag">APK</span>':''}
+          ${hasIpa?'<span class="tag">IPA</span>':''}
+        </td>
+        <td>${fmt(it.createdAt)}</td>
+        <td>
+          <div class="small2">
+            今日：<span class="tag">${today}</span>
+            （APK <span class="tag">${tApk}</span> ／ iOS <span class="tag">${tIpa}</span>）<br/>
+            總計：<span class="tag">${total}</span>
+            （APK <span class="tag">${aApk}</span> ／ iOS <span class="tag">${aIpa}</span>）
+          </div>
+        </td>
+        <td>
+          <button class="btn edit" data-code="${it.code}">編輯</button>
+          <button class="btn danger del" data-code="${it.code}">刪除</button>
+        </td>
+        <td>
+          <div class="small">
+            <a class="link" href="/d/${it.code}" target="_blank">${absLink(it.code)}</a>
+            <button data-url="${absLink(it.code)}" class="copy">複製</button>
+          </div>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbl.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = "讀取失敗：" + (err?.message || err);
+  }
+}
+
+function esc(s){return String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
+function fmt(ts){if(!ts)return ""; const d=new Date(ts); return `${d.getFullYear()}-${(d.getMonth()+1+"").padStart(2,"0")}-${(d.getDate()+"").padStart(2,"0")} ${d.toTimeString().slice(0,8)}`;}
+function absLink(code){ return `${location.origin}/d/${code}`; }
+function langLabel(v){
+  const map = {"en":"English","ru":"Русский","vi":"Tiếng Việt","zh-TW":"繁中","zh-CN":"简体"};
+  return map[v] || v || "-";
+}
+function openEditModal(code){
+  const it = itemsByCode[code];
+  if (!it) return alert('找不到資料');
+
+  currentEditCode = code;
+  $('e-title').value   = it.title || '';
+  $('e-version').value = it.version || '';
+  $('e-bundle').value  = it.bundle_id || '';
+  $('e-lang').value = it.lang || 'en';
+  $('e-err').textContent = '';
+  $('modal-edit').style.display = 'flex';
+}
+
+$('btn-edit-cancel').addEventListener('click', ()=>{
+  $('modal-edit').style.display = 'none';
+  currentEditCode = null;
+});
+
+$('btn-edit-save').addEventListener('click', async ()=>{
+  const code = currentEditCode;
+  if (!code) return;
+
+  const title     = $('e-title').value.trim();
+  const version   = $('e-version').value.trim();
+  const bundle_id = $('e-bundle').value.trim();
+  const lang      = $('e-lang').value;
+  $('e-err').textContent = '儲存中…';
+
+  try {
+    const r = await fetch('/api/links/update', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code, title, version, bundle_id, lang })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.error || '更新失敗');
+    $('modal-edit').style.display = 'none';
+    currentEditCode = null;
+    await loadList();
+  } catch (e) {
+    $('e-err').textContent = String(e?.message || e);
+  }
+});
+
+// 一鍵複製（只處理有 data-url 的按鈕）
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest('button[data-url]') : null;
+  if (!btn) return;
+  const url = btn.getAttribute('data-url') || '';
+  try {
+    await navigator.clipboard.writeText(url);
+    const old = btn.textContent;
+    btn.textContent = '已複製';
+    btn.disabled = true;
+    setTimeout(()=>{ btn.textContent = old; btn.disabled = false; }, 1200);
+  } catch(e){}
+});
+
+// 事件委派：編輯
+document.addEventListener('click', (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest('.edit') : null;
+  if (!btn) return;
+  const code = btn.getAttribute('data-code');
+  openEditModal(code);
+});
+
+// 事件委派：刪除
+document.addEventListener('click', (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest('.del') : null;
+  if (!btn) return;
+  const code = btn.getAttribute('data-code');
+  openDeleteModal(code);
+});
+
+function openDeleteModal(code){
+  const it = itemsByCode[code];
+  if (!it) return alert('找不到資料');
+  pendingDeleteCode = code;
+  $('d-code').textContent = code;
+  $('d-title').textContent = it.title || '';
+  $('d-err').textContent = '';
+  $('modal-del').style.display = 'flex';
+}
+
+$('btn-del-confirm').addEventListener('click', async ()=>{
+  const code = pendingDeleteCode;
+  if (!code) return;
+  $('d-err').textContent = '刪除中…';
+  try {
+    const r = await fetch('/api/links/delete', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+
+    let data = null;
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      data = await r.json();
+    } else {
+      data = { ok: r.ok };
+    }
+    if (!r.ok || data?.ok !== true) {
+      throw new Error((data && data.error) || `刪除失敗（HTTP ${r.status}）`);
+    }
+    $('modal-del').style.display = 'none';
+    pendingDeleteCode = null;
+    await loadList();
+  } catch (e) {
+    $('d-err').textContent = String(e?.message || e);
+  }
+});
+
+// ===== 新增分發（Modal + 上傳 + 解析 IPA） =====
+const modal = document.getElementById("modal");
+document.getElementById("btn-new").addEventListener("click", ()=>{ modal.style.display="flex"; resetModal(); });
+document.getElementById("btn-cancel").addEventListener("click", ()=>{ modal.style.display="none"; });
+
+function resetModal(){
+  $("title").value = ""; $("version").value = ""; $("bundle").value = "";
+  $("apk").value = ""; $("ipa").value = "";
+  $("p-apk").style.width = "0%"; $("p-ipa").style.width = "0%";
+  $("t-apk").textContent = ""; $("t-ipa").textContent = "";
+  $("lang").value = "en";
+  $("err").textContent = "";
+}
+
+document.getElementById("btn-create").addEventListener("click", async ()=>{
+  const title = $("title").value.trim();
+  const version = $("version").value.trim();
+  const bundle = $("bundle").value.trim();
+  const apkFile = $("apk").files[0];
+  const ipaFile = $("ipa").files[0];
+  const err = $("err"); err.textContent = "";
+
+  if (!apkFile && !ipaFile) { err.textContent = "請至少選擇一個檔案（APK 或 IPA）。"; return; }
+
+  let ipaMeta = null;
+  if (ipaFile) {
+    try {
+      $("t-ipa").textContent = "解析 IPA 中…";
+      const meta = await inspectIpa(ipaFile); // {bundle_id, version}
+      if (meta?.bundle_id || meta?.version) ipaMeta = meta;
+      $("t-ipa").textContent = "解析完成";
+    } catch (e) {
+      $("t-ipa").textContent = "解析失敗（將以顯示資料為準）";
+    }
+  }
+
+  let apkKey = "", ipaKey = "";
+  try {
+    if (apkFile) {
+      $("t-apk").textContent = "初始化上傳…";
+      apkKey = await uploadFile(apkFile, "android", $("p-apk"), p => $("t-apk").textContent = p);
+    }
+    if (ipaFile) {
+      $("t-ipa").textContent = "初始化上傳…";
+      ipaKey = await uploadFile(ipaFile, "ios", $("p-ipa"), p => $("t-ipa").textContent = p);
+    }
+  } catch(e){ err.textContent = "上傳失敗：" + (e?.message || e); return; }
+
+  try {
+    const r = await fetch("/api/links/create", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, version, bundle_id: bundle, apkKey, ipaKey, ipaMeta })
+    });
+    const data = await r.json();
+    if (!r.ok) { throw new Error(data?.error || "建立分發失敗"); }
+    modal.style.display = "none";
+    await loadList();
+  } catch(e){ err.textContent = String(e); }
+});
+
+async function uploadFile(file, folder, barEl, setText){
+  setText("請求預簽名 URL…");
+  const init = await fetch("/api/upload/init", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      filename: file.name,
+      folder,
+      contentType: file.type || (folder==="android" ? "application/vnd.android.package-archive" : "application/octet-stream")
+    })
+  }).then(r => r.json());
+  if (!init?.uploadUrl || !init?.key) throw new Error("取得預簽名 URL 失敗");
+
+  setText("上傳中… 0%");
+  await xhrPut(init.uploadUrl, file, init.contentType, (pct) => {
+    barEl.style.width = pct + "%";
+    setText("上傳中… " + pct + "%");
+  });
+  setText("完成");
+  return init.key;
+}
+
+function xhrPut(url, file, contentType, onProgress){
+  return new Promise((resolve, reject)=>{
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url, true);
+    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.onprogress = (e)=>{ if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded*100/e.total)); };
+    xhr.onload = ()=>{ (xhr.status>=200 && xhr.status<300) ? resolve(null) : reject(new Error("HTTP "+xhr.status+" "+xhr.responseText)); };
+    xhr.onerror = ()=> reject(new Error("Network error"));
+    xhr.send(file);
+  });
+}
+
+function $(id){ return document.getElementById(id); }
+
+/* ---- IPA 解析器（略同原版，保留） ---- */
+async function inspectIpa(file) {
+  const buf = await file.arrayBuffer();
+  const view = new DataView(buf);
+  const eocdSig = 0x06054b50;
+  const maxBack = Math.min(65557, buf.byteLength);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= buf.byteLength - maxBack; i--) {
+    if (view.getUint32(i, true) === eocdSig) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("ZIP EOCD not found");
+  const cdCount = view.getUint16(eocd + 10, true);
+  const cdSize  = view.getUint32(eocd + 12, true);
+  const cdOff   = view.getUint32(eocd + 16, true);
+  const cdView = new DataView(buf, cdOff, cdSize);
+  let off = 0, entry = null;
+  for (let i = 0; i < cdCount; i++) {
+    const sig = cdView.getUint32(off, true); if (sig !== 0x02014b50) break;
+    const compMethod = cdView.getUint16(off + 10, true);
+    const compSize   = cdView.getUint32(off + 20, true);
+    const nameLen    = cdView.getUint16(off + 28, true);
+    const extraLen   = cdView.getUint16(off + 30, true);
+    const commLen    = cdView.getUint16(off + 32, true);
+    const localOff   = cdView.getUint32(off + 42, true);
+    const nameBytes  = new Uint8Array(buf, cdOff + off + 46, nameLen);
+    const name       = new TextDecoder().decode(nameBytes);
+    if (/^Payload\/[^/]+\.app\/Info\.plist$/i.test(name)) {
+      entry = { compMethod, compSize, localOff, name };
+      break;
+    }
+    off += 46 + nameLen + extraLen + commLen;
+  }
+  if (!entry) throw new Error("Info.plist not found");
+  const lfh = new DataView(buf, entry.localOff, 30);
+  if (lfh.getUint32(0, true) !== 0x04034b50) throw new Error("LFH signature mismatch");
+  const nameLen = lfh.getUint16(26, true);
+  const extraLen = lfh.getUint16(28, true);
+  const dataStart = entry.localOff + 30 + nameLen + extraLen;
+  const compData = new Uint8Array(buf, dataStart, entry.compSize);
+  let plistBytes;
+  if (entry.compMethod === 0) {
+    plistBytes = compData;
+  } else if (entry.compMethod === 8) {
+    if (typeof DecompressionStream !== "undefined") {
+      const ds = new DecompressionStream("deflate-raw");
+      const decompressed = await new Response(new Blob([compData]).stream().pipeThrough(ds)).arrayBuffer();
+      plistBytes = new Uint8Array(decompressed);
+    } else {
+      throw new Error("Deflate not supported in this browser");
+    }
+  } else {
+    throw new Error("Unsupported ZIP compression method: " + entry.compMethod);
+  }
+  if (plistBytes[0] === 0x3c) {
+    const text = new TextDecoder().decode(plistBytes);
+    return parsePlistXML(text);
+  }
+  const head = new TextDecoder().decode(plistBytes.slice(0, 8));
+  if (head.startsWith("bplist0")) {
+    const obj = parseBinaryPlist(plistBytes.buffer);
+    return {
+      bundle_id: String(obj["CFBundleIdentifier"] || ""),
+      version:   String(obj["CFBundleShortVersionString"] || obj["CFBundleVersion"] || "")
+    };
+  }
+  throw new Error("Unknown plist format");
+}
+
+function parsePlistXML(xml) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const dicts = doc.getElementsByTagName("dict");
+  if (!dicts.length) return { bundle_id:"", version:"" };
+  const dict = dicts[0];
+  const kids = Array.from(dict.children);
+  const map = {};
+  for (let i = 0; i < kids.length - 1; i++) {
+    if (kids[i].tagName === "key") {
+      const k = kids[i].textContent || "";
+      const vNode = kids[i+1];
+      const v = vNode ? (vNode.textContent || "") : "";
+      map[k] = v;
+    }
+  }
+  return {
+    bundle_id: String(map["CFBundleIdentifier"] || ""),
+    version:   String(map["CFBundleShortVersionString"] || map["CFBundleVersion"] || "")
+  };
+}
+
+// 簡版 binary plist 解析器（保留原行為）
+function parseBinaryPlist(buf) {
+  const dv = new DataView(buf);
+  const u8 = new Uint8Array(buf);
+  const head = new TextDecoder().decode(u8.subarray(0, 8));
+  if (!head.startsWith("bplist0")) throw new Error("not bplist");
+  const trailer = new DataView(buf, u8.length - 32, 32);
+  const offsetSize = trailer.getUint8(6);
+  const objRefSize = trailer.getUint8(7);
+  const numObjects = Number(readUIntBE(trailer, 8, 8));
+  const topObject  = Number(readUIntBE(trailer, 16, 8));
+  const offsetTbl  = Number(readUIntBE(trailer, 24, 8));
+  const offsets = [];
+  for (let i = 0; i < numObjects; i++) offsets.push(Number(readUIntBE(dv, offsetTbl + i * offsetSize, offsetSize)));
+
+  function readObj(idx) {
+    const off = offsets[idx];
+    const t = u8[off];
+    const type = (t & 0xF0) >> 4;
+    const info = (t & 0x0F);
+    function readLen(off0, info0) {
+      if (info0 !== 0x0F) return { l: info0, p: off0 + 1 };
+      const t2 = u8[off0 + 1];
+      const type2 = (t2 & 0xF0) >> 4;
+      const info2 = (t2 & 0x0F);
+      if (type2 !== 0x1) throw new Error("bplist len not int");
+      const nBytes = 1 << info2;
+      const val    = Number(readUIntBE(dv, off0 + 2, nBytes));
+      return { l: val, p: off0 + 2 + nBytes };
+    }
+    if (type === 0x0) { if (info === 0x8) return false; if (info === 0x9) return true; return null; }
+    if (type === 0x1) { const nBytes = 1 << info; return Number(readUIntBE(dv, off + 1, nBytes)); }
+    if (type === 0x2) { const nBytes = 1 << info; if (nBytes === 4) return dv.getFloat32(off + 1, false); if (nBytes === 8) return dv.getFloat64(off + 1, false); return null; }
+    if (type === 0x4) { const lp = readLen(off, info); return u8.slice(lp.p, lp.p + lp.l); }
+    if (type === 0x5) { const lp = readLen(off, info); return new TextDecoder().decode(u8.subarray(lp.p, lp.p + lp.l)); }
+    if (type === 0x6) { const lp = readLen(off, info); let s = ""; for (let i = 0; i < lp.l; i++) s += String.fromCharCode(dv.getUint16(lp.p + i * 2, false)); return s; }
+    if (type === 0xA) { const lp = readLen(off, info); const arr = []; for (let i = 0; i < lp.l; i++) { const objRef = Number(readUIntBE(dv, lp.p + i * objRefSize, objRefSize)); arr.push(readObj(objRef)); } return arr; }
+    if (type === 0xD) {
+      const lp = readLen(off, info);
+      const keys = []; const vals = [];
+      for (let i = 0; i < lp.l; i++) { const keyRef = Number(readUIntBE(dv, lp.p + i * objRefSize, objRefSize)); keys.push(readObj(keyRef)); }
+      const vs = lp.p + lp.l * objRefSize;
+      for (let i = 0; i < lp.l; i++) { const valRef = Number(readUIntBE(dv, vs + i * objRefSize, objRefSize)); vals.push(readObj(valRef)); }
+      const o = {};
+      for (let i = 0; i < lp.l; i++) o[String(keys[i])] = vals[i];
+      return o;
+    }
+    return null;
+  }
+  function readUIntBE(dv0, off0, len0) {
+    let n = 0n;
+    for (let i = 0; i < len0; i++) n = (n << 8n) | BigInt(dv0.getUint8(off0 + i));
+    return n;
+  }
+  const root = readObj(topObject);
+  return root || {};
+}
+
+(function(){
+ // 先嘗試用「後台同規格」API 取用戶餘額；失敗再回退 /api/me/points
+  async function fetchPointsViaAdmin(uid){
+    try{
+      const r = await fetch(`/api/admin/users/get?uid=${encodeURIComponent(uid)}`, {
+        credentials: 'include', cache: 'no-store'
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      // 後台回傳可能是 { user: { points: 123 } } 或 { points: 123 }
+      const v = Number(j?.user?.points ?? j?.points ?? j?.balance);
+      return Number.isFinite(v) ? v : null;
+    }catch{ return null; }
+  }
+
+  async function fetchPointsViaMe(){
+    try{
+      const r = await fetch('/api/me/points', { credentials: 'include', cache: 'no-store' });
+      if (!r.ok) return null;
+      const j = await r.json();
+      const v = Number(j?.points);
+      return Number.isFinite(v) ? v : null;
+    }catch{ return null; }
+  }
+
+  async function refresh(){
+    const el = document.getElementById('points-badge');
+    if (!el) return;
+    el.textContent = '… 讀取中';
+
+    // 取得當前登入者 uid
+    let uid = null;
+    try{
+      const rMe = await fetch('/api/auth/me', { credentials: 'include', cache:'no-store' });
+      if (rMe.ok) {
+        const me = await rMe.json();
+        uid = me?.uid || me?.user?.uid || null;
+      }
+    }catch{}
+
+    // 先用 admin 介面取點數，失敗再回退 /api/me/points
+    let points = null;
+    if (uid) points = await fetchPointsViaAdmin(uid);
+    if (points === null) points = await fetchPointsViaMe();
+
+    el.textContent = (points ?? 0) + ' 剩餘點數';
+  }
+
+  // 事件：初始化與外部要求刷新
+  document.addEventListener('DOMContentLoaded', refresh);
+  window.addEventListener('points:updated', refresh);
+  window.addEventListener('storage', (e)=>{ if(e.key === 'points:updated') refresh(); });
+  window.PointsUI = Object.assign(window.PointsUI || {}, { refresh });
+})();
+
+
+(function(){
+  const STRICT_UNLOCK_ON_SUCCESS_ONLY = true;
+  function getEditingCode() {
+    if (window.__editingCode && typeof window.__editingCode === "string") {
+      return window.__editingCode.trim();
+    }
+    const hidden = document.getElementById("edit-code");
+    if (hidden && hidden.value) return hidden.value.trim();
+    const url = new URL(location.href);
+    const c = url.searchParams.get("code");
+    return c ? c.trim() : "";
+  }
+  const el = {
+    fileApk:  () => document.getElementById("fileApk"),
+    fileIpa:  () => document.getElementById("fileIpa"),
+    btnApk:   () => document.getElementById("btnUploadApk"),
+    btnIpa:   () => document.getElementById("btnUploadIpa"),
+    barApk:   () => document.getElementById("barApk"),
+    barIpa:   () => document.getElementById("barIpa"),
+    progApk:  () => document.getElementById("progressApk"),
+    progIpa:  () => document.getElementById("progressIpa"),
+  };
+  function setEnabledApk(v) {
+    const b = el.btnApk();  const f = el.fileApk();
+    if (b) b.disabled = !v;
+    if (f) f.disabled = !v;
+  }
+  function setEnabledIpa(v) {
+    const b = el.btnIpa();  const f = el.fileIpa();
+    if (b) b.disabled = !v;
+    if (f) f.disabled = !v;
+  }
+  function resetEditorsUI() {
+    const fA = el.fileApk(), fI = el.fileIpa();
+    const bA = el.barApk(),  bI = el.barIpa();
+    const pA = el.progApk(), pI = el.progIpa();
+    if (fA) fA.value = "";
+    if (fI) fI.value = "";
+    if (bA) bA.value = 0;
+    if (bI) bI.value = 0;
+    if (pA) pA.textContent = "";
+    if (pI) pI.textContent = "";
+    setEnabledApk(true);
+    setEnabledIpa(true);
+  }
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button, a");
+    if (!btn) return;
+    const isEdit = btn.classList.contains("btn-edit") ||
+                   (btn.textContent && btn.textContent.trim() === "編輯");
+    if (!isEdit) return;
+    let code = btn.dataset.code || "";
+    const row = btn.closest("tr");
+    if (!code && row) {
+      const a = row.querySelector('a[href*="/d/"]');
+      if (a && a.href) {
+        const m = a.href.match(/\/d\/([A-Za-z0-9_-]+)/);
+        if (m) code = m[1];
+      }
+      if (!code && row.dataset.code) code = row.dataset.code;
+    }
+    if (code) {
+      window.__editingCode = code;
+      const hidden = document.getElementById("edit-code");
+      if (hidden) hidden.value = code;
+      resetEditorsUI();
+    }
+  }, true);
+
+  async function presign(file, folderHint) {
+    const resp = await fetch("/api/upload/init", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        folder: folderHint,
+        contentType: file.type || (file.name.toLowerCase().endsWith(".apk")
+          ? "application/vnd.android.package-archive"
+          : "application/octet-stream")
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data?.error || "init failed");
+    return data;
+  }
+
+  function xhrPutFile(uploadUrl, file, contentType, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", uploadUrl, true);
+      if (contentType) xhr.setRequestHeader("content-type", contentType);
+      xhr.upload.onprogress = (e) => {
+        if (!e || !e.lengthComputable) return;
+        const percent = Math.floor((e.loaded / e.total) * 100);
+        try { onProgress?.(percent); } catch {}
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(null);
+        else reject(new Error("upload failed (" + xhr.status + ")"));
+      };
+      xhr.onerror = () => reject(new Error("network error"));
+      xhr.send(file);
+    });
+  }
+
+  async function replaceOnServer(code, platform, key) {
+    const r = await fetch("/api/upload/replace", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, platform, key }),
+      credentials: "same-origin",
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.error || "replace failed");
+    return data;
+  }
+
+  function setPercent(barEl, textEl, p, hint) {
+    if (barEl) barEl.value = p;
+    if (textEl) textEl.textContent = (hint ? hint + " " : "") + p + "%";
+  }
+  function setBusy(textEl, busy, hint) {
+    if (!textEl) return;
+    textEl.textContent = busy ? (hint || "處理中…") : "";
+  }
+
+  const btnApk = el.btnApk();
+  const fileApk = el.fileApk();
+  const barApk  = el.barApk();
+  const progApk = el.progApk();
+
+  if (btnApk && fileApk) {
+    btnApk.addEventListener("click", async () => {
+      try {
+        const code = getEditingCode();
+        if (!code) return alert("找不到目前編輯的分發 code");
+        const file = fileApk.files?.[0];
+        if (!file) return alert("請先選擇 APK 檔案");
+        if (!file.name.toLowerCase().endsWith(".apk")) return alert("檔案必須是 .apk");
+
+        setEnabledApk(false);
+        setEnabledIpa(false);
+
+        setPercent(barApk, progApk, 0, "上傳中…");
+        const { uploadUrl, key, contentType } = await presign(file, "android");
+        await xhrPutFile(uploadUrl, file, contentType || file.type || "application/octet-stream",
+          (p) => setPercent(barApk, progApk, p, "上傳中…")
+        );
+
+        setBusy(progApk, true, "覆蓋中…");
+        await replaceOnServer(code, "apk", key);
+
+        setBusy(progApk, false);
+        setPercent(barApk, progApk, 100, "完成");
+        setEnabledApk(true);
+        setEnabledIpa(true);
+        alert("APK 覆蓋完成");
+      } catch (e) {
+        setBusy(progApk, false);
+        alert("APK 覆蓋失敗：" + (e?.message || e));
+        setEnabledApk(true);
+        if (!STRICT_UNLOCK_ON_SUCCESS_ONLY) setEnabledIpa(true);
+      }
+    });
+  }
+
+  const btnIpa = el.btnIpa();
+  const fileIpa = el.fileIpa();
+  const barIpa  = el.barIpa();
+  const progIpa = el.progIpa();
+
+  if (btnIpa && fileIpa) {
+    btnIpa.addEventListener("click", async () => {
+      try {
+        const code = getEditingCode();
+        if (!code) return alert("找不到目前編輯的分發 code");
+        const file = fileIpa.files?.[0];
+        if (!file) return alert("請先選擇 IPA 檔案");
+        if (!file.name.toLowerCase().endsWith(".ipa")) return alert("檔案必須是 .ipa");
+
+        setEnabledIpa(false);
+        setEnabledApk(false);
+
+        setPercent(barIpa, progIpa, 0, "上傳中…");
+        const { uploadUrl, key, contentType } = await presign(file, "ios");
+        await xhrPutFile(uploadUrl, file, contentType || file.type || "application/octet-stream",
+          (p) => setPercent(barIpa, progIpa, p, "上傳中…")
+        );
+
+        setBusy(progIpa, true, "覆蓋中…");
+        await replaceOnServer(code, "ipa", key);
+
+        setBusy(progIpa, false);
+        setPercent(barIpa, progIpa, 100, "完成");
+        setEnabledIpa(true);
+        setEnabledApk(true);
+        alert("IPA 覆蓋完成");
+      } catch (e) {
+        setBusy(progIpa, false);
+        alert("IPA 覆蓋失敗：" + (e?.message || e));
+        setEnabledIpa(true);
+        if (!STRICT_UNLOCK_ON_SUCCESS_ONLY) setEnabledApk(true);
+      }
+    });
+  }
+})();
+
+</script>
