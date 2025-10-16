@@ -39,6 +39,24 @@ function sanitizeFileName(value: string, fallback: string): string {
     .replace(/[^a-zA-Z0-9._-]/g, '') || fallback;
 }
 
+function decodeHeaderValue(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parsePositiveInteger(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const coerced = Math.floor(parsed);
+  if (coerced <= 0) return null;
+  return coerced;
+}
+
 export async function POST(req: Request) {
   const uid = parseUid(req);
   if (!uid) {
@@ -49,38 +67,51 @@ export async function POST(req: Request) {
   const bindings = env as Env;
   const R2 = bindings.R2_BUCKET;
   if (!R2) {
-    return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
+   return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
   }
 
-  const form = await req.formData();
-  const fileEntry = form.get('file');
-  if (!(fileEntry instanceof File) || fileEntry.size === 0) {
-    return NextResponse.json({ ok: false, error: 'FILE_REQUIRED' }, { status: 400 });
-  }
-
-  const platform = (form.get('platform') as string | null)?.trim();
+  const platformHeader = req.headers.get('x-platform');
+  const platform = platformHeader === 'apk' || platformHeader === 'ipa' ? platformHeader : null;
   if (platform !== 'apk' && platform !== 'ipa') {
     return NextResponse.json({ ok: false, error: 'INVALID_PLATFORM' }, { status: 400 });
   }
 
-  let linkId = (form.get('linkId') as string | null)?.trim() ?? '';
+  let linkId = (req.headers.get('x-link-id') ?? '').trim();
   if (!linkId) {
     linkId = crypto.randomUUID();
   }
 
   const contentType =
-    (form.get('contentType') as string | null)?.trim() ||
-    fileEntry.type ||
+    req.headers.get('content-type')?.trim() ||
     'application/octet-stream';
 
-  const title = (form.get('title') as string | null)?.trim() || null;
-  const bundleId = (form.get('bundleId') as string | null)?.trim() || null;
-  const version = (form.get('version') as string | null)?.trim() || null;
+  const rawTitle = decodeHeaderValue(req.headers.get('x-title'));
+  const rawBundleId = decodeHeaderValue(req.headers.get('x-bundle-id'));
+  const rawVersion = decodeHeaderValue(req.headers.get('x-version'));
+  const rawFileName = decodeHeaderValue(req.headers.get('x-file-name'));
 
-  const safeName = sanitizeFileName(fileEntry.name ?? `${platform}.bin`, `${platform}.bin`);
+  const title = rawTitle?.trim() || null;
+  const bundleId = rawBundleId?.trim() || null;
+  const version = rawVersion?.trim() || null;
+
+  const safeName = sanitizeFileName(rawFileName ?? `${platform}.bin`, `${platform}.bin`);
   const key = `links/${uid}/${linkId}/${platform}/${Date.now()}-${safeName}`;
 
-  await R2.put(key, fileEntry.stream(), {
+  const sizeHeader = parsePositiveInteger(req.headers.get('x-file-size'));
+  const size =
+    sizeHeader ??
+    parsePositiveInteger(req.headers.get('content-length')) ??
+    null;
+  if (size === null) {
+    return NextResponse.json({ ok: false, error: 'FILE_REQUIRED' }, { status: 400 });
+  }
+
+  const bodyStream = req.body;
+  if (!bodyStream) {
+    return NextResponse.json({ ok: false, error: 'FILE_REQUIRED' }, { status: 400 });
+  }
+
+  await R2.put(key, bodyStream, {
     httpMetadata: {
       contentType,
     },
@@ -89,7 +120,7 @@ export async function POST(req: Request) {
   const upload: UploadResponse['upload'] = {
     platform,
     key,
-    size: fileEntry.size,
+    size,
     title,
     bundleId,
     version,

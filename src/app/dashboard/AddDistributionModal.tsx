@@ -408,22 +408,73 @@ export default function AddDistributionModal({
         new Promise<{ linkId: string; upload: FinalizeUploadPayload }>((resolve, reject) => {
           const state = platform === 'apk' ? apkState : ipaState;
           const file = state.file!;
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('platform', platform);
-          if (existingLinkId) formData.append('linkId', existingLinkId);
-          formData.append('contentType', file.type || 'application/octet-stream');
-          if (state.metadata?.title) formData.append('title', state.metadata.title);
-          if (state.metadata?.bundleId) formData.append('bundleId', state.metadata.bundleId);
-          if (state.metadata?.version) formData.append('version', state.metadata.version);
+          const contentType = file.type || 'application/octet-stream';
+
+          let fallbackTimer: number | null = null;
+
+          const stopFallback = () => {
+            if (fallbackTimer !== null) {
+              window.clearInterval(fallbackTimer);
+              fallbackTimer = null;
+            }
+          };
+
+          const ensureFallback = () => {
+            if (fallbackTimer !== null) return;
+            fallbackTimer = window.setInterval(() => {
+              setUploadProgress((prev) => {
+                const current = prev[platform] ?? 0;
+                if (current >= 0.99) {
+                  stopFallback();
+                  return prev;
+                }
+                const next = Math.min(0.99, current + 0.01);
+                return { ...prev, [platform]: next };
+              });
+            }, 900);
+          };
+
+          updateProgress(platform, 0.01);
+          ensureFallback();
 
           const xhr = new XMLHttpRequest();
           xhr.open('POST', '/api/distributions/upload');
           xhr.responseType = 'json';
+          xhr.setRequestHeader('Content-Type', contentType);
+          xhr.setRequestHeader('X-Platform', platform);
+          xhr.setRequestHeader('X-File-Size', String(file.size));
+          let encodedFileName: string;
+          try {
+            encodedFileName = encodeURIComponent(file.name || `${platform}.bin`);
+          } catch {
+            encodedFileName = encodeURIComponent(`${platform}.bin`);
+          }
+          xhr.setRequestHeader('X-File-Name', encodedFileName);
+          if (existingLinkId) {
+            xhr.setRequestHeader('X-Link-Id', existingLinkId);
+          }
+
+          const setEncodedHeader = (name: string, rawValue: string | null | undefined) => {
+            if (typeof rawValue !== 'string') return;
+            const trimmed = rawValue.trim();
+            if (!trimmed) return;
+            try {
+              xhr.setRequestHeader(name, encodeURIComponent(trimmed));
+            } catch {
+              // Ignore header encoding errors and skip the value.
+            }
+          };
+
+          setEncodedHeader('X-Title', state.metadata?.title ?? null);
+          setEncodedHeader('X-Bundle-Id', state.metadata?.bundleId ?? null);
+          setEncodedHeader('X-Version', state.metadata?.version ?? null);
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable && event.total > 0) {
-              updateProgress(platform, event.loaded / event.total);
+              const ratio = event.loaded / event.total;
+              stopFallback();
+              updateProgress(platform, Math.min(0.99, ratio));
+              ensureFallback();
             }
           };
 
@@ -432,19 +483,25 @@ export default function AddDistributionModal({
               const body = xhr.response as UploadResponse | null;
               if (!body?.ok || !body.upload || !body.linkId) {
                 const message = body?.error ?? xhr.responseText ?? 'UPLOAD_FAILED';
+                stopFallback();
                 reject(new Error(message));
                 return;
               }
+              stopFallback();
               updateProgress(platform, 1);
               resolve({ linkId: body.linkId, upload: body.upload });
             } else {
+              stopFallback();
               reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
             }
           };
 
-          xhr.onerror = () => reject(new Error('NETWORK_ERROR'));
+          xhr.onerror = () => {
+            stopFallback();
+            reject(new Error('NETWORK_ERROR'));
+          };
 
-          xhr.send(formData);
+          xhr.send(file);
         });
 
       for (const platform of platforms) {
@@ -452,7 +509,16 @@ export default function AddDistributionModal({
         if (!state.file) continue;
         const result = await uploadPlatform(platform, linkId);
         linkId = result.linkId;
-        uploadsPayload.push(result.upload);
+        uploadsPayload.push({
+          platform: result.upload.platform,
+          key: result.upload.key,
+          size: result.upload.size,
+          title: result.upload.title,
+          bundleId: result.upload.bundleId,
+          version: result.upload.version,
+          contentType: result.upload.contentType,
+          sha256: result.upload.sha256 ?? null,
+        });
       }
 
       if (!linkId) {
