@@ -172,7 +172,7 @@ export default function DashboardClient({ initialData }: Props) {
                   <td className="py-2 pr-4">
                     <a
                       className="text-blue-600 underline"
-                      href={`/dl/${link.code}`}
+                      href={`/d/${link.code}`}
                       target="_blank"
                       rel="noreferrer"
                     >
