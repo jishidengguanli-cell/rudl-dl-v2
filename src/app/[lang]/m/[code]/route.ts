@@ -1,1 +1,4 @@
-export { GET, runtime } from '../../../m/[code]/route';
+import { GET as baseGET } from '../../../m/[code]/route';
+
+export const runtime = 'edge';
+export const GET = baseGET;
