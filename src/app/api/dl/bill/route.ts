@@ -34,13 +34,11 @@ export async function POST(req: Request) {
 
   try {
     const hasBalance = await hasUsersBalanceColumn(DB);
-    await DB.exec('BEGIN');
 
     const exists = await DB.prepare(
       `SELECT 1 FROM point_dedupe WHERE account_id=? AND link_id=? AND platform=? AND bucket_minute=? LIMIT 1`
     ).bind(account_id, link_id, platform, bucket_minute).first();
     if (exists) {
-      await DB.exec('COMMIT');
       return NextResponse.json({ ok: true, deduped: true });
     }
 
@@ -50,38 +48,52 @@ export async function POST(req: Request) {
 
     const acct = await DB.prepare(balanceQuery).bind(account_id).first<{ balance: number }>();
     if (!acct) {
-      await DB.exec('ROLLBACK');
       return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
     }
     const bal = Number(acct.balance ?? 0);
     if (bal < cost) {
-      await DB.exec('ROLLBACK');
       return NextResponse.json({ ok: false, error: 'INSUFFICIENT_POINTS' }, { status: 402 });
     }
 
     const id = crypto.randomUUID();
-    await DB.prepare(
-      `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-       VALUES (?, ?, ?, 'download', ?, NULL, ?, ?, ?)`
-    ).bind(id, account_id, -cost, link_id, bucket_minute, platform, now).run();
+    const statements: D1PreparedStatement[] = [];
+
+    statements.push(
+      DB.prepare(
+        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+         VALUES (?, ?, ?, 'download', ?, NULL, ?, ?, ?)`
+      ).bind(id, account_id, -cost, link_id, bucket_minute, platform, now)
+    );
 
     if (hasBalance) {
-      await DB.prepare(`UPDATE users SET balance = balance - ? WHERE id=?`).bind(cost, account_id).run();
+      statements.push(
+        DB.prepare(`UPDATE users SET balance = balance - ? WHERE id=?`).bind(cost, account_id)
+      );
     } else {
-      await DB.prepare(`UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`)
-        .bind(cost, now, account_id)
-        .run();
+      statements.push(
+        DB.prepare(`UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`).bind(
+          cost,
+          now,
+          account_id
+        )
+      );
     }
 
-    await DB.prepare(
-      `INSERT INTO point_dedupe (account_id, link_id, bucket_minute, platform) VALUES (?, ?, ?, ?)`
-    ).bind(account_id, link_id, bucket_minute, platform).run();
+    statements.push(
+      DB.prepare(
+        `INSERT INTO point_dedupe (account_id, link_id, bucket_minute, platform) VALUES (?, ?, ?, ?)`
+      ).bind(account_id, link_id, bucket_minute, platform)
+    );
 
-    await DB.exec('COMMIT');
+    await DB.batch(statements);
+
     return NextResponse.json({ ok: true, cost });
   } catch (e: unknown) {
-    await DB.exec('ROLLBACK');
     const error = e instanceof Error ? e.message : String(e);
+    if (/\bpoint_dedupe\b/.test(error) && /constraint/i.test(error)) {
+      return NextResponse.json({ ok: true, deduped: true });
+    }
+
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 }
