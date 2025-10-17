@@ -454,93 +454,35 @@ export default function AddDistributionModal({
           ...(initParsed.uploadHeaders ?? {}),
         };
 
-        const streamingSupported = (() => {
-          if (typeof window === 'undefined' || typeof ReadableStream === 'undefined') {
-            return false;
-          }
-          try {
-            const testStream = new ReadableStream();
-            void new Request('https://example.com', {
-              method: 'POST',
-              body: testStream as unknown as BodyInit,
-              duplex: 'half',
-            } as RequestInit & { duplex: 'half' });
-            return true;
-          } catch {
-            return false;
-          }
-        })();
-
         updateProgress(platform, 0.01);
 
-        if (streamingSupported) {
-          const total = file.size || 1;
-          let uploaded = 0;
-
-          const bodyStream = new ReadableStream<Uint8Array>({
-            start(controller) {
-              const reader = file.stream().getReader();
-              const pump = (): void => {
-                reader
-                  .read()
-                  .then(({ done, value }) => {
-                    if (done) {
-                      controller.close();
-                      return;
-                    }
-                    if (value) {
-                      uploaded += value.byteLength;
-                      updateProgress(platform, Math.min(0.99, uploaded / total));
-                      controller.enqueue(value);
-                    }
-                    pump();
-                  })
-                  .catch((error) => controller.error(error));
-              };
-              pump();
-            },
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', initParsed.uploadUrl);
+          Object.entries(uploadHeaders).forEach(([header, value]) => {
+            try {
+              xhr.setRequestHeader(header, value);
+            } catch {
+              // Ignore browsers that disallow setting certain headers.
+            }
           });
-
-          const requestInit: RequestInit & { duplex?: 'half' } = {
-            method: 'PUT',
-            headers: uploadHeaders,
-            body: bodyStream as unknown as BodyInit,
+          xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable || event.total === 0) return;
+            const ratio = event.loaded / event.total;
+            updateProgress(platform, Math.min(0.99, ratio));
           };
-          (requestInit as { duplex: 'half' }).duplex = 'half';
-
-          const uploadResponse = await fetch(initParsed.uploadUrl, requestInit);
-          if (!uploadResponse.ok) {
-            throw new Error(uploadResponse.statusText || `UPLOAD_FAILED_${uploadResponse.status}`);
-          }
-        } else {
-          await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', initParsed.uploadUrl);
-            Object.entries(uploadHeaders).forEach(([header, value]) => {
-              try {
-                xhr.setRequestHeader(header, value);
-              } catch {
-                // Ignore browsers that disallow setting certain headers.
-              }
-            });
-            xhr.upload.onprogress = (event) => {
-              if (!event.lengthComputable || event.total === 0) return;
-              const ratio = event.loaded / event.total;
-              updateProgress(platform, Math.min(0.99, ratio));
-            };
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) {
-                resolve();
-              } else {
-                reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
-              }
-            };
-            xhr.onerror = () => {
-              reject(new Error('NETWORK_ERROR'));
-            };
-            xhr.send(file);
-          });
-        }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error(xhr.responseText || `UPLOAD_FAILED_${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => {
+            reject(new Error('NETWORK_ERROR'));
+          };
+          xhr.send(file);
+        });
 
         updateProgress(platform, 1);
         return { linkId: initParsed.linkId, upload: { ...initParsed.upload, size: file.size } };
