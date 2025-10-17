@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import AddDistributionModal from './AddDistributionModal';
@@ -28,6 +28,10 @@ export default function DashboardClient({ initialData }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data.total ?? 0) / data.pageSize)),
@@ -164,7 +168,7 @@ export default function DashboardClient({ initialData }: Props) {
                       {link.isActive ? 'ON' : 'OFF'}
                     </span>
                   </td>
-                  <td className="py-2 pr-4 text-xs text-gray-600">{formatDate(link.createdAt)}</td>
+                  <td className="py-2 pr-4 text-xs text-gray-600">{isHydrated ? formatDate(link.createdAt) : ''}</td>
                   <td className="py-2 pr-4">
                     <a
                       className="text-blue-600 underline"
@@ -241,3 +245,7 @@ export default function DashboardClient({ initialData }: Props) {
     </div>
   );
 }
+
+
+
+
