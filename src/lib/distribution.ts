@@ -113,11 +113,14 @@ const toBoolean = (value: unknown): boolean => {
   return Boolean(value);
 };
 
-export async function fetchDistributionByCode(
+type LookupField = 'id' | 'code';
+
+async function fetchDistributionByField(
   DB: D1Database,
-  code: string
+  field: LookupField,
+  value: string
 ): Promise<DistributionLink | null> {
-  const trimmed = code.trim();
+  const trimmed = value.trim();
   if (!trimmed) return null;
 
   const linksInfo = await getTableInfo(DB, 'links');
@@ -141,7 +144,7 @@ export async function fetchDistributionByCode(
   }
 
   const linkRow = await DB.prepare(
-    `SELECT ${linkColumns.join(', ')} FROM links WHERE code=? LIMIT 1`
+    `SELECT ${linkColumns.join(', ')} FROM links WHERE ${field}=? LIMIT 1`
   )
     .bind(trimmed)
     .first<LinkRow>();
@@ -188,9 +191,11 @@ export async function fetchDistributionByCode(
     createdAt: toEpochSeconds(row.created_at),
   }));
 
+  const linkCode = toStringOrNull(linkRow.code);
+
   const link: DistributionLink = {
     id: linkId,
-    code: toStringOrNull(linkRow.code) ?? trimmed,
+    code: field === 'code' ? linkCode ?? trimmed : linkCode ?? '',
     ownerId: toStringOrNull(linkRow.owner_id),
     title: toStringOrNull(linkRow.title),
     bundleId: toStringOrNull(linkRow.bundle_id),
@@ -204,4 +209,18 @@ export async function fetchDistributionByCode(
   };
 
   return link;
+}
+
+export async function fetchDistributionByCode(
+  DB: D1Database,
+  code: string
+): Promise<DistributionLink | null> {
+  return fetchDistributionByField(DB, 'code', code);
+}
+
+export async function fetchDistributionById(
+  DB: D1Database,
+  id: string
+): Promise<DistributionLink | null> {
+  return fetchDistributionByField(DB, 'id', id);
 }

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import JSZip from 'jszip';
@@ -12,6 +13,7 @@ import plist from 'plist';
 import { parseBuffer as parseBinaryPlist } from 'bplist-parser';
 import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
+import type { DashboardFile, DashboardLink } from '@/lib/dashboard';
 
 const DEFAULT_TITLE = 'APP';
 
@@ -44,14 +46,31 @@ type BinaryXmlNodeRaw = {
   childNodes?: BinaryXmlNodeRaw[];
 };
 
+const createEmptyExistingFiles = (): Record<Platform, DashboardFile | null> => ({
+  apk: null,
+  ipa: null,
+});
+
+const trimValue = (value: string | null | undefined) => (value ? value.trim() : '');
+
 type Props = {
   open: boolean;
+  mode?: 'create' | 'edit';
+  initialLink?: DashboardLink | null;
   onClose: () => void;
   onCreated: () => Promise<void> | void;
+  onUpdated?: (linkId: string) => Promise<void> | void;
   onError: (message: string) => void;
 };
 
 type FinalizeResponse = {
+  ok: boolean;
+  linkId?: string;
+  code?: string;
+  error?: string;
+};
+
+type UpdateResponse = {
   ok: boolean;
   linkId?: string;
   code?: string;
@@ -287,13 +306,43 @@ async function finalizeDistribution(body: {
   return json;
 }
 
+async function patchDistribution(
+  linkId: string,
+  body: {
+    title: string;
+    bundleId: string;
+    apkVersion: string;
+    ipaVersion: string;
+    autofill: boolean;
+    uploads: FinalizeUploadPayload[];
+  }
+) {
+  const res = await fetch(`/api/distributions/${linkId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as UpdateResponse;
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error ?? `HTTP_${res.status}`);
+  }
+  return json;
+}
+
 export default function AddDistributionModal({
   open,
+  mode = 'create',
+  initialLink,
   onClose,
   onCreated,
+  onUpdated,
   onError,
 }: Props) {
   const { t } = useI18n();
+  const isEdit = mode === 'edit';
+  const apkInputRef = useRef<HTMLInputElement | null>(null);
+  const ipaInputRef = useRef<HTMLInputElement | null>(null);
+  const lastInitializedId = useRef<string | null>(null);
   const [title, setTitle] = useState('');
   const [bundleId, setBundleId] = useState('');
   const [apkVersion, setApkVersion] = useState('');
@@ -305,6 +354,9 @@ export default function AddDistributionModal({
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressMap>({ apk: 0, ipa: 0 });
+  const [existingFiles, setExistingFiles] = useState<Record<Platform, DashboardFile | null>>(
+    createEmptyExistingFiles
+  );
 
   useEffect(() => {
     if (!open) {
@@ -319,8 +371,37 @@ export default function AddDistributionModal({
       setError(null);
       setToast(null);
       setUploadProgress({ apk: 0, ipa: 0 });
+      setExistingFiles(createEmptyExistingFiles());
+      lastInitializedId.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !isEdit || !initialLink) return;
+    if (lastInitializedId.current === initialLink.id) return;
+
+    setTitle(initialLink.title ?? DEFAULT_TITLE);
+    setBundleId(initialLink.bundleId ?? '');
+    setApkVersion(initialLink.apkVersion ?? '');
+    setIpaVersion(initialLink.ipaVersion ?? '');
+    setAutofill(true);
+    setApkState({ file: null, metadata: null });
+    setIpaState({ file: null, metadata: null });
+    setSubmitState('idle');
+    setError(null);
+    setToast(null);
+    setUploadProgress({ apk: 0, ipa: 0 });
+
+    const mapped = createEmptyExistingFiles();
+    for (const file of initialLink.files) {
+      const platform = (file.platform ?? '').toLowerCase();
+      if (platform === 'apk') mapped.apk = file;
+      if (platform === 'ipa') mapped.ipa = file;
+    }
+    setExistingFiles(mapped);
+
+    lastInitializedId.current = initialLink.id;
+  }, [open, isEdit, initialLink]);
 
   const selectedPlatforms = useMemo(() => {
     const list: Platform[] = [];
@@ -341,6 +422,13 @@ export default function AddDistributionModal({
     const setter = platform === 'apk' ? setApkState : setIpaState;
     setter({ file, metadata: null });
     if (!file) return;
+
+    if (isEdit && !initialLink) {
+      const message = 'INVALID_LINK';
+      setError(message);
+      onError(message);
+      return;
+    }
 
     try {
       const metadata = platform === 'apk' ? await parseApkMetadata(file) : await parseIpaMetadata(file);
@@ -367,17 +455,31 @@ export default function AddDistributionModal({
   const handleAutofillToggle = (checked: boolean) => {
     setAutofill(checked);
     if (!checked) return;
-    if (ipaState.metadata?.title && (!title || title === DEFAULT_TITLE)) {
-      setTitle(ipaState.metadata.title);
+    const existingApk = existingFiles.apk;
+    const existingIpa = existingFiles.ipa;
+    if (!title || title === DEFAULT_TITLE) {
+      if (ipaState.metadata?.title) {
+        setTitle(ipaState.metadata.title);
+      } else if (existingIpa?.title) {
+        setTitle(existingIpa.title);
+      } else if (existingApk?.title) {
+        setTitle(existingApk.title);
+      }
     }
-    if (!bundleId && (apkState.metadata?.bundleId || ipaState.metadata?.bundleId)) {
-      setBundleId(apkState.metadata?.bundleId ?? ipaState.metadata?.bundleId ?? '');
+    if (!bundleId) {
+      setBundleId(
+        apkState.metadata?.bundleId ??
+          ipaState.metadata?.bundleId ??
+          existingApk?.bundleId ??
+          existingIpa?.bundleId ??
+          ''
+      );
     }
-    if (!apkVersion && apkState.metadata?.version) {
-      setApkVersion(apkState.metadata.version);
+    if (!apkVersion) {
+      setApkVersion(apkState.metadata?.version ?? existingApk?.version ?? '');
     }
-    if (!ipaVersion && ipaState.metadata?.version) {
-      setIpaVersion(ipaState.metadata.version);
+    if (!ipaVersion) {
+      setIpaVersion(ipaState.metadata?.version ?? existingIpa?.version ?? '');
     }
   };
 
@@ -386,16 +488,22 @@ export default function AddDistributionModal({
     setError(null);
 
     const platforms = selectedPlatforms;
-    if (!platforms.length) {
+    const hasUploads = platforms.length > 0;
+    if (!hasUploads && !isEdit) {
       const message = t('dashboard.errorNoFiles');
       setError(message);
       onError(message);
       return;
     }
 
-    const apkBundle = apkState.metadata?.bundleId?.trim();
-    const ipaBundle = ipaState.metadata?.bundleId?.trim();
-    if (autofill && apkBundle && ipaBundle && apkBundle !== ipaBundle) {
+    const existingApkBundle = trimValue(existingFiles.apk?.bundleId);
+    const existingIpaBundle = trimValue(existingFiles.ipa?.bundleId);
+    const newApkBundle = apkState.file ? trimValue(apkState.metadata?.bundleId) : '';
+    const newIpaBundle = ipaState.file ? trimValue(ipaState.metadata?.bundleId) : '';
+    const compareApkBundle = apkState.file ? newApkBundle : existingApkBundle;
+    const compareIpaBundle = ipaState.file ? newIpaBundle : existingIpaBundle;
+
+    if (autofill && compareApkBundle && compareIpaBundle && compareApkBundle !== compareIpaBundle) {
       const message = t('dashboard.errorAutofillMismatch');
       setError(message);
       onError(message);
@@ -407,7 +515,7 @@ export default function AddDistributionModal({
       setUploadProgress({ apk: 0, ipa: 0 });
       setToast(null);
 
-      let linkId: string | null = null;
+      let linkId: string | null = isEdit && initialLink ? initialLink.id : null;
       const uploadsPayload: FinalizeUploadPayload[] = [];
 
       const uploadPlatform = async (
@@ -509,24 +617,44 @@ export default function AddDistributionModal({
         throw new Error('UPLOAD_MISSING');
       }
 
-      const finalize = await finalizeDistribution({
-        linkId,
-        title: title.trim(),
-        bundleId: bundleId.trim(),
-        apkVersion: apkVersion.trim(),
-        ipaVersion: ipaVersion.trim(),
-        autofill,
-        uploads: uploadsPayload,
-      });
-
-      if (finalize.ok) {
-        setToast(t('dashboard.toastCreated'));
-        setSubmitState('success');
-        const maybePromise = onCreated();
-        if (maybePromise instanceof Promise) {
-          await maybePromise;
+      if (isEdit) {
+        const update = await patchDistribution(linkId, {
+          title: title.trim(),
+          bundleId: bundleId.trim(),
+          apkVersion: apkVersion.trim(),
+          ipaVersion: ipaVersion.trim(),
+          autofill,
+          uploads: uploadsPayload,
+        });
+        if (update.ok) {
+          setToast(t('dashboard.toastUpdated'));
+          setSubmitState('success');
+          const maybePromise = onUpdated?.(linkId);
+          if (maybePromise instanceof Promise) {
+            await maybePromise;
+          }
+          setTimeout(() => setToast(null), 4000);
         }
-        setTimeout(() => setToast(null), 5000);
+      } else {
+        const finalize = await finalizeDistribution({
+          linkId,
+          title: title.trim(),
+          bundleId: bundleId.trim(),
+          apkVersion: apkVersion.trim(),
+          ipaVersion: ipaVersion.trim(),
+          autofill,
+          uploads: uploadsPayload,
+        });
+
+        if (finalize.ok) {
+          setToast(t('dashboard.toastCreated'));
+          setSubmitState('success');
+          const maybePromise = onCreated();
+          if (maybePromise instanceof Promise) {
+            await maybePromise;
+          }
+          setTimeout(() => setToast(null), 5000);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -545,7 +673,11 @@ export default function AddDistributionModal({
 
   const renderSummaryContent = () => {
     if (submitState === 'success') {
-      return <p className="text-sm text-green-600">{t('dashboard.toastCreated')}</p>;
+      return (
+        <p className="text-sm text-green-600">
+          {t(isEdit ? 'dashboard.toastUpdated' : 'dashboard.toastCreated')}
+        </p>
+      );
     }
     if (!summaries.length) {
       return <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>;
