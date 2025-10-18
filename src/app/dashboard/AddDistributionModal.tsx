@@ -340,8 +340,10 @@ export default function AddDistributionModal({
 }: Props) {
   const { t } = useI18n();
   const isEdit = mode === 'edit';
-  const apkInputRef = useRef<HTMLInputElement | null>(null);
-  const ipaInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRefs = useRef<Record<Platform, HTMLInputElement | null>>({
+    apk: null,
+    ipa: null,
+  });
   const lastInitializedId = useRef<string | null>(null);
   const [title, setTitle] = useState('');
   const [bundleId, setBundleId] = useState('');
@@ -357,6 +359,15 @@ export default function AddDistributionModal({
   const [existingFiles, setExistingFiles] = useState<Record<Platform, DashboardFile | null>>(
     createEmptyExistingFiles
   );
+
+  const modalTitle = t(isEdit ? 'dashboard.editDistribution' : 'dashboard.addDistribution');
+  const modalDescription = t(
+    isEdit ? 'dashboard.editDistributionDesc' : 'dashboard.addDistributionDesc'
+  );
+  const submitLabel =
+    submitState === 'submitting'
+      ? t('status.loading')
+      : t(isEdit ? 'form.update' : 'form.submit');
 
   useEffect(() => {
     if (!open) {
@@ -481,6 +492,95 @@ export default function AddDistributionModal({
     if (!ipaVersion) {
       setIpaVersion(ipaState.metadata?.version ?? existingIpa?.version ?? '');
     }
+  };
+
+  const renderFileSection = (platform: Platform) => {
+    const state = platform === 'apk' ? apkState : ipaState;
+    const setter = platform === 'apk' ? setApkState : setIpaState;
+    const existing = existingFiles[platform];
+    const disabled = submitState === 'submitting';
+    const handleClick = () => {
+      const ref = fileInputRefs.current[platform];
+      if (ref) {
+        ref.value = '';
+        ref.click();
+      }
+    };
+    const handleClear = () => {
+      const ref = fileInputRefs.current[platform];
+      if (ref) ref.value = '';
+      setter({ file: null, metadata: null });
+    };
+    const chooseLabel = state.file
+      ? t('form.replaceFile')
+      : isEdit
+        ? t('form.chooseUpdate')
+        : t('form.chooseFile');
+    const accept = platform === 'apk' ? '.apk' : '.ipa';
+
+    return (
+      <div key={platform} className="space-y-2">
+        <p className="text-sm font-medium text-gray-700">
+          {t(
+            isEdit
+              ? platform === 'apk'
+                ? 'form.updateApk'
+                : 'form.updateIpa'
+              : platform === 'apk'
+              ? 'form.apkUpload'
+              : 'form.ipaUpload'
+          )}
+        </p>
+        <input
+          ref={(node) => {
+            fileInputRefs.current[platform] = node;
+          }}
+          type="file"
+          accept={accept}
+          className="hidden"
+          disabled={disabled}
+          onChange={(event) => handleFileChange(platform, event.target.files)}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded border px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={handleClick}
+            disabled={disabled}
+          >
+            {chooseLabel}
+          </button>
+          {state.file && (
+            <button
+              type="button"
+              className="rounded border px-3 py-1 text-xs font-medium text-gray-500 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={handleClear}
+              disabled={disabled}
+            >
+              {t('form.clearOverride')}
+            </button>
+          )}
+        </div>
+        {state.file ? (
+          <p className="text-xs text-gray-600">{state.file.name}</p>
+        ) : existing ? (
+          <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-600">
+            <div className="font-semibold text-gray-700">{existing.title ?? DEFAULT_TITLE}</div>
+            <div>
+              {t('form.currentVersion')}: {existing.version ?? '-'}
+            </div>
+            <div>
+              {t('form.currentSize')}:{' '}
+              {typeof existing.size === 'number'
+                ? `${(existing.size / (1024 * 1024)).toFixed(1)} MB`
+                : '-'}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">{t('dashboard.progressPlaceholder')}</p>
+        )}
+      </div>
+    );
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -728,8 +828,8 @@ export default function AddDistributionModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b px-6 py-4">
-          <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.addDistribution')}</h3>
-          <p className="mt-1 text-sm text-gray-600">{t('dashboard.addDistributionDesc')}</p>
+          <h3 className="text-lg font-semibold text-gray-900">{modalTitle}</h3>
+          <p className="mt-1 text-sm text-gray-600">{modalDescription}</p>
         </div>
 
         <form className="space-y-4 px-6 py-6" onSubmit={handleSubmit}>
@@ -787,34 +887,8 @@ export default function AddDistributionModal({
             {t('dashboard.autofill')}
           </label>
 
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">
-              {t('form.apkUpload')}
-              <input
-                type="file"
-                accept=".apk"
-                className="mt-1 w-full text-sm"
-                disabled={submitState === 'submitting'}
-                onChange={(event) => handleFileChange('apk', event.target.files)}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                {apkState.file ? apkState.file.name : t('dashboard.progressPlaceholder')}
-              </p>
-            </label>
-
-            <label className="block text-sm font-medium text-gray-700">
-              {t('form.ipaUpload')}
-              <input
-                type="file"
-                accept=".ipa"
-                className="mt-1 w-full text-sm"
-                disabled={submitState === 'submitting'}
-                onChange={(event) => handleFileChange('ipa', event.target.files)}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                {ipaState.file ? ipaState.file.name : t('dashboard.progressPlaceholder')}
-              </p>
-            </label>
+          <div className="space-y-4">
+            {(['apk', 'ipa'] as Platform[]).map((platform) => renderFileSection(platform))}
           </div>
 
           <div className="rounded border border-dashed border-gray-300 px-3 py-2">
@@ -849,7 +923,7 @@ export default function AddDistributionModal({
               className="rounded bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={submitState === 'submitting'}
             >
-              {submitState === 'submitting' ? t('status.loading') : t('form.submit')}
+              {submitLabel}
             </button>
           </div>
         </form>

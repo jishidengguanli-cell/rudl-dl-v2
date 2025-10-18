@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import AddDistributionModal from './AddDistributionModal';
@@ -15,20 +15,24 @@ const formatDate = (value: number) => {
   return date.toLocaleString();
 };
 
-const toPlatformChips = (platform: string) =>
-  platform
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean);
+const formatSize = (value: number | null | undefined) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '-';
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 export default function DashboardClient({ initialData }: Props) {
   const { t } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
+  const [editingLink, setEditingLink] = useState<DashboardLink | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DashboardLink | null>(null);
+  const [deleteStatus, setDeleteStatus] = useState<'idle' | 'pending'>('idle');
   const [toast, setToast] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+
   useEffect(() => {
     setIsHydrated(true);
   }, []);
@@ -65,10 +69,35 @@ export default function DashboardClient({ initialData }: Props) {
     await fetchPage(nextPage);
   };
 
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingLink(null);
+  };
+
+  const openCreateModal = () => {
+    setModalMode('create');
+    setEditingLink(null);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (link: DashboardLink) => {
+    setModalMode('edit');
+    setEditingLink(link);
+    setModalOpen(true);
+  };
+
   const handleCreated = async () => {
     await fetchPage(1);
-    setShowModal(false);
+    closeModal();
     setToast(t('dashboard.toastCreated'));
+    setTimeout(() => setToast(null), 5000);
+  };
+
+  const handleUpdated = async (linkId: string) => {
+    const code = data.links.find((item) => item.id === linkId)?.code;
+    await fetchPage(data.page);
+    closeModal();
+    setToast(code ? `${t('dashboard.toastUpdated')} (${code})` : t('dashboard.toastUpdated'));
     setTimeout(() => setToast(null), 5000);
   };
 
@@ -77,21 +106,37 @@ export default function DashboardClient({ initialData }: Props) {
     setTimeout(() => setToast(null), 5000);
   };
 
-  const renderPlatform = (link: DashboardLink) => {
-    const chips = toPlatformChips(link.platform);
-    if (!chips.length) return '-';
-    return (
-      <div className="flex flex-wrap gap-1">
-        {chips.map((chip) => (
-          <span
-            key={chip}
-            className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"
-          >
-            {chip.toUpperCase()}
-          </span>
-        ))}
-      </div>
-    );
+  const requestDelete = (link: DashboardLink) => {
+    setDeleteTarget(link);
+    setDeleteStatus('idle');
+  };
+
+  const cancelDelete = () => {
+    if (deleteStatus === 'pending') return;
+    setDeleteTarget(null);
+    setDeleteStatus('idle');
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleteStatus === 'pending') return;
+    setDeleteStatus('pending');
+    try {
+      const res = await fetch(`/api/distributions/${deleteTarget.id}`, { method: 'DELETE' });
+      const json: { ok: boolean; error?: string } = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? `HTTP_${res.status}`);
+      }
+      await fetchPage(1);
+      setToast(t('dashboard.toastDeleted'));
+      setTimeout(() => setToast(null), 5000);
+      setDeleteTarget(null);
+      setDeleteStatus('idle');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setToast(message);
+      setTimeout(() => setToast(null), 5000);
+      setDeleteStatus('idle');
+    }
   };
 
   return (
@@ -108,7 +153,7 @@ export default function DashboardClient({ initialData }: Props) {
           <button
             type="button"
             className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
-            onClick={() => setShowModal(true)}
+            onClick={openCreateModal}
           >
             {t('dashboard.addDistribution')}
           </button>
@@ -128,7 +173,6 @@ export default function DashboardClient({ initialData }: Props) {
                 <th className="py-2 pr-4">{t('table.code')}</th>
                 <th className="py-2 pr-4">{t('table.title')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.files')}</th>
-                <th className="py-2 pr-4">{t('table.platform')}</th>
                 <th className="py-2 pr-4">{t('table.active')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.createdAt')}</th>
                 <th className="py-2 pr-4">{t('table.actions')}</th>
@@ -145,10 +189,7 @@ export default function DashboardClient({ initialData }: Props) {
                         {link.files.map((file) => (
                           <li key={file.id} className="text-xs text-gray-600">
                             <span className="font-medium text-gray-800">{file.platform.toUpperCase()}</span>{' '}
-                            · {file.version ?? '-'} ·{' '}
-                            {typeof file.size === 'number'
-                              ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                              : '-'}
+                            · {file.version ?? '-'} · {formatSize(file.size)}
                           </li>
                         ))}
                       </ul>
@@ -156,7 +197,6 @@ export default function DashboardClient({ initialData }: Props) {
                       <span className="text-xs text-gray-500">-</span>
                     )}
                   </td>
-                  <td className="py-2 pr-4">{renderPlatform(link)}</td>
                   <td className="py-2 pr-4">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-semibold ${
@@ -170,21 +210,31 @@ export default function DashboardClient({ initialData }: Props) {
                   </td>
                   <td className="py-2 pr-4 text-xs text-gray-600">{isHydrated ? formatDate(link.createdAt) : ''}</td>
                   <td className="py-2 pr-4">
-                    <a
-                      className="text-blue-600 underline"
-                      href={`/d/${link.code}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {t('action.download')}
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() => openEditModal(link)}
+                        disabled={loading}
+                      >
+                        {t('dashboard.actionEdit')}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() => requestDelete(link)}
+                        disabled={loading}
+                      >
+                        {t('dashboard.actionDelete')}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
 
               {!data.links.length && (
                 <tr>
-                  <td className="py-4 text-gray-500" colSpan={7}>
+                  <td className="py-4 text-gray-500" colSpan={6}>
                     {loading ? t('status.loading') : t('status.empty')}
                   </td>
                 </tr>
@@ -220,13 +270,45 @@ export default function DashboardClient({ initialData }: Props) {
         </div>
       </div>
 
-      {showModal && (
+      {modalOpen && (
         <AddDistributionModal
-          open={showModal}
-          onClose={() => setShowModal(false)}
+          open={modalOpen}
+          mode={modalMode}
+          initialLink={modalMode === 'edit' ? editingLink : null}
+          onClose={closeModal}
           onCreated={handleCreated}
+          onUpdated={handleUpdated}
           onError={handleModalError}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.confirmDeleteTitle')}</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {t('dashboard.confirmDeleteMessage').replace('{code}', deleteTarget.code)}
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                className="rounded border px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={cancelDelete}
+                disabled={deleteStatus === 'pending'}
+              >
+                {t('dashboard.cancelDelete')}
+              </button>
+              <button
+                type="button"
+                className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={confirmDelete}
+                disabled={deleteStatus === 'pending'}
+              >
+                {deleteStatus === 'pending' ? t('status.loading') : t('dashboard.confirmDelete')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {loading && (
@@ -245,7 +327,3 @@ export default function DashboardClient({ initialData }: Props) {
     </div>
   );
 }
-
-
-
-

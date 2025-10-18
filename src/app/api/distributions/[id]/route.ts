@@ -9,6 +9,8 @@ import {
 } from '@/lib/distribution';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
+export const runtime = 'edge';
+
 const DEFAULT_TITLE = 'APP';
 
 type Env = {
@@ -88,8 +90,6 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   }
 
   let payload: UpdateBody;
-  const newUploadKeys = uploads.map((item) => item.key.replace(/^\/+/, ''));
-
   try {
     payload = (await req.json()) as UpdateBody;
   } catch {
@@ -101,6 +101,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   }
 
   const uploads = Array.isArray(payload.uploads) ? payload.uploads.filter(Boolean) : [];
+  const newUploadKeys = uploads.map((item) => item.key.replace(/^\/+/, ''));
   const title = (payload.title ?? '').trim();
   const bundleId = (payload.bundleId ?? '').trim();
   const apkVersion = (payload.apkVersion ?? '').trim();
@@ -187,11 +188,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
     let fileIdForLink: string | null = existing.fileId;
 
-    const ensureFileColumns = (
-      entries: Array<[string, unknown]>,
-      platform: 'apk' | 'ipa',
-      fileId: string
-    ) => {
+    const ensureFileColumns = (entries: Array<[string, unknown]>, platform: 'apk' | 'ipa') => {
       if (hasColumn(filesInfo, 'platform')) entries.push(['platform', platform]);
       if (hasColumn(filesInfo, 'link_id')) entries.push(['link_id', linkId]);
       if (hasColumn(filesInfo, 'updated_at')) {
@@ -223,7 +220,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       ];
 
       if (target) {
-        const columns = ensureFileColumns(entries, platform, target.id);
+        const columns = ensureFileColumns(entries, platform);
         if (columns.length) {
           const sets = columns.map(([column]) => `${column}=?`).join(', ');
           const values = columns.map(([, value]) => value);
@@ -255,7 +252,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
           ]);
         }
 
-        const columns = ensureFileColumns(insertPairs, platform, newFileId);
+        const columns = ensureFileColumns(insertPairs, platform);
         const fileColumns = columns.map(([column]) => column);
         const fileValues = columns.map(([, value]) => value);
         if (fileColumns.length) {
