@@ -87,16 +87,38 @@ export async function GET(
     displayTitle ??
     t('enterpriseDev');
 
-  const androidDetails = hasApk
-    ? `${t('versionLabel')}: ${formatVersionValue(androidVersion)} | ${t('sizeLabel')}: ${formatFileSize(
-        androidSizeValue
-      )}`
-    : t('androidNone');
-  const iosDetails = hasIpa
-    ? `${t('versionLabel')}: ${formatVersionValue(iosVersion)} | ${t('sizeLabel')}: ${formatFileSize(
-        iosSizeValue
-      )}`
-    : t('iosNone');
+  const buildVersionMarkup = () => {
+    const segments: string[] = [];
+    if (hasApk) {
+      segments.push(
+        `<div>${h(t('androidApk'))}: ${h(formatVersionValue(androidVersion))}</div>`
+      );
+    }
+    if (hasIpa) {
+      segments.push(
+        `<div>${h(t('iosIpa'))}: ${h(formatVersionValue(iosVersion))}</div>`
+      );
+    }
+    return segments.length ? segments.join('') : `<span class="muted">-</span>`;
+  };
+
+  const buildSizeMarkup = () => {
+    const segments: string[] = [];
+    if (hasApk) {
+      segments.push(
+        `<div>${h(t('androidApk'))}: ${h(formatFileSize(androidSizeValue))}</div>`
+      );
+    }
+    if (hasIpa) {
+      segments.push(
+        `<div>${h(t('iosIpa'))}: ${h(formatFileSize(iosSizeValue))}</div>`
+      );
+    }
+    return segments.length ? segments.join('') : `<span class="muted">-</span>`;
+  };
+
+  const versionMarkup = buildVersionMarkup();
+  const sizeMarkup = buildSizeMarkup();
 
   const nowYear = new Date().getFullYear();
   const accountId = link.ownerId ?? '';
@@ -163,22 +185,8 @@ export async function GET(
 
       <div class="meta">
         <div class="muted">Bundle ID</div><div>${h(displayBundleId || '-')}</div>
-        <div class="muted">${h(t('androidApk'))}</div><div>${h(androidDetails)}</div>
-        <div class="muted">${h(t('iosIpa'))}</div><div>${h(iosDetails)}</div>
-        <div class="muted">${h(t('platform'))}</div>
-        <div>
-          ${
-            hasApk
-              ? `<span>${h(t('androidApk'))}</span>`
-              : `<span class="muted">${h(t('androidNone'))}</span>`
-          }
-          &nbsp;·&nbsp;
-          ${
-            hasIpa
-              ? `<span>${h(t('iosIpa'))}</span>`
-              : `<span class="muted">${h(t('iosNone'))}</span>`
-          }
-        </div>
+        <div class="muted">${h(t('versionLabel'))}</div><div>${versionMarkup}</div>
+        <div class="muted">${h(t('sizeLabel'))}</div><div>${sizeMarkup}</div>
       </div>
 
       <div class="btns">
