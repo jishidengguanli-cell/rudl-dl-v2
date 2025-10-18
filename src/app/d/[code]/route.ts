@@ -45,16 +45,15 @@ export async function GET(
 
   const displayTitle =
     link.title ?? ipaFile?.title ?? apkFile?.title ?? DEFAULT_APP_TITLE;
-  const displayVersion =
-    link.ipaVersion ??
-    link.apkVersion ??
-    ipaFile?.version ??
-    apkFile?.version ??
-    '';
   const displayBundleId =
     link.bundleId ?? ipaFile?.bundleId ?? apkFile?.bundleId ?? '';
 
+  const androidVersion = apkFile?.version ?? link.apkVersion ?? '';
   const iosVersion = ipaFile?.version ?? link.ipaVersion ?? '';
+
+  const androidSizeValue = typeof apkFile?.size === 'number' ? apkFile.size : null;
+  const iosSizeValue = typeof ipaFile?.size === 'number' ? ipaFile.size : null;
+
   const iosBundleId = ipaFile?.bundleId ?? link.bundleId ?? '';
 
   const missing: string[] = [];
@@ -87,6 +86,17 @@ export async function GET(
     link.bundleId ??
     displayTitle ??
     t('enterpriseDev');
+
+  const androidDetails = hasApk
+    ? `${t('versionLabel')}: ${formatVersionValue(androidVersion)} | ${t('sizeLabel')}: ${formatFileSize(
+        androidSizeValue
+      )}`
+    : t('androidNone');
+  const iosDetails = hasIpa
+    ? `${t('versionLabel')}: ${formatVersionValue(iosVersion)} | ${t('sizeLabel')}: ${formatFileSize(
+        iosSizeValue
+      )}`
+    : t('iosNone');
 
   const nowYear = new Date().getFullYear();
   const accountId = link.ownerId ?? '';
@@ -152,8 +162,9 @@ export async function GET(
       </div>
 
       <div class="meta">
-        <div class="muted">${h(t('version'))}</div><div>${h(displayVersion || '-')}</div>
         <div class="muted">Bundle ID</div><div>${h(displayBundleId || '-')}</div>
+        <div class="muted">${h(t('androidApk'))}</div><div>${h(androidDetails)}</div>
+        <div class="muted">${h(t('iosIpa'))}</div><div>${h(iosDetails)}</div>
         <div class="muted">${h(t('platform'))}</div>
         <div>
           ${
@@ -353,10 +364,28 @@ export async function GET(
   });
 }
 
+function formatVersionValue(value: string | null | undefined): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || '-';
+}
+
+function formatFileSize(size: number | null | undefined): string {
+  if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return '-';
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+  if (size >= GB) return `${(size / GB).toFixed(1)} GB`;
+  if (size >= MB) return `${(size / MB).toFixed(1)} MB`;
+  if (size >= KB) return `${(size / KB).toFixed(1)} KB`;
+  return `${size} B`;
+}
+
 const LOCALES: Record<string, Record<string, string>> = {
   'zh-TW': {
     download: '下載',
     version: '版本',
+    versionLabel: '版本',
+    sizeLabel: '檔案大小',
     platform: '平台',
     androidApk: 'Android APK',
     androidNone: 'Android（無）',
@@ -387,6 +416,8 @@ const LOCALES: Record<string, Record<string, string>> = {
   en: {
     download: 'Download',
     version: 'Version',
+    versionLabel: 'Version',
+    sizeLabel: 'File Size',
     platform: 'Platform',
     androidApk: 'Android APK',
     androidNone: 'Android (none)',
@@ -417,6 +448,8 @@ const LOCALES: Record<string, Record<string, string>> = {
   'zh-CN': {
     download: '下载',
     version: '版本',
+    versionLabel: '版本',
+    sizeLabel: '文件大小',
     platform: '平台',
     androidApk: 'Android APK',
     androidNone: 'Android（无）',
@@ -447,6 +480,8 @@ const LOCALES: Record<string, Record<string, string>> = {
   ru: {
     download: 'Скачать',
     version: 'Версия',
+    versionLabel: 'Версия',
+    sizeLabel: 'Размер файла',
     platform: 'Платформа',
     androidApk: 'Android APK',
     androidNone: 'Android (нет)',
@@ -477,6 +512,8 @@ const LOCALES: Record<string, Record<string, string>> = {
   vi: {
     download: 'Tải xuống',
     version: 'Phiên bản',
+    versionLabel: 'Phiên bản',
+    sizeLabel: 'Dung lượng',
     platform: 'Nền tảng',
     androidApk: 'Android APK',
     androidNone: 'Android (không có)',
