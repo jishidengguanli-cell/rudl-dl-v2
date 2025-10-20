@@ -20,6 +20,31 @@ const formatSize = (value: number | null | undefined) => {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const getShareUrl = (code: string, hydrated: boolean) => {
+  if (hydrated && typeof window !== 'undefined') {
+    return `${window.location.origin}/d/${code}`;
+  }
+  return `/d/${code}`;
+};
+
+const fallbackCopy = (text: string) => {
+  if (typeof document === 'undefined') {
+    throw new Error('UNAVAILABLE');
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+};
+
 export default function DashboardClient({ initialData }: Props) {
   const { t } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
@@ -139,6 +164,30 @@ export default function DashboardClient({ initialData }: Props) {
     }
   };
 
+  const copyLinkToClipboard = async (text: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    fallbackCopy(text);
+  };
+
+  const handleCopyLink = async (code: string) => {
+    const url = getShareUrl(code, true);
+    try {
+      await copyLinkToClipboard(url);
+      setToast(t('dashboard.toastLinkCopied'));
+    } catch {
+      try {
+        fallbackCopy(url);
+        setToast(t('dashboard.toastLinkCopied'));
+      } catch {
+        setToast(t('dashboard.toastLinkCopyFailed'));
+      }
+    }
+    setTimeout(() => setToast(null), 5000);
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -176,61 +225,88 @@ export default function DashboardClient({ initialData }: Props) {
                 <th className="py-2 pr-4">{t('table.active')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.createdAt')}</th>
                 <th className="py-2 pr-4">{t('table.actions')}</th>
+                <th className="py-2 pr-4">{t('table.link')}</th>
               </tr>
             </thead>
             <tbody>
-              {data.links.map((link) => (
-                <tr key={link.id} className="border-b last:border-none">
-                  <td className="py-2 pr-4 font-mono text-xs sm:text-sm">{link.code}</td>
-                  <td className="py-2 pr-4">{link.title ?? '-'}</td>
-                  <td className="py-2 pr-4">
-                    {link.files.length ? (
-                      <ul className="space-y-1">
-                        {link.files.map((file) => (
-                          <li key={file.id} className="text-xs text-gray-600">
-                            <span className="font-medium text-gray-800">{file.platform.toUpperCase()}</span>{' '}
-                            · {file.version ?? '-'} · {formatSize(file.size)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-xs text-gray-500">-</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                        link.isActive
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {link.isActive ? 'ON' : 'OFF'}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4 text-xs text-gray-600">{isHydrated ? formatDate(link.createdAt) : ''}</td>
-                  <td className="py-2 pr-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        onClick={() => openEditModal(link)}
-                        disabled={loading}
+              {data.links.map((link) => {
+                const shareUrl = getShareUrl(link.code, isHydrated);
+                return (
+                  <tr key={link.id} className="border-b last:border-none">
+                    <td className="py-2 pr-4 font-mono text-xs sm:text-sm">{link.code}</td>
+                    <td className="py-2 pr-4">{link.title ?? '-'}</td>
+                    <td className="py-2 pr-4">
+                      {link.files.length ? (
+                        <ul className="space-y-1">
+                          {link.files.map((file) => (
+                            <li key={file.id} className="text-xs text-gray-600">
+                              <span className="font-medium text-gray-800">{file.platform.toUpperCase()}</span>{' '}
+                              · {file.version ?? '-'} · {formatSize(file.size)}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-xs text-gray-500">-</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                          link.isActive
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-500'
+                        }`}
                       >
-                        {t('dashboard.actionEdit')}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        onClick={() => requestDelete(link)}
-                        disabled={loading}
-                      >
-                        {t('dashboard.actionDelete')}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {link.isActive ? 'ON' : 'OFF'}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-xs text-gray-600">
+                      {isHydrated ? formatDate(link.createdAt) : ''}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => openEditModal(link)}
+                          disabled={loading}
+                        >
+                          {t('dashboard.actionEdit')}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => requestDelete(link)}
+                          disabled={loading}
+                        >
+                          {t('dashboard.actionDelete')}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          className="max-w-[220px] truncate text-xs text-blue-600 underline"
+                          href={shareUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={shareUrl}
+                        >
+                          {shareUrl}
+                        </a>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => handleCopyLink(link.code)}
+                          disabled={loading}
+                        >
+                          {t('dashboard.copyLink')}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!data.links.length && (
                 <tr>
