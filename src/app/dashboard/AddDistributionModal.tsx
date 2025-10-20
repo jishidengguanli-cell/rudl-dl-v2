@@ -369,6 +369,35 @@ export default function AddDistributionModal({
       ? t('status.loading')
       : t(isEdit ? 'form.update' : 'form.submit');
 
+  const applyAutofillFromState = useCallback(() => {
+    const apkMetaBundle =
+      trimValue(apkState.metadata?.bundleId) || trimValue(existingFiles.apk?.bundleId);
+    const ipaMetaBundle =
+      trimValue(ipaState.metadata?.bundleId) || trimValue(existingFiles.ipa?.bundleId);
+    const chosenBundle = ipaMetaBundle || apkMetaBundle;
+    if (chosenBundle) {
+      setBundleId(chosenBundle);
+    }
+
+    const apkMetaVersion =
+      trimValue(apkState.metadata?.version) || trimValue(existingFiles.apk?.version);
+    if (apkMetaVersion) {
+      setApkVersion(apkMetaVersion);
+    }
+
+    const ipaMetaVersion =
+      trimValue(ipaState.metadata?.version) || trimValue(existingFiles.ipa?.version);
+    if (ipaMetaVersion) {
+      setIpaVersion(ipaMetaVersion);
+    }
+
+    const ipaMetaTitle =
+      trimValue(ipaState.metadata?.title) || trimValue(existingFiles.ipa?.title);
+    if (ipaMetaTitle) {
+      setTitle(ipaMetaTitle);
+    }
+  }, [apkState.metadata, ipaState.metadata, existingFiles]);
+
   useEffect(() => {
     if (!open) {
       setTitle('');
@@ -413,6 +442,12 @@ export default function AddDistributionModal({
 
     lastInitializedId.current = initialLink.id;
   }, [open, isEdit, initialLink]);
+
+  useEffect(() => {
+    if (autofill) {
+      applyAutofillFromState();
+    }
+  }, [autofill, apkState.metadata, ipaState.metadata, existingFiles, applyAutofillFromState]);
 
   const selectedPlatforms = useMemo(() => {
     const list: Platform[] = [];
