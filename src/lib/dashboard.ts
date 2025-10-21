@@ -1,5 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { getTableInfo, hasColumn } from './distribution';
+import { getTableInfo, hasColumn, normalizeLanguageCode } from './distribution';
 
 export type DashboardFile = {
   id: string;
@@ -189,8 +189,7 @@ export async function fetchDashboardPage(
           : Number(link.is_active ?? 0)
       ),
       createdAt: toEpochSeconds(link.created_at),
-      language:
-        hasLangColumn && typeof link.lang === 'string' && link.lang ? link.lang : 'en',
+      language: hasLangColumn ? normalizeLanguageCode(link.lang) : 'en',
       todayApkDl: toNumber(link.today_apk_dl),
       todayIpaDl: toNumber(link.today_ipa_dl),
       todayTotalDl: toNumber(link.today_total_dl),

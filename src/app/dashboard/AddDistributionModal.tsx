@@ -31,19 +31,46 @@ const LANGUAGE_OPTIONS: Array<{ value: LangCode; label: string }> = [
 
 const LANGUAGE_SET = new Set<LangCode>(LANGUAGE_OPTIONS.map((item) => item.value));
 
+const LANGUAGE_ALIASES: Record<string, LangCode> = {
+  en: 'en',
+  english: 'en',
+  'en-us': 'en',
+  'en_gb': 'en',
+  'en-gb': 'en',
+  'zh-tw': 'zh-TW',
+  'zh_tw': 'zh-TW',
+  'zh-hant': 'zh-TW',
+  'zh_hant': 'zh-TW',
+  'traditional chinese': 'zh-TW',
+  'traditional-chinese': 'zh-TW',
+  '繁體中文': 'zh-TW',
+  '繁中': 'zh-TW',
+  zh: 'zh-TW',
+  'zh-cn': 'zh-CN',
+  'zh_cn': 'zh-CN',
+  'zh-hans': 'zh-CN',
+  'zh_hans': 'zh-CN',
+  'simplified chinese': 'zh-CN',
+  'simplified-chinese': 'zh-CN',
+  '简体中文': 'zh-CN',
+  '簡中': 'zh-CN',
+  cn: 'zh-CN',
+  ru: 'ru',
+  russian: 'ru',
+  'русский': 'ru',
+  vi: 'vi',
+  vietnamese: 'vi',
+  viet: 'vi',
+  'tiếng việt': 'vi',
+  'tieng viet': 'vi',
+};
+
 const normalizeLang = (input: string | null | undefined): LangCode => {
   if (!input) return 'en';
   const trimmed = input.trim();
-  if (LANGUAGE_SET.has(trimmed as LangCode)) {
-    return trimmed as LangCode;
-  }
+  if (LANGUAGE_SET.has(trimmed as LangCode)) return trimmed as LangCode;
   const lower = trimmed.toLowerCase();
-  if (lower === 'zh-tw') return 'zh-TW';
-  if (lower === 'zh-cn') return 'zh-CN';
-  if (lower === 'en' || lower === 'ru' || lower === 'vi') {
-    return lower as LangCode;
-  }
-  return 'en';
+  return LANGUAGE_ALIASES[lower] ?? 'en';
 };
 
 type FileMeta = {

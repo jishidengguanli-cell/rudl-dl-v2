@@ -9,6 +9,42 @@ type Env = {
 };
 
 const DEFAULT_APP_TITLE = 'App';
+const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
+type LangCode = (typeof SUPPORTED_LANGS)[number];
+const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
+const LANG_ALIASES: Record<string, LangCode> = {
+  en: 'en',
+  english: 'en',
+  'en-us': 'en',
+  'en_gb': 'en',
+  'en-gb': 'en',
+  zh: 'zh-TW',
+  'zh-tw': 'zh-TW',
+  'zh_tw': 'zh-TW',
+  'zh-hant': 'zh-TW',
+  'zh_hant': 'zh-TW',
+  'traditional chinese': 'zh-TW',
+  'traditional-chinese': 'zh-TW',
+  '繁體中文': 'zh-TW',
+  '繁中': 'zh-TW',
+  cn: 'zh-CN',
+  'zh-cn': 'zh-CN',
+  'zh_cn': 'zh-CN',
+  'zh-hans': 'zh-CN',
+  'zh_hans': 'zh-CN',
+  'simplified chinese': 'zh-CN',
+  'simplified-chinese': 'zh-CN',
+  '简体中文': 'zh-CN',
+  '簡中': 'zh-CN',
+  ru: 'ru',
+  russian: 'ru',
+  'русский': 'ru',
+  vi: 'vi',
+  vietnamese: 'vi',
+  viet: 'vi',
+  'tiếng việt': 'vi',
+  'tieng viet': 'vi',
+};
 
 export async function GET(
   request: Request,
@@ -587,13 +623,17 @@ function renderLangSwitcher(code: string, cur: string) {
   </script>`;
 }
 
-function normLang(value?: string | null) {
+function normLang(value?: string | null): LangCode | '' {
   if (!value) return '';
-  const s = value.trim();
-  if (s === 'zh' || s === 'zh-Hant') return 'zh-TW';
-  if (s === 'zh-Hans') return 'zh-CN';
-  if (s === 'en-US' || s === 'en-GB') return 'en';
-  return ['zh-TW', 'en', 'zh-CN', 'ru', 'vi'].includes(s) ? s : '';
+  const trimmed = value.trim();
+  if (LANG_SET.has(trimmed as LangCode)) {
+    return trimmed as LangCode;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'zh' || lower === 'zh-hant') return 'zh-TW';
+  if (lower === 'zh-hans') return 'zh-CN';
+  if (lower === 'en-us' || lower === 'en-gb') return 'en';
+  return LANG_ALIASES[lower] ?? '';
 }
 
 function pickBestLang(primary: string, accept: string | null) {
