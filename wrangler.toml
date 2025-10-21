@@ -10,6 +10,7 @@ pages_build_output_dir = ".vercel/output/static"
 binding = "DB"
 database_name = "rudl_app"
 database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
+migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "R2_BUCKET"

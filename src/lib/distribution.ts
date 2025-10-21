@@ -62,6 +62,7 @@ export type DistributionLink = {
   platform: string;
   isActive: boolean;
   createdAt: number;
+  language: string;
   fileId: string | null;
   files: DistributionFile[];
 };
@@ -137,6 +138,7 @@ async function fetchDistributionByField(
     'platform',
     'is_active',
     'created_at',
+    'lang',
     'file_id',
   ].filter((column) => hasColumn(linksInfo, column));
   if (!linkColumns.includes('id') || !linkColumns.includes('code')) {
@@ -204,6 +206,7 @@ async function fetchDistributionByField(
     platform: toStringOrNull(linkRow.platform) ?? '',
     isActive: hasColumn(linksInfo, 'is_active') ? toBoolean(linkRow.is_active) : true,
     createdAt: toEpochSeconds(linkRow.created_at),
+    language: toStringOrNull(linkRow.lang) ?? 'en',
     fileId: toStringOrNull(linkRow.file_id),
     files,
   };

@@ -29,10 +29,25 @@ type FinalizeBody = {
   apkVersion: string;
   ipaVersion: string;
   autofill: boolean;
+  lang: string;
   uploads: UploadInput[];
 };
 
 const DEFAULT_TITLE = 'APP';
+const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
+type LangCode = (typeof SUPPORTED_LANGS)[number];
+const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
+
+const normalizeLang = (input: string | null | undefined): LangCode => {
+  if (!input) return 'en';
+  const trimmed = input.trim();
+  if (LANG_SET.has(trimmed as LangCode)) return trimmed as LangCode;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'zh-tw') return 'zh-TW';
+  if (lower === 'zh-cn') return 'zh-CN';
+  if (lower === 'en' || lower === 'ru' || lower === 'vi') return lower as LangCode;
+  return 'en';
+};
 
 type TableInfo = {
   columns: Set<string>;
@@ -117,6 +132,7 @@ export async function POST(req: Request) {
     apkVersion: apkVersionInputRaw,
     ipaVersion: ipaVersionInputRaw,
     autofill,
+    lang: langInputRaw,
     uploads: uploadsInput,
   } = payload;
 
@@ -163,6 +179,7 @@ export async function POST(req: Request) {
   const bundleIdInput = (bundleIdInputRaw ?? '').trim();
   const apkVersionInput = (apkVersionInputRaw ?? '').trim();
   const ipaVersionInput = (ipaVersionInputRaw ?? '').trim();
+  const linkLang = normalizeLang(typeof langInputRaw === 'string' ? langInputRaw : '');
   const platformString = uploads.map((upload) => upload.platform).join(',');
 
   const derivedTitle =
@@ -227,6 +244,7 @@ export async function POST(req: Request) {
       ['apk_version', derivedApkVersion],
       ['ipa_version', derivedIpaVersion],
       ['platform', platformString],
+      ['lang', linkLang],
       ['today_apk_dl', 0],
       ['today_ipa_dl', 0],
       ['today_total_dl', 0],

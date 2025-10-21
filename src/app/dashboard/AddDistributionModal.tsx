@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   FormEvent,
@@ -18,6 +18,33 @@ import type { DashboardFile, DashboardLink } from '@/lib/dashboard';
 const DEFAULT_TITLE = 'APP';
 
 type Platform = 'apk' | 'ipa';
+
+type LangCode = 'en' | 'ru' | 'vi' | 'zh-TW' | 'zh-CN';
+
+const LANGUAGE_OPTIONS: Array<{ value: LangCode; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'vi', label: 'Vietnamese' },
+  { value: 'zh-TW', label: 'Traditional Chinese' },
+  { value: 'zh-CN', label: 'Simplified Chinese' },
+];
+
+const LANGUAGE_SET = new Set<LangCode>(LANGUAGE_OPTIONS.map((item) => item.value));
+
+const normalizeLang = (input: string | null | undefined): LangCode => {
+  if (!input) return 'en';
+  const trimmed = input.trim();
+  if (LANGUAGE_SET.has(trimmed as LangCode)) {
+    return trimmed as LangCode;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'zh-tw') return 'zh-TW';
+  if (lower === 'zh-cn') return 'zh-CN';
+  if (lower === 'en' || lower === 'ru' || lower === 'vi') {
+    return lower as LangCode;
+  }
+  return 'en';
+};
 
 type FileMeta = {
   title?: string | null;
@@ -292,6 +319,7 @@ async function finalizeDistribution(body: {
   apkVersion: string;
   ipaVersion: string;
   autofill: boolean;
+  lang: LangCode;
   uploads: FinalizeUploadPayload[];
 }) {
   const res = await fetch('/api/distributions', {
@@ -314,6 +342,7 @@ async function patchDistribution(
     apkVersion: string;
     ipaVersion: string;
     autofill: boolean;
+    lang: LangCode;
     uploads: FinalizeUploadPayload[];
   }
 ) {
@@ -349,6 +378,7 @@ export default function AddDistributionModal({
   const [bundleId, setBundleId] = useState('');
   const [apkVersion, setApkVersion] = useState('');
   const [ipaVersion, setIpaVersion] = useState('');
+  const [language, setLanguage] = useState<LangCode>('en');
   const [autofill, setAutofill] = useState(true);
   const [apkState, setApkState] = useState<FileState>({ file: null, metadata: null });
   const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
@@ -404,6 +434,7 @@ export default function AddDistributionModal({
       setBundleId('');
       setApkVersion('');
       setIpaVersion('');
+      setLanguage('en');
       setAutofill(true);
       setApkState({ file: null, metadata: null });
       setIpaState({ file: null, metadata: null });
@@ -424,6 +455,7 @@ export default function AddDistributionModal({
     setBundleId(initialLink.bundleId ?? '');
     setApkVersion(initialLink.apkVersion ?? '');
     setIpaVersion(initialLink.ipaVersion ?? '');
+    setLanguage(normalizeLang(initialLink.language));
     setAutofill(true);
     setApkState({ file: null, metadata: null });
     setIpaState({ file: null, metadata: null });
@@ -759,6 +791,7 @@ export default function AddDistributionModal({
           apkVersion: apkVersion.trim(),
           ipaVersion: ipaVersion.trim(),
           autofill,
+          lang: language,
           uploads: uploadsPayload,
         });
         if (update.ok) {
@@ -778,6 +811,7 @@ export default function AddDistributionModal({
           apkVersion: apkVersion.trim(),
           ipaVersion: ipaVersion.trim(),
           autofill,
+          lang: language,
           uploads: uploadsPayload,
         });
 
@@ -831,7 +865,7 @@ export default function AddDistributionModal({
             <li key={platform}>
               <div className="mb-1 flex items-center justify-between">
                 <span className="font-semibold text-gray-700">
-                  {platform.toUpperCase()} · {label}
+                  {platform.toUpperCase()} 繚 {label}
                 </span>
                 <span>{percent}%</span>
               </div>
@@ -908,6 +942,21 @@ export default function AddDistributionModal({
                 placeholder="1.0.0"
                 disabled={submitState === 'submitting'}
               />
+            </label>
+            <label className="flex flex-col text-sm font-medium text-gray-700">
+              {t('form.language')}
+              <select
+                className="mt-1 rounded border px-3 py-2 text-sm outline-none focus:border-black"
+                value={language}
+                onChange={(event) => setLanguage(normalizeLang(event.target.value))}
+                disabled={submitState === 'submitting'}
+              >
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 

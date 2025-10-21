@@ -29,6 +29,14 @@ const formatCount = (value: number | null | undefined) => {
   return String(safe);
 };
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  ru: 'Russian',
+  vi: 'Vietnamese',
+  'zh-TW': 'Traditional Chinese',
+  'zh-CN': 'Simplified Chinese',
+};
+
 const getShareUrl = (code: string, hydrated: boolean) => {
   if (hydrated && typeof window !== 'undefined') {
     return `${window.location.origin}/d/${code}`;
@@ -204,8 +212,7 @@ export default function DashboardClient({ initialData }: Props) {
           <div>
             <h2 className="text-lg font-medium text-gray-900">{t('dashboard.title')}</h2>
             <p className="text-sm text-gray-600">
-              {t('dashboard.balanceLabel')}:{' '}
-              <span className="font-semibold text-gray-900">{data.balance ?? 0}</span>
+              {t('dashboard.balanceLabel')}: <span className="font-semibold text-gray-900">{data.balance ?? 0}</span>
             </p>
           </div>
           <button
@@ -225,12 +232,13 @@ export default function DashboardClient({ initialData }: Props) {
           </p>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm whitespace-nowrap">
             <thead>
               <tr className="border-b">
                 <th className="py-2 pr-4">{t('table.code')}</th>
                 <th className="py-2 pr-4">{t('table.title')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.files')}</th>
+                <th className="py-2 pr-4">{t('table.language')}</th>
                 <th className="py-2 pr-4">{t('table.active')}</th>
                 <th className="py-2 pr-4">{t('table.downloads')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.createdAt')}</th>
@@ -259,6 +267,7 @@ export default function DashboardClient({ initialData }: Props) {
                         <span className="text-xs text-gray-500">-</span>
                       )}
                     </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{LANGUAGE_LABELS[link.language] ?? link.language}</td>
                     <td className="py-2 pr-4">
                       <span
                         className={`rounded px-2 py-0.5 text-xs font-semibold ${
@@ -338,7 +347,7 @@ export default function DashboardClient({ initialData }: Props) {
 
               {!data.links.length && (
                 <tr>
-                  <td className="py-4 text-gray-500" colSpan={8}>
+                  <td className="py-4 text-gray-500" colSpan={9}>
                     {loading ? t('status.loading') : t('status.empty')}
                   </td>
                 </tr>

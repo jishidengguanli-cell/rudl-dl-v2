@@ -13,6 +13,20 @@ import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 export const runtime = 'edge';
 
 const DEFAULT_TITLE = 'APP';
+const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
+type LangCode = (typeof SUPPORTED_LANGS)[number];
+const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
+
+const normalizeLang = (input: string | null | undefined): LangCode => {
+  if (!input) return 'en';
+  const trimmed = input.trim();
+  if (LANG_SET.has(trimmed as LangCode)) return trimmed as LangCode;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'zh-tw') return 'zh-TW';
+  if (lower === 'zh-cn') return 'zh-CN';
+  if (lower === 'en' || lower === 'ru' || lower === 'vi') return lower as LangCode;
+  return 'en';
+};
 
 type Env = {
   DB?: D1Database;
@@ -37,6 +51,7 @@ type UpdateBody = {
   apkVersion: string;
   ipaVersion: string;
   autofill: boolean;
+  lang: string;
   uploads: UploadInput[];
 };
 
@@ -110,6 +125,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const apkVersion = (payload.apkVersion ?? '').trim();
   const ipaVersion = (payload.ipaVersion ?? '').trim();
   const autofill = Boolean(payload.autofill);
+  const linkLang = normalizeLang(typeof payload.lang === 'string' ? payload.lang : '');
 
   const existingFiles = new Map<'apk' | 'ipa', DistributionFile>();
   for (const file of existing.files) {
@@ -151,6 +167,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       ['bundle_id', bundleId],
       ['apk_version', apkVersion],
       ['ipa_version', ipaVersion],
+      ['lang', linkLang],
     ];
 
     const platformsFinal = new Set<string>();

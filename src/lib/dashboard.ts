@@ -20,6 +20,7 @@ export type DashboardLink = {
   platform: string;
   isActive: boolean;
   createdAt: number;
+  language: string;
   todayApkDl: number;
   todayIpaDl: number;
   todayTotalDl: number;
@@ -47,6 +48,7 @@ type LinkRow = {
   platform: string;
   is_active: number | string | null;
   created_at: number | string | null;
+  lang?: string | null;
   today_apk_dl?: number | string | null;
   today_ipa_dl?: number | string | null;
   today_total_dl?: number | string | null;
@@ -113,7 +115,7 @@ export async function fetchDashboardPage(
     .first<{ count: number }>();
 
   const linksResult = await DB.prepare(
-    `SELECT id, code, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at,
+    `SELECT id, code, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at, lang,
             today_apk_dl, today_ipa_dl, today_total_dl, total_apk_dl, total_ipa_dl, total_total_dl
      FROM links
      WHERE owner_id=?
@@ -162,6 +164,7 @@ export async function fetchDashboardPage(
           : Number(link.is_active ?? 0)
       ),
       createdAt: toEpochSeconds(link.created_at),
+      language: typeof link.lang === 'string' && link.lang ? link.lang : 'en',
       todayApkDl: toNumber(link.today_apk_dl),
       todayIpaDl: toNumber(link.today_ipa_dl),
       todayTotalDl: toNumber(link.today_total_dl),

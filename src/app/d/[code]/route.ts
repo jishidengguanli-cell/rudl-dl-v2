@@ -68,7 +68,8 @@ export async function GET(
 
   const url = new URL(request.url);
   const qlang = normLang(url.searchParams.get('lang'));
-  const reqLang = pickBestLang(qlang, request.headers.get('accept-language'));
+  const presetLang = normLang(link.language);
+  const reqLang = pickBestLang(qlang || presetLang, request.headers.get('accept-language'));
   const t = (key: string) =>
     LOCALES[reqLang]?.[key] ?? LOCALES['zh-TW'][key] ?? key;
   const switcher = renderLangSwitcher(link.code, reqLang);
@@ -554,10 +555,10 @@ const LOCALES: Record<string, Record<string, string>> = {
 function renderLangSwitcher(code: string, cur: string) {
   const options: Array<{ v: string; label: string }> = [
     { v: 'en', label: 'English' },
-    { v: 'ru', label: 'Русский' },
-    { v: 'vi', label: 'Tiếng Việt' },
-    { v: 'zh-TW', label: '繁體中文' },
-    { v: 'zh-CN', label: '简体中文' },
+    { v: 'ru', label: 'Russian' },
+    { v: 'vi', label: 'Vietnamese' },
+    { v: 'zh-TW', label: 'Traditional Chinese' },
+    { v: 'zh-CN', label: 'Simplified Chinese' },
   ];
 
   const langLabel = LOCALES[cur]?.language ?? LOCALES['zh-TW'].language ?? 'Language';
