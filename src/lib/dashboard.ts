@@ -20,6 +20,12 @@ export type DashboardLink = {
   platform: string;
   isActive: boolean;
   createdAt: number;
+  todayApkDl: number;
+  todayIpaDl: number;
+  todayTotalDl: number;
+  totalApkDl: number;
+  totalIpaDl: number;
+  totalTotalDl: number;
   files: DashboardFile[];
 };
 
@@ -41,6 +47,12 @@ type LinkRow = {
   platform: string;
   is_active: number | string | null;
   created_at: number | string | null;
+  today_apk_dl?: number | string | null;
+  today_ipa_dl?: number | string | null;
+  today_total_dl?: number | string | null;
+  total_apk_dl?: number | string | null;
+  total_ipa_dl?: number | string | null;
+  total_total_dl?: number | string | null;
 };
 
 type FileRow = {
@@ -51,6 +63,19 @@ type FileRow = {
   version: string | null;
   size: number | null;
   created_at: number | string | null;
+};
+
+const toNumber = (value: number | string | null | undefined): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return 0;
 };
 
 const toEpochSeconds = (value: number | string | null | undefined): number => {
@@ -88,7 +113,8 @@ export async function fetchDashboardPage(
     .first<{ count: number }>();
 
   const linksResult = await DB.prepare(
-    `SELECT id, code, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at
+    `SELECT id, code, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at,
+            today_apk_dl, today_ipa_dl, today_total_dl, total_apk_dl, total_ipa_dl, total_total_dl
      FROM links
      WHERE owner_id=?
      ORDER BY created_at DESC
@@ -136,6 +162,12 @@ export async function fetchDashboardPage(
           : Number(link.is_active ?? 0)
       ),
       createdAt: toEpochSeconds(link.created_at),
+      todayApkDl: toNumber(link.today_apk_dl),
+      todayIpaDl: toNumber(link.today_ipa_dl),
+      todayTotalDl: toNumber(link.today_total_dl),
+      totalApkDl: toNumber(link.total_apk_dl),
+      totalIpaDl: toNumber(link.total_ipa_dl),
+      totalTotalDl: toNumber(link.total_total_dl),
       files,
     });
   }

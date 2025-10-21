@@ -20,6 +20,15 @@ const formatSize = (value: number | null | undefined) => {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const formatCount = (value: number | null | undefined) => {
+  const safe = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  if (safe >= 1000) {
+    const formatted = (safe / 1000).toFixed(1);
+    return `${formatted}K`;
+  }
+  return String(safe);
+};
+
 const getShareUrl = (code: string, hydrated: boolean) => {
   if (hydrated && typeof window !== 'undefined') {
     return `${window.location.origin}/d/${code}`;
@@ -223,6 +232,7 @@ export default function DashboardClient({ initialData }: Props) {
                 <th className="py-2 pr-4">{t('table.title')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.files')}</th>
                 <th className="py-2 pr-4">{t('table.active')}</th>
+                <th className="py-2 pr-4">{t('table.downloads')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.createdAt')}</th>
                 <th className="py-2 pr-4">{t('table.actions')}</th>
                 <th className="py-2 pr-4">{t('table.link')}</th>
@@ -259,6 +269,24 @@ export default function DashboardClient({ initialData }: Props) {
                       >
                         {link.isActive ? 'ON' : 'OFF'}
                       </span>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="space-y-1 text-xs text-gray-600">
+                        <div>
+                          <span className="font-semibold text-gray-700">{t('dashboard.downloadsToday')}:</span>{' '}
+                          {formatCount(link.todayTotalDl)}{' '}
+                          <span className="text-gray-500">
+                            ({t('dashboard.downloadsApk')} {formatCount(link.todayApkDl)} / {t('dashboard.downloadsIpa')} {formatCount(link.todayIpaDl)})
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">{t('dashboard.downloadsTotal')}:</span>{' '}
+                          {formatCount(link.totalTotalDl)}{' '}
+                          <span className="text-gray-500">
+                            ({t('dashboard.downloadsApk')} {formatCount(link.totalApkDl)} / {t('dashboard.downloadsIpa')} {formatCount(link.totalIpaDl)})
+                          </span>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-2 pr-4 text-xs text-gray-600">
                       {isHydrated ? formatDate(link.createdAt) : ''}
@@ -310,7 +338,7 @@ export default function DashboardClient({ initialData }: Props) {
 
               {!data.links.length && (
                 <tr>
-                  <td className="py-4 text-gray-500" colSpan={6}>
+                  <td className="py-4 text-gray-500" colSpan={8}>
                     {loading ? t('status.loading') : t('status.empty')}
                   </td>
                 </tr>
