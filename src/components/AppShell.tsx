@@ -56,7 +56,7 @@ export default function AppShell({
         {isAuthRoute ? (
           <main className="flex min-h-screen items-center justify-center p-6">{children}</main>
         ) : (
-          <div className="mx-auto max-w-5xl p-6">
+          <div className="mx-auto max-w-7xl p-6">
             <LangNav />
             <main>{children}</main>
             <footer className="mt-10 text-xs text-gray-500">

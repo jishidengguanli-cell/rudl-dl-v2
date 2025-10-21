@@ -243,8 +243,8 @@ export default function DashboardClient({ initialData }: Props) {
                 const shareUrl = getShareUrl(link.code, isHydrated);
                 return (
                   <tr key={link.id} className="border-b last:border-none">
-                    <td className="py-2 pr-4 font-mono text-xs sm:text-sm">{link.code}</td>
-                    <td className="py-2 pr-4">{link.title ?? '-'}</td>
+                    <td className="py-2 pr-4 font-mono text-xs sm:text-sm whitespace-nowrap">{link.code}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{link.title ?? '-'}</td>
                     <td className="py-2 pr-4">
                       {link.files.length ? (
                         <ul className="space-y-1">
@@ -271,15 +271,15 @@ export default function DashboardClient({ initialData }: Props) {
                       </span>
                     </td>
                     <td className="py-2 pr-4">
-                      <div className="space-y-1 text-xs text-gray-600">
-                        <div>
+                      <div className="space-y-1 text-xs text-gray-600 min-w-[200px]">
+                        <div className="whitespace-nowrap">
                           <span className="font-semibold text-gray-700">{t('dashboard.downloadsToday')}:</span>{' '}
                           {formatCount(link.todayTotalDl)}{' '}
                           <span className="text-gray-500">
                             ({t('dashboard.downloadsApk')} {formatCount(link.todayApkDl)} / {t('dashboard.downloadsIpa')} {formatCount(link.todayIpaDl)})
                           </span>
                         </div>
-                        <div>
+                        <div className="whitespace-nowrap">
                           <span className="font-semibold text-gray-700">{t('dashboard.downloadsTotal')}:</span>{' '}
                           {formatCount(link.totalTotalDl)}{' '}
                           <span className="text-gray-500">
@@ -288,7 +288,7 @@ export default function DashboardClient({ initialData }: Props) {
                         </div>
                       </div>
                     </td>
-                    <td className="py-2 pr-4 text-xs text-gray-600">
+                    <td className="py-2 pr-4 text-xs text-gray-600 whitespace-nowrap">
                       {isHydrated ? formatDate(link.createdAt) : ''}
                     </td>
                     <td className="py-2 pr-4">
