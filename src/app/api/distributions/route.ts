@@ -56,7 +56,15 @@ type TableInfo = {
 
 const tableInfoCache: Partial<Record<'links' | 'files', TableInfo>> = {};
 
-async function getTableInfo(DB: D1Database, table: 'links' | 'files'): Promise<TableInfo> {
+async function getTableInfo(
+  DB: D1Database,
+  table: 'links' | 'files',
+  forceRefresh = false
+): Promise<TableInfo> {
+  if (forceRefresh) {
+    delete tableInfoCache[table];
+  }
+
   const cached = tableInfoCache[table];
   if (cached) return cached;
   const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
