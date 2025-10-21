@@ -205,7 +205,10 @@ export async function POST(req: Request) {
   const code = generateLinkCode();
 
   try {
-    const linksInfo = await getTableInfo(DB, 'links');
+  let linksInfo = await getTableInfo(DB, 'links');
+  if (!hasColumn(linksInfo, 'lang')) {
+    linksInfo = await getTableInfo(DB, 'links', true);
+  }
     const filesInfo = await getTableInfo(DB, 'files');
     const hasFileIdColumn = hasColumn(linksInfo, 'file_id');
     const createdAtIso = new Date(now).toISOString();

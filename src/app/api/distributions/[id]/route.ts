@@ -155,7 +155,10 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
     const nowEpoch = Math.floor(now / 1000);
     const nowIso = new Date(now).toISOString();
 
-    const linksInfo = await getTableInfo(DB, 'links');
+    let linksInfo = await getTableInfo(DB, 'links');
+    if (!hasColumn(linksInfo, 'lang')) {
+      linksInfo = await getTableInfo(DB, 'links', true);
+    }
     const filesInfo = await getTableInfo(DB, 'files');
 
     const statements: D1PreparedStatement[] = [];

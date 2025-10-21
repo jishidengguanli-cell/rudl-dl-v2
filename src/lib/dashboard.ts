@@ -108,7 +108,10 @@ export async function fetchDashboardPage(
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const offset = (safePage - 1) * safePageSize;
 
-  const linksInfo = await getTableInfo(DB, 'links');
+  let linksInfo = await getTableInfo(DB, 'links');
+  if (!hasColumn(linksInfo, 'lang')) {
+    linksInfo = await getTableInfo(DB, 'links', true);
+  }
   const hasLangColumn = hasColumn(linksInfo, 'lang');
 
   const balanceRow = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')

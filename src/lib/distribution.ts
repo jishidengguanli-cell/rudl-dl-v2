@@ -9,9 +9,13 @@ export type TableInfo = {
 
 const tableInfoCache: Partial<Record<TableName, TableInfo>> = {};
 
-export async function getTableInfo(DB: D1Database, table: TableName): Promise<TableInfo> {
+export async function getTableInfo(
+  DB: D1Database,
+  table: TableName,
+  forceRefresh = false
+): Promise<TableInfo> {
   const cached = tableInfoCache[table];
-  if (cached) return cached;
+  if (cached && !forceRefresh) return cached;
 
   const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
   const info: TableInfo = { columns: new Set(), types: {} };
@@ -124,7 +128,10 @@ async function fetchDistributionByField(
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  const linksInfo = await getTableInfo(DB, 'links');
+  let linksInfo = await getTableInfo(DB, 'links');
+  if (!hasColumn(linksInfo, 'lang')) {
+    linksInfo = await getTableInfo(DB, 'links', true);
+  }
   const filesInfo = await getTableInfo(DB, 'files');
 
   const linkColumns = [
