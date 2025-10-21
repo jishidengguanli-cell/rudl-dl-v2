@@ -1,4 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import { getTableInfo, hasColumn } from './distribution';
 
 export type DashboardFile = {
   id: string;
@@ -107,6 +108,9 @@ export async function fetchDashboardPage(
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const offset = (safePage - 1) * safePageSize;
 
+  const linksInfo = await getTableInfo(DB, 'links');
+  const hasLangColumn = hasColumn(linksInfo, 'lang');
+
   const balanceRow = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
     .bind(ownerId)
     .first<{ balance: number }>();
@@ -114,9 +118,27 @@ export async function fetchDashboardPage(
     .bind(ownerId)
     .first<{ count: number }>();
 
+  const selectColumns = [
+    'id',
+    'code',
+    'title',
+    'bundle_id',
+    'apk_version',
+    'ipa_version',
+    'platform',
+    'is_active',
+    'created_at',
+    hasLangColumn ? 'lang' : null,
+    'today_apk_dl',
+    'today_ipa_dl',
+    'today_total_dl',
+    'total_apk_dl',
+    'total_ipa_dl',
+    'total_total_dl',
+  ].filter((column): column is string => Boolean(column));
+
   const linksResult = await DB.prepare(
-    `SELECT id, code, title, bundle_id, apk_version, ipa_version, platform, is_active, created_at, lang,
-            today_apk_dl, today_ipa_dl, today_total_dl, total_apk_dl, total_ipa_dl, total_total_dl
+    `SELECT ${selectColumns.join(', ')}
      FROM links
      WHERE owner_id=?
      ORDER BY created_at DESC
@@ -164,7 +186,8 @@ export async function fetchDashboardPage(
           : Number(link.is_active ?? 0)
       ),
       createdAt: toEpochSeconds(link.created_at),
-      language: typeof link.lang === 'string' && link.lang ? link.lang : 'en',
+      language:
+        hasLangColumn && typeof link.lang === 'string' && link.lang ? link.lang : 'en',
       todayApkDl: toNumber(link.today_apk_dl),
       todayIpaDl: toNumber(link.today_ipa_dl),
       todayTotalDl: toNumber(link.today_total_dl),
