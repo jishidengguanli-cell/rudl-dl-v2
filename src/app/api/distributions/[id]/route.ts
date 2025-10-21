@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { ensureDownloadStatsTable, getStatsTableName } from '@/lib/downloads';
 import {
   fetchDistributionById,
   getTableInfo,
@@ -88,6 +89,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   if (existing.ownerId !== uid) {
     return jsonError('FORBIDDEN', 403);
   }
+
+  await ensureDownloadStatsTable(DB, linkId);
 
   let payload: UpdateBody;
   try {
@@ -346,6 +349,8 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
       DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
       DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
     ]);
+    const statsTable = getStatsTableName(linkId);
+    await DB.exec(`DROP TABLE IF EXISTS "${statsTable}"`);
 
     if (r2Keys.length) {
       await Promise.all(

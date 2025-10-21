@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
+import { recordDownload } from '@/lib/downloads';
 
 export const runtime = 'edge';
 
@@ -81,7 +82,13 @@ export async function GET(
     effectivePlatform = platform;
   }
 
-  const destination =
+    try {
+    await recordDownload(DB, link.id, effectivePlatform);
+  } catch {
+    // ignore download counter failures
+  }
+
+const destination =
     effectivePlatform === 'apk'
       ? `${CDN_BASE}${encodeRfc3986Path(selected.r2Key.replace(/^\/+/, ''))}`
       : `itms-services://?action=download-manifest&url=${encodeURIComponent(
