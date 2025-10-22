@@ -24,7 +24,11 @@ export function I18nProvider({
 
   // Prefer the persisted locale on the client when available
   useEffect(() => {
-    const saved = (typeof window !== 'undefined' && localStorage.getItem(LS_KEY)) as Locale | null;
+    if (typeof window === 'undefined') return;
+    const segments = window.location.pathname.split('/').filter(Boolean);
+    const pathLocale = segments[0];
+    if (pathLocale && isLocale(pathLocale)) return;
+    const saved = localStorage.getItem(LS_KEY) as Locale | null;
     if (saved && isLocale(saved)) setLocaleState(saved);
   }, []);
 
