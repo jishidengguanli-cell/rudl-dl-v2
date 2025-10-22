@@ -114,8 +114,6 @@ export async function GET(
   const missMsg = missing.length
     ? dl('missingMetadata').replace('{items}', missing.join(', '))
     : '';
-    ? dl('missingMetadata').replace('{items}', missing.join(', '))
-    : '';
 
   const hrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
   const manifestUrl = `${url.origin}/m/${encodeURIComponent(link.code)}`;
