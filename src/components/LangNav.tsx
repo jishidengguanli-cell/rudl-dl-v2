@@ -1,21 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { ChangeEvent, useEffect, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/dictionary';
-
-const localeOptions: ReadonlyArray<{ value: Locale; label: string }> = [
-  { value: 'zh-TW', label: 'Traditional Chinese' },
-  { value: 'zh-CN', label: 'Simplified Chinese' },
-  { value: 'en', label: 'English' },
-];
-
-const isLocale = (value: string): value is Locale =>
-  localeOptions.some((option) => option.value === value);
+import { isLanguageCode, languageCodes } from '@/lib/language';
 
 export default function LangNav() {
   const { t, locale, setLocale } = useI18n();
+  const languageOptions = useMemo(
+    () =>
+      languageCodes.map((code) => ({
+        value: code,
+        label: t(`language.name.${code}`),
+      })),
+    [t]
+  );
   const [session, setSession] = useState<{ id: string; email: string | null } | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
 
@@ -47,22 +47,12 @@ export default function LangNav() {
 
   const handleLocaleChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextValue = event.target.value;
-    if (isLocale(nextValue)) {
+    if (isLanguageCode(nextValue)) {
       setLocale(nextValue);
     }
   };
 
-  const localePrefix = (() => {
-    switch (locale) {
-      case 'en':
-        return '/en';
-      case 'zh-CN':
-        return '/zh-CN';
-      case 'zh-TW':
-      default:
-        return '/zh-TW';
-    }
-  })();
+  const localePrefix = `/${locale}`;
   const accountLabel = session?.email ?? session?.id ?? null;
 
   const handleLogout = async () => {
@@ -119,7 +109,7 @@ export default function LangNav() {
           value={locale}
           onChange={handleLocaleChange}
         >
-          {localeOptions.map((option) => (
+          {languageOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

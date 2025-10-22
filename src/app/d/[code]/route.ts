@@ -1,6 +1,10 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
 
+import { createTranslator } from '@/i18n/helpers';
+import { DEFAULT_LOCALE, type Locale } from '@/i18n/dictionary';
+import { languageCodes, tryNormalizeLanguageCode, type LangCode } from '@/lib/language';
+
 export const runtime = 'edge';
 
 type Env = {
@@ -8,44 +12,44 @@ type Env = {
   ['rudl-app']?: D1Database;
 };
 
-const DEFAULT_APP_TITLE = 'App';
-const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
-type LangCode = (typeof SUPPORTED_LANGS)[number];
-const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
-const LANG_ALIASES: Record<string, LangCode> = {
-  en: 'en',
-  english: 'en',
-  'en-us': 'en',
-  'en_gb': 'en',
-  'en-gb': 'en',
-  zh: 'zh-TW',
-  'zh-tw': 'zh-TW',
-  'zh_tw': 'zh-TW',
-  'zh-hant': 'zh-TW',
-  'zh_hant': 'zh-TW',
-  'traditional chinese': 'zh-TW',
-  'traditional-chinese': 'zh-TW',
-  '繁體中文': 'zh-TW',
-  '繁中': 'zh-TW',
-  cn: 'zh-CN',
-  'zh-cn': 'zh-CN',
-  'zh_cn': 'zh-CN',
-  'zh-hans': 'zh-CN',
-  'zh_hans': 'zh-CN',
-  'simplified chinese': 'zh-CN',
-  'simplified-chinese': 'zh-CN',
-  '简体中文': 'zh-CN',
-  '簡中': 'zh-CN',
-  ru: 'ru',
-  russian: 'ru',
-  'русский': 'ru',
-  vi: 'vi',
-  vietnamese: 'vi',
-  viet: 'vi',
-  'tiếng việt': 'vi',
-  'tieng viet': 'vi',
-};
+type DownloadKey =
+  | 'download'
+  | 'version'
+  | 'versionLabel'
+  | 'sizeLabel'
+  | 'platform'
+  | 'androidApk'
+  | 'androidNone'
+  | 'iosIpa'
+  | 'iosNone'
+  | 'androidDownload'
+  | 'iosInstall'
+  | 'noFiles'
+  | 'tip'
+  | 'iosGuideTitle'
+  | 'iosGuideDetecting'
+  | 'step1'
+  | 'step2'
+  | 'step3a'
+  | 'step3b'
+  | 'step4'
+  | 'copyDev'
+  | 'tryOpenApp'
+  | 'close'
+  | 'trustOnce'
+  | 'enterpriseDev'
+  | 'path16'
+  | 'path14'
+  | 'pathOld'
+  | 'detected'
+  | 'language'
+  | 'missingMetadata'
+  | 'alertSafari'
+  | 'alertPoints'
+  | 'alertCheckFailed'
+  | 'alertNetworkError';
 
+const DEFAULT_APP_TITLE = 'App';
 export async function GET(
   request: Request,
   context: { params: Promise<{ code: string }> }
@@ -97,18 +101,21 @@ export async function GET(
     if (!iosVersion) missing.push('Version');
     if (!iosBundleId) missing.push('Bundle ID');
   }
-  const missMsg = missing.length
-    ? `Missing metadata: ${missing.join(', ')}`
-    : '';
   const disableIos = !hasIpa || missing.length > 0;
 
   const url = new URL(request.url);
-  const qlang = normLang(url.searchParams.get('lang'));
-  const presetLang = normLang(link.language);
-  const reqLang = pickBestLang(qlang || presetLang, request.headers.get('accept-language'));
-  const t = (key: string) =>
-    LOCALES[reqLang]?.[key] ?? LOCALES['zh-TW'][key] ?? key;
-  const switcher = renderLangSwitcher(link.code, reqLang);
+  const qLocale = tryNormalizeLanguageCode(url.searchParams.get('lang'));
+  const presetLocale = tryNormalizeLanguageCode(link.language);
+  const reqLocale = pickBestLocale(qLocale ?? presetLocale, request.headers.get('accept-language'));
+  const translator = createTranslator(reqLocale);
+  const dl = (key: DownloadKey) => translator(`downloadPage.${key}`);
+  const switcher = renderLangSwitcher(link.code, reqLocale, translator);
+
+  const missMsg = missing.length
+    ? dl('missingMetadata').replace('{items}', missing.join(', '))
+    : '';
+    ? dl('missingMetadata').replace('{items}', missing.join(', '))
+    : '';
 
   const hrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
   const manifestUrl = `${url.origin}/m/${encodeURIComponent(link.code)}`;
@@ -122,18 +129,18 @@ export async function GET(
     ipaFile?.bundleId ??
     link.bundleId ??
     displayTitle ??
-    t('enterpriseDev');
+    dl('enterpriseDev');
 
   const buildVersionMarkup = () => {
     const segments: string[] = [];
     if (hasApk) {
       segments.push(
-        `<div>${h(t('androidApk'))}: ${h(formatVersionValue(androidVersion))}</div>`
+        `<div>${h(dl('androidApk'))}: ${h(formatVersionValue(androidVersion))}</div>`
       );
     }
     if (hasIpa) {
       segments.push(
-        `<div>${h(t('iosIpa'))}: ${h(formatVersionValue(iosVersion))}</div>`
+        `<div>${h(dl('iosIpa'))}: ${h(formatVersionValue(iosVersion))}</div>`
       );
     }
     return segments.length ? segments.join('') : `<span class="muted">-</span>`;
@@ -143,12 +150,12 @@ export async function GET(
     const segments: string[] = [];
     if (hasApk) {
       segments.push(
-        `<div>${h(t('androidApk'))}: ${h(formatFileSize(androidSizeValue))}</div>`
+        `<div>${h(dl('androidApk'))}: ${h(formatFileSize(androidSizeValue))}</div>`
       );
     }
     if (hasIpa) {
       segments.push(
-        `<div>${h(t('iosIpa'))}: ${h(formatFileSize(iosSizeValue))}</div>`
+        `<div>${h(dl('iosIpa'))}: ${h(formatFileSize(iosSizeValue))}</div>`
       );
     }
     return segments.length ? segments.join('') : `<span class="muted">-</span>`;
@@ -164,11 +171,11 @@ export async function GET(
     : `data-link="${attr(link.id)}"`;
 
   const html = `<!doctype html>
-<html lang="${attr(htmlLang(reqLang))}">
+<html lang="${attr(htmlLang(reqLocale))}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>${h(displayTitle)} - ${h(t('download'))}</title>
+  <title>${h(displayTitle)} - ${h(dl('download'))}</title>
   <meta name="robots" content="noindex,nofollow"/>
   <style>
     body{margin:0;background:#0f172a;color:#e5e7eb;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -222,15 +229,15 @@ export async function GET(
 
       <div class="meta">
         <div class="muted">Bundle ID</div><div>${h(displayBundleId || '-')}</div>
-        <div class="muted">${h(t('versionLabel'))}</div><div>${versionMarkup}</div>
-        <div class="muted">${h(t('sizeLabel'))}</div><div>${sizeMarkup}</div>
+        <div class="muted">${h(dl('versionLabel'))}</div><div>${versionMarkup}</div>
+        <div class="muted">${h(dl('sizeLabel'))}</div><div>${sizeMarkup}</div>
       </div>
 
       <div class="btns">
         ${
           hasApk
             ? `<a class="btn" href="${attr(hrefApk)}" id="btn-android" data-platform="apk" ${dataAttributes}>${h(
-                t('androidDownload')
+                dl('androidDownload')
               )}</a>`
             : ''
         }
@@ -242,39 +249,39 @@ export async function GET(
                 developerName
               )}" data-missing="${attr(missMsg)}" ${
                 disableIos ? 'aria-disabled="true"' : ''
-              }>${h(t('iosInstall'))}</a>`
+              }>${h(dl('iosInstall'))}</a>`
             : ''
         }
         ${
           !hasApk && !hasIpa
-            ? `<span class="muted">${h(t('noFiles'))}</span>`
+            ? `<span class="muted">${h(dl('noFiles'))}</span>`
             : ''
         }
       </div>
 
-      <div class="tip">${h(t('tip'))}</div>
+      <div class="tip">${h(dl('tip'))}</div>
     </section>
     <div class="footer">© ${nowYear} RU Download</div>
   </main>
 
   <div class="guide-mask" id="iosGuideMask"></div>
   <div class="guide" id="iosGuide" style="display:none" role="dialog" aria-modal="true" aria-labelledby="iosGuideTitle">
-    <h3 id="iosGuideTitle">${h(t('iosGuideTitle'))}</h3>
-    <div class="muted" id="iosPath">${h(t('iosGuideDetecting'))}</div>
+    <h3 id="iosGuideTitle">${h(dl('iosGuideTitle'))}</h3>
+    <div class="muted" id="iosPath">${h(dl('iosGuideDetecting'))}</div>
     <ol class="steps" id="iosSteps">
-      <li>${h(t('step1'))}</li>
-      <li>${h(t('step2'))}</li>
-      <li>${h(t('step3a'))} <b><span id="devName">${h(developerName)}</span></b> ${h(t('step3b'))}</li>
-      <li>${h(t('step4'))}</li>
+      <li>${h(dl('step1'))}</li>
+      <li>${h(dl('step2'))}</li>
+      <li>${h(dl('step3a'))} <b><span id="devName">${h(developerName)}</span></b> ${h(dl('step3b'))}</li>
+      <li>${h(dl('step4'))}</li>
     </ol>
 
     <div class="row">
-      <button class="btn ghost" id="btnCopyDev" type="button">${h(t('copyDev'))}</button>
-      <button class="btn" id="btnOpenApp" type="button" data-scheme="">${h(t('tryOpenApp'))}</button>
-      <button class="btn red" id="btnCloseGuide" type="button">${h(t('close'))}</button>
+      <button class="btn ghost" id="btnCopyDev" type="button">${h(dl('copyDev'))}</button>
+      <button class="btn" id="btnOpenApp" type="button" data-scheme="">${h(dl('tryOpenApp'))}</button>
+      <button class="btn red" id="btnCloseGuide" type="button">${h(dl('close'))}</button>
     </div>
     <div class="footer">
-      <span class="muted">${h(t('trustOnce'))}</span>
+      <span class="muted">${h(dl('trustOnce'))}</span>
     </div>
   </div>
 
@@ -315,10 +322,10 @@ export async function GET(
       function setPath(){
         var v = iOSMajor() || 17;
         var path;
-        if (v >= 16) path = '${h(t('path16'))}';
-        else if (v >= 14) path = '${h(t('path14'))}';
-        else path = '${h(t('pathOld'))}';
-        document.getElementById('iosPath').innerHTML = '${h(t('detected'))} ' + v + '<br/>' + path;
+        if (v >= 16) path = '${h(dl('path16'))}';
+        else if (v >= 14) path = '${h(dl('path14'))}';
+        else path = '${h(dl('pathOld'))}';
+        document.getElementById('iosPath').innerHTML = '${h(dl('detected'))} ' + v + '<br/>' + path;
       }
       function showGuide(){ setPath(); guide.style.display='block'; mask.style.display='block'; }
       function hideGuide(){ guide.style.display='none'; mask.style.display='none'; }
@@ -338,7 +345,7 @@ export async function GET(
         installBtn.addEventListener('click', function(){
           if (!isiOS()) return;
           if (!isSafari()) {
-            alert('Please use Safari to install this iOS app.');
+            alert("${h(dl('alertSafari'))}");
           }
           var payload = getBillingPayload(installBtn, 'ipa');
           if (payload) {
@@ -383,12 +390,12 @@ export async function GET(
             return;
           }
           if (res.status === 402) {
-            alert('Insufficient points. Please recharge.');
+            alert("${h(dl('alertPoints'))}");
           } else {
-            alert('Download check failed. Please retry later.');
+            alert("${h(dl('alertCheckFailed'))}");
           }
         } catch(_){
-          alert('Network error. Please retry later.');
+          alert("${h(dl('alertNetworkError'))}");
         } finally {
           androidBtn.disabled = false;
           androidBtn.textContent = ori;
@@ -409,202 +416,17 @@ export async function GET(
   });
 }
 
-function formatVersionValue(value: string | null | undefined): string {
-  const trimmed = typeof value === 'string' ? value.trim() : '';
-  return trimmed || '-';
-}
-
-function formatFileSize(size: number | null | undefined): string {
-  if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return '-';
-  const KB = 1024;
-  const MB = KB * 1024;
-  const GB = MB * 1024;
-  if (size >= GB) return `${(size / GB).toFixed(1)} GB`;
-  if (size >= MB) return `${(size / MB).toFixed(1)} MB`;
-  if (size >= KB) return `${(size / KB).toFixed(1)} KB`;
-  return `${size} B`;
-}
-
-const LOCALES: Record<string, Record<string, string>> = {
-  'zh-TW': {
-    download: '下載',
-    version: '版本',
-    versionLabel: '版本',
-    sizeLabel: '檔案大小',
-    platform: '平台',
-    androidApk: 'Android',
-    androidNone: 'Android（無）',
-    iosIpa: 'iOS',
-    iosNone: 'iOS（無）',
-    androidDownload: 'Android 下載',
-    iosInstall: 'iOS 安裝',
-    noFiles: '尚未上傳可供下載的檔案。',
-    tip: '提醒：第一次安裝企業 App，請至「設定」→「一般」→「VPN 與裝置管理 / 描述檔與裝置管理」信任開發者。',
-    iosGuideTitle: '下一步：啟用企業 App',
-    iosGuideDetecting: '正在偵測 iOS 版本…',
-    step1: '安裝完成後，暫時不要開啟 App。',
-    step2: '開啟「設定」→「一般」→「VPN 與裝置管理 / 描述檔與裝置管理」。',
-    step3a: '在「開發者 App」中選擇',
-    step3b: '並點擊「信任」→「確認」。',
-    step4: '返回主畫面並開啟 App。',
-    copyDev: '複製開發者名稱',
-    tryOpenApp: '嘗試開啟 App',
-    close: '關閉',
-    trustOnce: '＊只需信任一次即可。',
-    enterpriseDev: '企業開發者',
-    path16: '設定 → 一般 → VPN 與裝置管理 → 開發者 App → 信任',
-    path14: '設定 → 一般 → 描述檔與裝置管理 → 開發者 App → 信任',
-    pathOld: '設定 → 一般 → 裝置管理 / 描述檔 → 開發者 App → 信任',
-    detected: '偵測到 iOS',
-    language: '語言',
-  },
-  en: {
-    download: 'Download',
-    version: 'Version',
-    versionLabel: 'Version',
-    sizeLabel: 'File Size',
-    platform: 'Platform',
-    androidApk: 'Android',
-    androidNone: 'Android (none)',
-    iosIpa: 'iOS',
-    iosNone: 'iOS (none)',
-    androidDownload: 'Download for Android',
-    iosInstall: 'Install on iOS',
-    noFiles: 'No downloadable files uploaded yet.',
-    tip: 'Tip: For the first enterprise app install, go to Settings → General → VPN & Device Management / Profiles & Device Management to trust the developer.',
-    iosGuideTitle: 'Next step: Enable the enterprise app',
-    iosGuideDetecting: 'Detecting iOS version…',
-    step1: 'After installation, do not open the app immediately.',
-    step2: 'Open Settings → General → VPN & Device Management / Profiles & Device Management.',
-    step3a: 'Under “Developer App”, select',
-    step3b: 'then tap “Trust” → “Verify”.',
-    step4: 'Return to the home screen and launch the app.',
-    copyDev: 'Copy developer name',
-    tryOpenApp: 'Try opening the app',
-    close: 'Close',
-    trustOnce: '*You only need to trust this developer once.',
-    enterpriseDev: 'Enterprise Developer',
-    path16: 'Settings → General → VPN & Device Management → Developer App → Trust',
-    path14: 'Settings → General → Profiles & Device Management → Developer App → Trust',
-    pathOld: 'Settings → General → Device Management / Profiles → Developer App → Trust',
-    detected: 'Detected iOS',
-    language: 'Language',
-  },
-  'zh-CN': {
-    download: '下载',
-    version: '版本',
-    versionLabel: '版本',
-    sizeLabel: '文件大小',
-    platform: '平台',
-    androidApk: 'Android',
-    androidNone: 'Android（无）',
-    iosIpa: 'iOS',
-    iosNone: 'iOS（无）',
-    androidDownload: 'Android 下载',
-    iosInstall: 'iOS 安装',
-    noFiles: '尚未上传可下载的文件。',
-    tip: '提示：首次安装企业 App，请前往“设置”→“通用”→“VPN 与设备管理 / 描述文件与设备管理”信任开发者。',
-    iosGuideTitle: '下一步：启用企业 App',
-    iosGuideDetecting: '正在检测 iOS 版本…',
-    step1: '安装完成后，请先不要打开 App。',
-    step2: '打开“设置”→“通用”→“VPN 与设备管理 / 描述文件与设备管理”。',
-    step3a: '在“开发者 App”中选择',
-    step3b: '并点击“信任”→“确认”。',
-    step4: '返回主屏幕并打开 App。',
-    copyDev: '复制开发者名称',
-    tryOpenApp: '尝试打开 App',
-    close: '关闭',
-    trustOnce: '＊只需信任一次即可。',
-    enterpriseDev: '企业开发者',
-    path16: '设置 → 通用 → VPN 与设备管理 → 开发者 App → 信任',
-    path14: '设置 → 通用 → 描述文件与设备管理 → 开发者 App → 信任',
-    pathOld: '设置 → 通用 → 设备管理 / 描述文件 → 开发者 App → 信任',
-    detected: '检测到 iOS',
-    language: '语言',
-  },
-  ru: {
-    download: 'Скачать',
-    version: 'Версия',
-    versionLabel: 'Версия',
-    sizeLabel: 'Размер файла',
-    platform: 'Платформа',
-    androidApk: 'Android',
-    androidNone: 'Android (нет)',
-    iosIpa: 'iOS',
-    iosNone: 'iOS (нет)',
-    androidDownload: 'Скачать для Android',
-    iosInstall: 'Установить на iOS',
-    noFiles: 'Файлы для скачивания ещё не загружены.',
-    tip: 'Совет: при первой установке корпоративного приложения откройте Настройки → Основные → VPN и управление устройством / Профили и управление устройством и подтвердите разработчика.',
-    iosGuideTitle: 'Следующий шаг: активируйте корпоративное приложение',
-    iosGuideDetecting: 'Определяем версию iOS…',
-    step1: 'После установки не запускайте приложение сразу.',
-    step2: 'Откройте Настройки → Основные → VPN и управление устройством / Профили и управление устройством.',
-    step3a: 'В разделе “Developer App” выберите',
-    step3b: 'и нажмите “Доверять” → “Подтвердить”.',
-    step4: 'Вернитесь на главный экран и откройте приложение.',
-    copyDev: 'Скопировать имя разработчика',
-    tryOpenApp: 'Попробовать открыть приложение',
-    close: 'Закрыть',
-    trustOnce: '*Подтвердить разработчика нужно лишь один раз.',
-    enterpriseDev: 'Корпоративный разработчик',
-    path16: 'Настройки → Основные → VPN и управление устройством → Developer App → Доверять',
-    path14: 'Настройки → Основные → Профили и управление устройством → Developer App → Доверять',
-    pathOld: 'Настройки → Основные → Управление устройством / Профили → Developer App → Доверять',
-    detected: 'Обнаружена iOS',
-    language: 'Язык',
-  },
-  vi: {
-    download: 'Tải xuống',
-    version: 'Phiên bản',
-    versionLabel: 'Phiên bản',
-    sizeLabel: 'Dung lượng',
-    platform: 'Nền tảng',
-    androidApk: 'Android',
-    androidNone: 'Android (không có)',
-    iosIpa: 'iOS',
-    iosNone: 'iOS (không có)',
-    androidDownload: 'Tải cho Android',
-    iosInstall: 'Cài trên iOS',
-    noFiles: 'Chưa có tệp nào để tải xuống.',
-    tip: 'Mẹo: Lần đầu cài ứng dụng doanh nghiệp, vào Cài đặt → Cài đặt chung → VPN & Quản lý thiết bị / Hồ sơ & Quản lý thiết bị để tin cậy nhà phát triển.',
-    iosGuideTitle: 'Bước tiếp theo: kích hoạt ứng dụng doanh nghiệp',
-    iosGuideDetecting: 'Đang xác định phiên bản iOS…',
-    step1: 'Sau khi cài đặt, chưa mở ứng dụng ngay.',
-    step2: 'Mở Cài đặt → Cài đặt chung → VPN & Quản lý thiết bị / Hồ sơ & Quản lý thiết bị.',
-    step3a: 'Trong “Developer App”, chọn',
-    step3b: 'và nhấn “Tin cậy” → “Xác minh”.',
-    step4: 'Quay lại màn hình chính và mở ứng dụng.',
-    copyDev: 'Sao chép tên nhà phát triển',
-    tryOpenApp: 'Thử mở ứng dụng',
-    close: 'Đóng',
-    trustOnce: '*Chỉ cần tin cậy nhà phát triển một lần.',
-    enterpriseDev: 'Nhà phát triển doanh nghiệp',
-    path16: 'Cài đặt → Cài đặt chung → VPN & Quản lý thiết bị → Developer App → Tin cậy',
-    path14: 'Cài đặt → Cài đặt chung → Hồ sơ & Quản lý thiết bị → Developer App → Tin cậy',
-    pathOld: 'Cài đặt → Cài đặt chung → Quản lý thiết bị / Hồ sơ → Developer App → Tin cậy',
-    detected: 'Đã phát hiện iOS',
-    language: 'Ngôn ngữ',
-  },
-};
-
-function renderLangSwitcher(code: string, cur: string) {
-  const options: Array<{ v: string; label: string }> = [
-    { v: 'en', label: 'English' },
-    { v: 'ru', label: 'Russian' },
-    { v: 'vi', label: 'Vietnamese' },
-    { v: 'zh-TW', label: 'Traditional Chinese' },
-    { v: 'zh-CN', label: 'Simplified Chinese' },
-  ];
-
-  const langLabel = LOCALES[cur]?.language ?? LOCALES['zh-TW'].language ?? 'Language';
-  const items = options
-    .map((item) => `<option value="${h(item.v)}"${item.v === cur ? ' selected' : ''}>${h(item.label)}</option>`)
+function renderLangSwitcher(code: string, cur: Locale, translate: (key: string) => string) {
+  const items = languageCodes
+    .map((value) => {
+      const label = translate(`language.name.${value}`);
+      return `<option value="${h(value)}"${value === cur ? ' selected' : ''}>${h(label)}</option>`;
+    })
     .join('');
 
   return `
   <label style="display:inline-flex;align-items:center;gap:.5rem">
-    <span style="opacity:.75">${h(langLabel)}</span>
+    <span style="opacity:.75">${h(translate('downloadPage.language'))}</span>
     <select id="langSel"
             style="padding:.4rem .6rem;border-radius:10px;background:#0b1222;border:1px solid #334155;color:#e5e7eb">
       ${items}
@@ -623,31 +445,34 @@ function renderLangSwitcher(code: string, cur: string) {
   </script>`;
 }
 
-function normLang(value?: string | null): LangCode | '' {
-  if (!value) return '';
-  const trimmed = value.trim();
-  if (LANG_SET.has(trimmed as LangCode)) {
-    return trimmed as LangCode;
-  }
-  const lower = trimmed.toLowerCase();
-  if (lower === 'zh' || lower === 'zh-hant') return 'zh-TW';
-  if (lower === 'zh-hans') return 'zh-CN';
-  if (lower === 'en-us' || lower === 'en-gb') return 'en';
-  return LANG_ALIASES[lower] ?? '';
-}
-
-function pickBestLang(primary: string, accept: string | null) {
+function pickBestLocale(primary: LangCode | null, accept: string | null): Locale {
   if (primary) return primary;
-  const header = (accept || '').toLowerCase();
+  const header = (accept ?? '').toLowerCase();
   if (/zh\-tw|zh\-hant/.test(header)) return 'zh-TW';
   if (/zh|hans|cn/.test(header)) return 'zh-CN';
   if (/ru/.test(header)) return 'ru';
   if (/vi/.test(header)) return 'vi';
   if (/en/.test(header)) return 'en';
-  return 'zh-TW';
+  return DEFAULT_LOCALE;
 }
 
-function htmlLang(value: string) {
+function formatVersionValue(value: string | null | undefined): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || '-';
+}
+
+function formatFileSize(size: number | null | undefined): string {
+  if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0) return '-';
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+  if (size >= GB) return `${(size / GB).toFixed(1)} GB`;
+  if (size >= MB) return `${(size / MB).toFixed(1)} MB`;
+  if (size >= KB) return `${(size / KB).toFixed(1)} KB`;
+  return `${size} B`;
+}
+
+function htmlLang(value: Locale) {
   if (value === 'zh-CN') return 'zh-Hans';
   if (value === 'zh-TW') return 'zh-Hant';
   return value;

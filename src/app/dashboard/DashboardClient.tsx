@@ -29,14 +29,6 @@ const formatCount = (value: number | null | undefined) => {
   return String(safe);
 };
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  en: 'English',
-  ru: 'Russian',
-  vi: 'Vietnamese',
-  'zh-TW': 'Traditional Chinese',
-  'zh-CN': 'Simplified Chinese',
-};
-
 const getShareUrl = (code: string, hydrated: boolean) => {
   if (hydrated && typeof window !== 'undefined') {
     return `${window.location.origin}/d/${code}`;
@@ -267,7 +259,7 @@ export default function DashboardClient({ initialData }: Props) {
                         <span className="text-xs text-gray-500">-</span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{LANGUAGE_LABELS[link.language] ?? link.language}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{t(`language.name.${link.language}`)}</td>
                     <td className="py-2 pr-4">
                       <span
                         className={`rounded px-2 py-0.5 text-xs font-semibold ${

@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { defaultLocale, locales } from "./i18n/locales";
+import { isLanguageCode, tryNormalizeLanguageCode } from "./lib/language";
 
 type LocaleValue = (typeof locales)[number];
 
 function detect(req: NextRequest): LocaleValue {
   const cookieLang = req.cookies.get("lang")?.value;
-  if (cookieLang && (locales as readonly string[]).includes(cookieLang)) return cookieLang as LocaleValue;
+  const normalizedCookie = cookieLang ? tryNormalizeLanguageCode(cookieLang) : null;
+  if (normalizedCookie && isLanguageCode(normalizedCookie)) return normalizedCookie as LocaleValue;
 
   const accept = req.headers.get("accept-language") ?? "";
   const found = accept.split(",").map((s) => s.split(";")[0].trim());
   for (const candidate of found) {
-    if ((locales as readonly string[]).includes(candidate)) return candidate as LocaleValue;
-    if (candidate.startsWith("zh")) return "zh-TW";
-    if (candidate.startsWith("en")) return "en";
+    const normalized = tryNormalizeLanguageCode(candidate);
+    if (normalized && isLanguageCode(normalized)) return normalized as LocaleValue;
   }
   return defaultLocale;
 }

@@ -8,56 +8,12 @@ import {
   isTextColumn,
   type DistributionFile,
 } from '@/lib/distribution';
+import { normalizeLanguageCode } from '@/lib/language';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
 export const runtime = 'edge';
 
 const DEFAULT_TITLE = 'APP';
-const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
-type LangCode = (typeof SUPPORTED_LANGS)[number];
-const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
-
-const LANG_ALIASES: Record<string, LangCode> = {
-  en: 'en',
-  english: 'en',
-  'en-us': 'en',
-  'en_gb': 'en',
-  'en-gb': 'en',
-  zh: 'zh-TW',
-  'zh-tw': 'zh-TW',
-  'zh_tw': 'zh-TW',
-  'zh-hant': 'zh-TW',
-  'zh_hant': 'zh-TW',
-  'traditional chinese': 'zh-TW',
-  'traditional-chinese': 'zh-TW',
-  '繁體中文': 'zh-TW',
-  '繁中': 'zh-TW',
-  cn: 'zh-CN',
-  'zh-cn': 'zh-CN',
-  'zh_cn': 'zh-CN',
-  'zh-hans': 'zh-CN',
-  'zh_hans': 'zh-CN',
-  'simplified chinese': 'zh-CN',
-  'simplified-chinese': 'zh-CN',
-  '简体中文': 'zh-CN',
-  '簡中': 'zh-CN',
-  ru: 'ru',
-  russian: 'ru',
-  'русский': 'ru',
-  vi: 'vi',
-  vietnamese: 'vi',
-  viet: 'vi',
-  'tiếng việt': 'vi',
-  'tieng viet': 'vi',
-};
-
-const normalizeLang = (input: string | null | undefined): LangCode => {
-  if (!input) return 'en';
-  const trimmed = input.trim();
-  if (LANG_SET.has(trimmed as LangCode)) return trimmed as LangCode;
-  const lower = trimmed.toLowerCase();
-  return LANG_ALIASES[lower] ?? 'en';
-};
 
 type Env = {
   DB?: D1Database;
@@ -156,7 +112,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const apkVersion = (payload.apkVersion ?? '').trim();
   const ipaVersion = (payload.ipaVersion ?? '').trim();
   const autofill = Boolean(payload.autofill);
-  const linkLang = normalizeLang(typeof payload.lang === 'string' ? payload.lang : '');
+  const linkLang = normalizeLanguageCode(typeof payload.lang === 'string' ? payload.lang : '');
 
   const existingFiles = new Map<'apk' | 'ipa', DistributionFile>();
   for (const file of existing.files) {

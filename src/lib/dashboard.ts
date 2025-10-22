@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { getTableInfo, hasColumn, normalizeLanguageCode } from './distribution';
+import { normalizeLanguageCode, type LangCode } from '@/lib/language';
+import { getTableInfo, hasColumn } from './distribution';
 
 export type DashboardFile = {
   id: string;
@@ -21,7 +22,7 @@ export type DashboardLink = {
   platform: string;
   isActive: boolean;
   createdAt: number;
-  language: string;
+  language: LangCode;
   todayApkDl: number;
   todayIpaDl: number;
   todayTotalDl: number;

@@ -14,64 +14,11 @@ import { parseBuffer as parseBinaryPlist } from 'bplist-parser';
 import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardFile, DashboardLink } from '@/lib/dashboard';
+import { languageCodes, normalizeLanguageCode, type LangCode } from '@/lib/language';
 
 const DEFAULT_TITLE = 'APP';
 
 type Platform = 'apk' | 'ipa';
-
-type LangCode = 'en' | 'ru' | 'vi' | 'zh-TW' | 'zh-CN';
-
-const LANGUAGE_OPTIONS: Array<{ value: LangCode; label: string }> = [
-  { value: 'en', label: 'English' },
-  { value: 'ru', label: 'Russian' },
-  { value: 'vi', label: 'Vietnamese' },
-  { value: 'zh-TW', label: 'Traditional Chinese' },
-  { value: 'zh-CN', label: 'Simplified Chinese' },
-];
-
-const LANGUAGE_SET = new Set<LangCode>(LANGUAGE_OPTIONS.map((item) => item.value));
-
-const LANGUAGE_ALIASES: Record<string, LangCode> = {
-  en: 'en',
-  english: 'en',
-  'en-us': 'en',
-  'en_gb': 'en',
-  'en-gb': 'en',
-  'zh-tw': 'zh-TW',
-  'zh_tw': 'zh-TW',
-  'zh-hant': 'zh-TW',
-  'zh_hant': 'zh-TW',
-  'traditional chinese': 'zh-TW',
-  'traditional-chinese': 'zh-TW',
-  '繁體中文': 'zh-TW',
-  '繁中': 'zh-TW',
-  zh: 'zh-TW',
-  'zh-cn': 'zh-CN',
-  'zh_cn': 'zh-CN',
-  'zh-hans': 'zh-CN',
-  'zh_hans': 'zh-CN',
-  'simplified chinese': 'zh-CN',
-  'simplified-chinese': 'zh-CN',
-  '简体中文': 'zh-CN',
-  '簡中': 'zh-CN',
-  cn: 'zh-CN',
-  ru: 'ru',
-  russian: 'ru',
-  'русский': 'ru',
-  vi: 'vi',
-  vietnamese: 'vi',
-  viet: 'vi',
-  'tiếng việt': 'vi',
-  'tieng viet': 'vi',
-};
-
-const normalizeLang = (input: string | null | undefined): LangCode => {
-  if (!input) return 'en';
-  const trimmed = input.trim();
-  if (LANGUAGE_SET.has(trimmed as LangCode)) return trimmed as LangCode;
-  const lower = trimmed.toLowerCase();
-  return LANGUAGE_ALIASES[lower] ?? 'en';
-};
 
 type FileMeta = {
   title?: string | null;
@@ -395,6 +342,14 @@ export default function AddDistributionModal({
   onError,
 }: Props) {
   const { t } = useI18n();
+  const languageOptions = useMemo(
+    () =>
+      languageCodes.map((code) => ({
+        value: code,
+        label: t(`language.name.${code}`),
+      })),
+    [t]
+  );
   const isEdit = mode === 'edit';
   const fileInputRefs = useRef<Record<Platform, HTMLInputElement | null>>({
     apk: null,
@@ -482,7 +437,7 @@ export default function AddDistributionModal({
     setBundleId(initialLink.bundleId ?? '');
     setApkVersion(initialLink.apkVersion ?? '');
     setIpaVersion(initialLink.ipaVersion ?? '');
-    setLanguage(normalizeLang(initialLink.language));
+    setLanguage(normalizeLanguageCode(initialLink.language));
     setAutofill(true);
     setApkState({ file: null, metadata: null });
     setIpaState({ file: null, metadata: null });
@@ -975,10 +930,12 @@ export default function AddDistributionModal({
               <select
                 className="mt-1 rounded border px-3 py-2 text-sm outline-none focus:border-black"
                 value={language}
-                onChange={(event) => setLanguage(normalizeLang(event.target.value))}
+                onChange={(event) =>
+                  setLanguage(normalizeLanguageCode(event.target.value, language))
+                }
                 disabled={submitState === 'submitting'}
               >
-                {LANGUAGE_OPTIONS.map((option) => (
+                {languageOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>

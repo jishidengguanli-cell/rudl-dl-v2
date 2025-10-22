@@ -1,4 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import { normalizeLanguageCode, type LangCode } from '@/lib/language';
 
 export type TableName = 'links' | 'files';
 
@@ -8,50 +9,18 @@ export type TableInfo = {
 };
 
 const tableInfoCache: Partial<Record<TableName, TableInfo>> = {};
-const SUPPORTED_LANGS = ['en', 'ru', 'vi', 'zh-TW', 'zh-CN'] as const;
-type LangCode = (typeof SUPPORTED_LANGS)[number];
-const LANG_SET = new Set<LangCode>(SUPPORTED_LANGS);
-const LANG_ALIASES: Record<string, LangCode> = {
-  en: 'en',
-  english: 'en',
-  'en-us': 'en',
-  'en_gb': 'en',
-  'en-gb': 'en',
-  zh: 'zh-TW',
-  'zh-tw': 'zh-TW',
-  'zh_tw': 'zh-TW',
-  'zh-hant': 'zh-TW',
-  'zh_hant': 'zh-TW',
-  'traditional chinese': 'zh-TW',
-  'traditional-chinese': 'zh-TW',
-  '繁體中文': 'zh-TW',
-  '繁中': 'zh-TW',
-  cn: 'zh-CN',
-  'zh-cn': 'zh-CN',
-  'zh_cn': 'zh-CN',
-  'zh-hans': 'zh-CN',
-  'zh_hans': 'zh-CN',
-  'simplified chinese': 'zh-CN',
-  'simplified-chinese': 'zh-CN',
-  '简体中文': 'zh-CN',
-  '簡中': 'zh-CN',
-  ru: 'ru',
-  russian: 'ru',
-  'русский': 'ru',
-  vi: 'vi',
-  vietnamese: 'vi',
-  viet: 'vi',
-  'tiếng việt': 'vi',
-  'tieng viet': 'vi',
-};
 
 export async function getTableInfo(
   DB: D1Database,
   table: TableName,
   forceRefresh = false
 ): Promise<TableInfo> {
+  if (forceRefresh) {
+    delete tableInfoCache[table];
+  }
+
   const cached = tableInfoCache[table];
-  if (cached && !forceRefresh) return cached;
+  if (cached) return cached;
 
   const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
   const info: TableInfo = { columns: new Set(), types: {} };
@@ -102,7 +71,7 @@ export type DistributionLink = {
   platform: string;
   isActive: boolean;
   createdAt: number;
-  language: string;
+  language: LangCode;
   fileId: string | null;
   files: DistributionFile[];
 };
@@ -152,17 +121,6 @@ const toBoolean = (value: unknown): boolean => {
     return value.toLowerCase() === 'true';
   }
   return Boolean(value);
-};
-
-export const normalizeLanguageCode = (value: unknown): LangCode => {
-  if (typeof value !== 'string') return 'en';
-  const trimmed = value.trim();
-  if (LANG_SET.has(trimmed as LangCode)) return trimmed as LangCode;
-  const lower = trimmed.toLowerCase();
-  if (lower === 'zh' || lower === 'zh-hant') return 'zh-TW';
-  if (lower === 'zh-hans') return 'zh-CN';
-  if (lower === 'en-us' || lower === 'en-gb') return 'en';
-  return LANG_ALIASES[lower] ?? 'en';
 };
 
 type LookupField = 'id' | 'code';
