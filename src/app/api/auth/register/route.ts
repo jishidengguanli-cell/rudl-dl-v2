@@ -4,7 +4,7 @@ import { encodePasswordRecord, hashPassword, randomSaltHex } from '@/lib/pw';
 import { hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
-
+// 0
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
