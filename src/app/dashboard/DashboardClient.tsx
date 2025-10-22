@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { isLanguageCode } from '@/lib/language';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import type { Locale } from '@/i18n/dictionary';
@@ -59,7 +60,6 @@ const fallbackCopy = (text: string) => {
 export default function DashboardClient({ initialData, initialLocale }: Props) {
   const { t, setLocale: setProviderLocale } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
