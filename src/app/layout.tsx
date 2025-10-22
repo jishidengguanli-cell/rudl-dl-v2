@@ -16,7 +16,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const initialLocale = inferredLocale ?? fallbackLocale ?? DEFAULT_LOCALE;
 
   return (
-    <html lang={initialLocale === 'en' ? 'en' : initialLocale === 'zh-CN' ? 'zh-CN' : 'zh-Hant'}>
+    <html lang={(() => {
+        switch (initialLocale) {
+          case 'zh-CN':
+            return 'zh-CN';
+          case 'zh-TW':
+            return 'zh-Hant';
+          case 'ru':
+            return 'ru';
+          case 'vi':
+            return 'vi';
+          default:
+            return 'en';
+        }
+      })()}>
       <body>
         <AppShell initialLocale={initialLocale}>{children}</AppShell>
       </body>

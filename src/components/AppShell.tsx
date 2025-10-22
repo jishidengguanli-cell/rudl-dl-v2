@@ -3,6 +3,7 @@
 import { ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { I18nProvider, useI18n } from '@/i18n/provider';
+import { isLanguageCode } from '@/lib/language';
 import type { Locale } from '@/i18n/dictionary';
 import LangNav from '@/components/LangNav';
 
@@ -32,8 +33,7 @@ function inferLocaleFromPath(pathname: string | null): Locale | null {
   const segments = pathname.split('/').filter(Boolean);
   const candidate = segments[0] as Locale | undefined;
   if (!candidate) return null;
-  if (candidate === 'zh-TW' || candidate === 'en' || candidate === 'zh-CN') return candidate;
-  return null;
+  return isLanguageCode(candidate) ? candidate : null;
 }
 
 export default function AppShell({
