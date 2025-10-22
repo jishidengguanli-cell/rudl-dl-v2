@@ -32,7 +32,9 @@ export function I18nProvider({
     setLocaleState(l);
     if (typeof window !== 'undefined') {
       localStorage.setItem(LS_KEY, l);
-      document.cookie = `locale=${l}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      const cookie = `Path=/; Max-Age=31536000; SameSite=Lax`;
+      document.cookie = `locale=${l}; ${cookie}`;
+      document.cookie = `lang=${l}; ${cookie}`;
     }
   };
 
