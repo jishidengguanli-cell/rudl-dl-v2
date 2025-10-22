@@ -41,6 +41,7 @@ export function middleware(req: NextRequest) {
     url.pathname = `/${lang}${pathname}`;
     const res = NextResponse.redirect(url);
     res.cookies.set("lang", lang, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+    res.cookies.set("locale", lang, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
     return res;
   }
 
@@ -48,6 +49,10 @@ export function middleware(req: NextRequest) {
   const cookieLang = req.cookies.get("lang")?.value;
   if (!cookieLang || cookieLang !== maybeLocale) {
     response.cookies.set("lang", maybeLocale as LocaleValue, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  }
+  const cookieLocale = req.cookies.get("locale")?.value;
+  if (!cookieLocale || cookieLocale !== maybeLocale) {
+    response.cookies.set("locale", maybeLocale as LocaleValue, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   }
   return response;
 }

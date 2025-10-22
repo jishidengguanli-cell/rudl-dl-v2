@@ -11,9 +11,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const localeCookie = cookieStore.get('locale')?.value as Locale | undefined;
   const langCookie = cookieStore.get('lang')?.value as Locale | undefined;
-  const inferredLocale = localeCookie && dictionaries[localeCookie] ? localeCookie : undefined;
-  const fallbackLocale = langCookie && dictionaries[langCookie] ? langCookie : undefined;
-  const initialLocale = inferredLocale ?? fallbackLocale ?? DEFAULT_LOCALE;
+  const primaryLocale = langCookie && dictionaries[langCookie] ? langCookie : undefined;
+  const secondaryLocale = localeCookie && dictionaries[localeCookie] ? localeCookie : undefined;
+  const initialLocale = primaryLocale ?? secondaryLocale ?? DEFAULT_LOCALE;
 
   return (
     <html lang={(() => {
