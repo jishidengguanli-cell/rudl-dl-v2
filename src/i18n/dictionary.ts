@@ -152,7 +152,42 @@ const makeDict = (overrides: Partial<Dict>): Dict => {
   return { ...en, ...Object.fromEntries(sanitizedEntries) };
 };
 
-const zhTW = makeDict({
+const LANGUAGE_NAME_OVERRIDES: Record<LangCode, Partial<Dict>> = {
+  en: {},
+  'zh-TW': {
+    'language.name.en': '英文',
+    'language.name.zh-TW': '繁體中文',
+    'language.name.zh-CN': '簡體中文',
+    'language.name.ru': '俄文',
+    'language.name.vi': '越南文',
+  },
+  'zh-CN': {
+    'language.name.en': '英语',
+    'language.name.zh-TW': '繁体中文',
+    'language.name.zh-CN': '简体中文',
+    'language.name.ru': '俄语',
+    'language.name.vi': '越南语',
+  },
+  ru: {
+    'language.name.en': 'Английский',
+    'language.name.zh-TW': 'Традиционный китайский',
+    'language.name.zh-CN': 'Упрощённый китайский',
+    'language.name.ru': 'Русский',
+    'language.name.vi': 'Вьетнамский',
+  },
+  vi: {
+    'language.name.en': 'Tiếng Anh',
+    'language.name.zh-TW': 'Tiếng Trung phồn thể',
+    'language.name.zh-CN': 'Tiếng Trung giản thể',
+    'language.name.ru': 'Tiếng Nga',
+    'language.name.vi': 'Tiếng Việt',
+  },
+};
+
+const makeLocaleDict = (locale: LangCode, overrides: Partial<Dict>): Dict =>
+  makeDict({ ...(LANGUAGE_NAME_OVERRIDES[locale] ?? {}), ...overrides });
+
+const zhTW = makeLocaleDict('zh-TW', {
   'action.download': '下載',
   'auth.email': '電子郵件',
   'auth.login.submit': '登入',
@@ -247,19 +282,6 @@ const zhTW = makeDict({
   'form.clearOverride': '清除',
   'form.currentVersion': '目前版本',
   'form.currentSize': '目前大小',
-  'form.cancel': '取消',
-  'form.update': '更新',
-  'form.submit': '送出',
-  'language.name.en': '英文',
-  'language.name.zh-TW': '繁體中文',
-  'language.name.zh-CN': '簡體中文',
-  'language.name.ru': '俄文',
-  'language.name.vi': '越南文',
-  'language.name.en': '英文',
-  'language.name.zh-TW': '繁體中文',
-  'language.name.zh-CN': '简体中文',
-  'language.name.ru': '俄文',
-  'language.name.vi': '越南文',
   'downloadPage.download': '下載',
   'downloadPage.version': '版本',
   'downloadPage.versionLabel': '版本',
@@ -297,7 +319,7 @@ const zhTW = makeDict({
   'downloadPage.missingMetadata': '缺少中繼資料：{items}',
 });
 
-const zhCN = makeDict({
+const zhCN = makeLocaleDict('zh-CN', {
   'action.download': '下载',
   'auth.email': '电子邮件',
   'auth.login.submit': '登录',
@@ -395,16 +417,6 @@ const zhCN = makeDict({
   'form.cancel': '取消',
   'form.update': '更新',
   'form.submit': '提交',
-  'language.name.en': '英语',
-  'language.name.zh-TW': '繁体中文',
-  'language.name.zh-CN': '简体中文',
-  'language.name.ru': '俄语',
-  'language.name.vi': '越南语',
-  'language.name.en': '英语',
-  'language.name.zh-TW': '繁体中文',
-  'language.name.zh-CN': '简体中文',
-  'language.name.ru': '俄语',
-  'language.name.vi': '越南语',
   'downloadPage.download': '下载',
   'downloadPage.version': '版本',
   'downloadPage.versionLabel': '版本',
@@ -442,7 +454,7 @@ const zhCN = makeDict({
   'downloadPage.missingMetadata': '缺少元数据：{items}',
 });
 
-const ru = makeDict({
+const ru = makeLocaleDict('ru', {
   'action.download': 'Скачать',
   'auth.email': 'Электронная почта',
   'auth.login.submit': 'Войти',
@@ -540,16 +552,6 @@ const ru = makeDict({
   'form.cancel': 'Отмена',
   'form.update': 'Обновить',
   'form.submit': 'Отправить',
-  'language.name.en': 'Английский',
-  'language.name.zh-TW': 'Традиционный китайский',
-  'language.name.zh-CN': 'Упрощённый китайский',
-  'language.name.ru': 'Русский',
-  'language.name.vi': 'Вьетнамский',
-  'language.name.en': 'Английский',
-  'language.name.zh-TW': 'Традиционный китайский',
-  'language.name.zh-CN': 'Упрощённый китайский',
-  'language.name.ru': 'Русский',
-  'language.name.vi': 'Вьетнамский',
   'downloadPage.download': 'Скачать',
   'downloadPage.version': 'Версия',
   'downloadPage.versionLabel': 'Версия',
@@ -587,7 +589,7 @@ const ru = makeDict({
   'downloadPage.missingMetadata': 'Отсутствуют метаданные: {items}',
 });
 
-const vi = makeDict({
+const vi = makeLocaleDict('vi', {
   'action.download': 'Tải xuống',
   'auth.email': 'Email',
   'auth.login.submit': 'Đăng nhập',
@@ -685,16 +687,6 @@ const vi = makeDict({
   'form.cancel': 'Huỷ',
   'form.update': 'Cập nhật',
   'form.submit': 'Gửi',
-  'language.name.en': 'Tiếng Anh',
-  'language.name.zh-TW': 'Tiếng Trung phồn thể',
-  'language.name.zh-CN': 'Tiếng Trung giản thể',
-  'language.name.ru': 'Tiếng Nga',
-  'language.name.vi': 'Tiếng Việt',
-  'language.name.en': 'Tiếng Anh',
-  'language.name.zh-TW': 'Tiếng Trung phồn thể',
-  'language.name.zh-CN': 'Tiếng Trung giản thể',
-  'language.name.ru': 'Tiếng Nga',
-  'language.name.vi': 'Tiếng Việt',
   'downloadPage.download': 'Tải xuống',
   'downloadPage.version': 'Phiên bản',
   'downloadPage.versionLabel': 'Phiên bản',
