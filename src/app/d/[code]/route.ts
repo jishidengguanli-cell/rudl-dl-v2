@@ -106,7 +106,14 @@ export async function GET(
   const url = new URL(request.url);
   const qLocale = tryNormalizeLanguageCode(url.searchParams.get('lang'));
   const presetLocale = tryNormalizeLanguageCode(link.language);
-  const reqLocale = pickBestLocale(qLocale ?? presetLocale, request.headers.get('accept-language'));
+  const pathLocale = (() => {
+    const segments = url.pathname.split('/').filter(Boolean);
+    return segments.length ? tryNormalizeLanguageCode(segments[0]) : null;
+  })();
+  const reqLocale = pickBestLocale(
+    qLocale ?? presetLocale ?? pathLocale,
+    request.headers.get('accept-language')
+  );
   const translator = createTranslator(reqLocale);
   const dl = (key: DownloadKey) => translator(`downloadPage.${key}`);
   const switcher = renderLangSwitcher(link.code, reqLocale, translator);
@@ -405,13 +412,17 @@ export async function GET(
 </body>
 </html>`;
 
-  return new Response(html, {
+  const response = new Response(html, {
     status: 200,
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
     },
   });
+  const cookieDirectives = `Path=/; Max-Age=31536000; SameSite=Lax`;
+  response.headers.append('set-cookie', `lang=${reqLocale}; ${cookieDirectives}`);
+  response.headers.append('set-cookie', `locale=${reqLocale}; ${cookieDirectives}`);
+  return response;
 }
 
 function renderLangSwitcher(code: string, cur: Locale, translate: (key: string) => string) {
@@ -436,6 +447,13 @@ function renderLangSwitcher(code: string, cur: Locale, translate: (key: string) 
       if(!sel) return;
       sel.addEventListener('change', function(){
         var url = new URL(location.href);
+        var parts = url.pathname.split('/').filter(Boolean);
+        if(parts.length){
+          parts[0] = this.value;
+        } else {
+          parts.push(this.value);
+        }
+        url.pathname = '/' + parts.join('/');
         url.searchParams.set('lang', this.value);
         location.href = url.toString();
       });

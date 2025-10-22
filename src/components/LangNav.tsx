@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 import { isLanguageCode, languageCodes, type LangCode } from '@/lib/language';
@@ -9,7 +9,6 @@ import { isLanguageCode, languageCodes, type LangCode } from '@/lib/language';
 export default function LangNav() {
   const { t, locale, setLocale } = useI18n();
   const router = useRouter();
-  const pathname = usePathname();
   const languageOptions = useMemo(
     () =>
       languageCodes.map((code) => ({
@@ -48,14 +47,21 @@ export default function LangNav() {
   }, []);
 
   const changePathToLocale = (next: LangCode) => {
-    if (!pathname) return;
-    const segments = pathname.split('/').filter(Boolean);
-    if (segments.length === 0) {
+    if (typeof window === 'undefined') {
       router.push(`/${next}`);
       return;
     }
-    segments[0] = next;
-    router.push(`/${segments.join('/')}`);
+    const url = new URL(window.location.href);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (segments.length) {
+      segments[0] = next;
+    } else {
+      segments.push(next);
+    }
+    url.pathname = `/${segments.join('/')}`;
+    url.searchParams.delete('lang');
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    router.push(nextUrl);
   };
 
   const handleLocaleChange = (event: ChangeEvent<HTMLSelectElement>) => {
