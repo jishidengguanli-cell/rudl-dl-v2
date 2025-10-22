@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
+import type { Locale } from '@/i18n/dictionary';
 import AddDistributionModal from './AddDistributionModal';
 
 type Props = {
   initialData: DashboardPage;
+  initialLocale: Locale;
 };
 
 const formatDate = (value: number) => {
@@ -54,9 +56,10 @@ const fallbackCopy = (text: string) => {
   }
 };
 
-export default function DashboardClient({ initialData }: Props) {
-  const { t } = useI18n();
+export default function DashboardClient({ initialData, initialLocale }: Props) {
+  const { t, setLocale: setProviderLocale } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -69,7 +72,10 @@ export default function DashboardClient({ initialData }: Props) {
 
   useEffect(() => {
     setIsHydrated(true);
-  }, []);
+    if (isLanguageCode(initialLocale)) {
+      setProviderLocale(initialLocale);
+    }
+  }, [initialLocale, setProviderLocale]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data.total ?? 0) / data.pageSize)),

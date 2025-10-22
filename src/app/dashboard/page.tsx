@@ -33,11 +33,14 @@ export default async function Dashboard() {
     throw new Error('D1 binding DB is missing');
   }
 
+  const cookieLocale = cookieStore.get('locale')?.value as Locale | undefined;
+  const curLocale = cookieLocale && dictionaries[cookieLocale] ? cookieLocale : DEFAULT_LOCALE;
+
   const initialData = await fetchDashboardPage(DB, uid!, 1, PAGE_SIZE);
 
   return (
     <div className="space-y-4">
-      <DashboardClient initialData={initialData} />
+      <DashboardClient initialData={initialData} initialLocale={curLocale} />
     </div>
   );
 }
