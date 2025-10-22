@@ -145,7 +145,12 @@ const en: Dict = {
   'downloadPage.missingMetadata': 'Missing metadata: {items}',
 };
 
-const makeDict = (overrides: Partial<Dict>): Dict => ({ ...en, ...overrides });
+const makeDict = (overrides: Partial<Dict>): Dict => {
+  const sanitizedEntries = Object.entries(overrides).filter(
+    ([, value]) => typeof value === 'string'
+  ) as Array<[keyof Dict, string]>;
+  return { ...en, ...Object.fromEntries(sanitizedEntries) };
+};
 
 const zhTW = makeDict({
   'action.download': '下載',

@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
-import type { Locale } from '@/i18n/dictionary';
 import { isLanguageCode, languageCodes } from '@/lib/language';
 
 export default function LangNav() {
