@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
+import { fetchAdminUser } from '@/lib/admin';
 
 export const runtime = 'edge';
 
@@ -27,23 +28,6 @@ const resolveLocale = (langParam: string | undefined, cookieLang: string | undef
   return DEFAULT_LOCALE;
 };
 
-async function ensureAdmin(uid: string | undefined, DB: D1Database | undefined, locale: Locale, currentPath: string) {
-  const loginUrl = `/${locale}/admin/login?next=${encodeURIComponent(currentPath)}`;
-  if (!uid || !DB) {
-    redirect(loginUrl);
-  }
-
-  const row = await DB.prepare('SELECT id, email, role FROM users WHERE id=? LIMIT 1')
-    .bind(uid)
-    .first<{ id: string; email?: string | null; role?: string | null }>()
-    .catch(() => null);
-  if (!row || (row.role ?? '').toLowerCase() !== 'admin') {
-    redirect(loginUrl);
-  }
-
-  return { id: row.id, email: row.email ?? null };
-}
-
 export default async function AdminProtectedLayout({ children, params }: LayoutProps) {
   const { lang } = await params;
   const cookieStore = await cookies();
@@ -61,7 +45,11 @@ export default async function AdminProtectedLayout({ children, params }: LayoutP
   const currentPath = request ? new URL(request.url).pathname : basePath;
   const uid = cookieStore.get('uid')?.value;
 
-  await ensureAdmin(uid, DB, locale, currentPath);
+  const loginUrl = `/${locale}/admin/login?next=${encodeURIComponent(currentPath)}`;
+  const adminUser = await fetchAdminUser(DB, uid);
+  if (!adminUser) {
+    redirect(loginUrl);
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

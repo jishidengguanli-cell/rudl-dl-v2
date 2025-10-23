@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 import { fetchMembers } from '@/lib/members';
+import MemberActionsCell from './MemberActionsCell';
 
 export const runtime = 'edge';
 
@@ -60,6 +61,7 @@ export default async function AdminMembers({ params }: { params: Promise<Params>
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">{dict['members.table.actions'] ?? dict['table.actions'] ?? 'Actions'}</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">{dict['members.table.id']}</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">{dict['members.table.email']}</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">{dict['members.table.role']}</th>
@@ -70,6 +72,17 @@ export default async function AdminMembers({ params }: { params: Promise<Params>
             <tbody className="divide-y divide-gray-100">
               {members.map((member) => (
                 <tr key={member.id}>
+                  <td className="px-3 py-2">
+                    <MemberActionsCell
+                      member={{
+                        id: member.id,
+                        email: member.email ?? null,
+                        role: member.role ?? null,
+                        balance: typeof member.balance === 'number' ? member.balance : null,
+                        createdAt: member.createdAt,
+                      }}
+                    />
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs text-gray-500">{member.id}</td>
                   <td className="px-3 py-2 text-gray-900">{member.email ?? '-'}</td>
                   <td className="px-3 py-2 text-gray-700">{member.role ?? '-'}</td>
