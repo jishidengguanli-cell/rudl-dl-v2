@@ -99,12 +99,19 @@ const toEpochSeconds = (value: number | string | null | undefined): number => {
   return 0;
 };
 
-export async function fetchDashboardPage(
+type LinksPageResult = {
+  page: number;
+  pageSize: number;
+  total: number;
+  links: DashboardLink[];
+};
+
+async function fetchLinksPage(
   DB: D1Database,
-  ownerId: string,
   page: number,
-  pageSize: number
-): Promise<DashboardPage> {
+  pageSize: number,
+  ownerId?: string | null
+): Promise<LinksPageResult> {
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
   const offset = (safePage - 1) * safePageSize;
@@ -115,12 +122,11 @@ export async function fetchDashboardPage(
   }
   const hasLangColumn = hasColumn(linksInfo, 'lang');
 
-  const balanceRow = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
-    .bind(ownerId)
-    .first<{ balance: number }>();
-  const totalRow = await DB.prepare('SELECT COUNT(*) as count FROM links WHERE owner_id=?')
-    .bind(ownerId)
-    .first<{ count: number }>();
+  const totalRow = ownerId
+    ? await DB.prepare('SELECT COUNT(*) as count FROM links WHERE owner_id=?')
+        .bind(ownerId)
+        .first<{ count: number }>()
+    : await DB.prepare('SELECT COUNT(*) as count FROM links').first<{ count: number }>();
 
   const selectColumns = [
     'id',
@@ -141,16 +147,14 @@ export async function fetchDashboardPage(
     'total_total_dl',
   ].filter((column): column is string => Boolean(column));
 
-  const linksResult = await DB.prepare(
-    `SELECT ${selectColumns.join(', ')}
-     FROM links
-     WHERE owner_id=?
-     ORDER BY created_at DESC
-     LIMIT ?
-     OFFSET ?`
-  )
-    .bind(ownerId, safePageSize, offset)
-    .all();
+  const baseQuery = `SELECT ${selectColumns.join(', ')} FROM links ${
+    ownerId ? 'WHERE owner_id=? ' : ''
+  }ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  const statement = ownerId
+    ? DB.prepare(baseQuery).bind(ownerId, safePageSize, offset)
+    : DB.prepare(baseQuery).bind(safePageSize, offset);
+
+  const linksResult = await statement.all();
 
   const linkRows = (linksResult.results as LinkRow[] | undefined) ?? [];
 
@@ -205,8 +209,36 @@ export async function fetchDashboardPage(
     page: safePage,
     pageSize: safePageSize,
     total: totalRow?.count ?? 0,
-    balance: balanceRow?.balance ?? 0,
     links,
+  };
+}
+
+export async function fetchDashboardPage(
+  DB: D1Database,
+  ownerId: string,
+  page: number,
+  pageSize: number
+): Promise<DashboardPage> {
+  const result = await fetchLinksPage(DB, page, pageSize, ownerId);
+  const balanceRow = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
+    .bind(ownerId)
+    .first<{ balance: number }>();
+
+  return {
+    ...result,
+    balance: balanceRow?.balance ?? 0,
+  };
+}
+
+export async function fetchAdminLinksPage(
+  DB: D1Database,
+  page: number,
+  pageSize: number
+): Promise<DashboardPage> {
+  const result = await fetchLinksPage(DB, page, pageSize);
+  return {
+    ...result,
+    balance: 0,
   };
 }
 

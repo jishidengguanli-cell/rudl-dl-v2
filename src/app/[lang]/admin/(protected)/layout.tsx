@@ -65,6 +65,9 @@ export default async function AdminProtectedLayout({ children, params }: LayoutP
           <Link className="underline" href={`${basePath}/members`}>
             {dict['admin.nav.members'] ?? 'Members'}
           </Link>
+          <Link className="underline" href={`${basePath}/links`}>
+            {dict['admin.nav.links'] ?? 'Distributions'}
+          </Link>
         </nav>
       </div>
       <div>{children}</div>

@@ -11,6 +11,9 @@ import AddDistributionModal from './AddDistributionModal';
 type Props = {
   initialData: DashboardPage;
   initialLocale: Locale;
+  fetchUrl?: string;
+  allowManage?: boolean;
+  showBalance?: boolean;
 };
 
 const formatDate = (value: number) => {
@@ -58,7 +61,13 @@ const fallbackCopy = (text: string) => {
   }
 };
 
-export default function DashboardClient({ initialData, initialLocale }: Props) {
+export default function DashboardClient({
+  initialData,
+  initialLocale,
+  fetchUrl = '/api/dashboard/links',
+  allowManage = true,
+  showBalance = true,
+}: Props) {
   const { t, locale, setLocale: setProviderLocale } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
   const [loading, setLoading] = useState(false);
@@ -90,10 +99,8 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/dashboard/links?page=${safePage}&pageSize=${data.pageSize}`,
-        { cache: 'no-store' }
-      );
+      const target = `${fetchUrl}?page=${safePage}&pageSize=${data.pageSize}`;
+      const res = await fetch(target, { cache: 'no-store' });
       const json: { ok: boolean; error?: string } & DashboardPage = await res.json();
       if (!json.ok) {
         throw new Error(json.error ?? 'UNKNOWN_ERROR');
@@ -118,18 +125,21 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
   };
 
   const openCreateModal = () => {
+    if (!allowManage) return;
     setModalMode('create');
     setEditingLink(null);
     setModalOpen(true);
   };
 
   const openEditModal = (link: DashboardLink) => {
+    if (!allowManage) return;
     setModalMode('edit');
     setEditingLink(link);
     setModalOpen(true);
   };
 
   const handleCreated = async () => {
+    if (!allowManage) return;
     await fetchPage(1);
     closeModal();
     setToast(t('dashboard.toastCreated'));
@@ -137,6 +147,7 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
   };
 
   const handleUpdated = async (linkId: string) => {
+    if (!allowManage) return;
     const code = data.links.find((item) => item.id === linkId)?.code;
     await fetchPage(data.page);
     closeModal();
@@ -150,18 +161,20 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
   };
 
   const requestDelete = (link: DashboardLink) => {
+    if (!allowManage) return;
     setDeleteTarget(link);
     setDeleteStatus('idle');
   };
 
   const cancelDelete = () => {
+    if (!allowManage) return;
     if (deleteStatus === 'pending') return;
     setDeleteTarget(null);
     setDeleteStatus('idle');
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget || deleteStatus === 'pending') return;
+    if (!allowManage || !deleteTarget || deleteStatus === 'pending') return;
     setDeleteStatus('pending');
     try {
       const res = await fetch(`/api/distributions/${deleteTarget.id}`, { method: 'DELETE' });
@@ -212,25 +225,29 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-medium text-gray-900">{t('dashboard.title')}</h2>
-            <p className="text-sm text-gray-600">
-              {t('dashboard.balanceLabel')}: <span className="font-semibold text-gray-900">{data.balance ?? 0}</span>
-            </p>
+            {showBalance ? (
+              <p className="text-sm text-gray-600">
+                {t('dashboard.balanceLabel')}: <span className="font-semibold text-gray-900">{data.balance ?? 0}</span>
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Link
-              href={rechargeHref}
-              className="inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
-            >
-              {t('recharge.title')}
-            </Link>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
-              onClick={openCreateModal}
-            >
-              {t('dashboard.addDistribution')}
-            </button>
-          </div>
+          {allowManage ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Link
+                href={rechargeHref}
+                className="inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
+              >
+                {t('recharge.title')}
+              </Link>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
+                onClick={openCreateModal}
+              >
+                {t('dashboard.addDistribution')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -314,16 +331,18 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
                         <button
                           type="button"
                           className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          onClick={() => openEditModal(link)}
-                          disabled={loading}
+                          onClick={() => allowManage && openEditModal(link)}
+                          disabled={loading || !allowManage}
+                          title={!allowManage ? t('dashboard.viewOnly') ?? undefined : undefined}
                         >
                           {t('dashboard.actionEdit')}
                         </button>
                         <button
                           type="button"
                           className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          onClick={() => requestDelete(link)}
-                          disabled={loading}
+                          onClick={() => allowManage && requestDelete(link)}
+                          disabled={loading || !allowManage}
+                          title={!allowManage ? t('dashboard.viewOnly') ?? undefined : undefined}
                         >
                           {t('dashboard.actionDelete')}
                         </button>
@@ -392,7 +411,7 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
         </div>
       </div>
 
-      {modalOpen && (
+      {allowManage && modalOpen && (
         <AddDistributionModal
           open={modalOpen}
           mode={modalMode}
@@ -404,7 +423,7 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
         />
       )}
 
-      {deleteTarget && (
+      {allowManage && deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.confirmDeleteTitle')}</h3>

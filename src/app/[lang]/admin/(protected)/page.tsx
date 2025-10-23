@@ -37,6 +37,11 @@ export default async function AdminOverview({ params }: { params: Promise<PagePa
               {dict['admin.membersLink'] ?? 'View members'}
             </a>
           </li>
+          <li>
+            <a className="underline" href={`/${locale}/admin/links`}>
+              {dict['admin.linksLink'] ?? 'View distributions'}
+            </a>
+          </li>
         </ul>
       </div>
     </div>
