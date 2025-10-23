@@ -7,6 +7,19 @@ Next.js 15 + React 19 application prepared for Cloudflare Pages (Next on Pages).
 - Run the dev server with `npm run dev` (http://localhost:3000).
 - The project relies on a D1 binding named `DB`. For local development you can use `wrangler pages dev` with a stub D1, or guard the code before hitting the database if you do not need those pages.
 
+### ECPay integration
+- The recharge page posts to `/api/recharge/ecpay`, which returns a dynamic form that forwards the user to ECPay.
+- Set the following environment variables before running the API:
+  - `ECPAY_MERCHANT_ID`
+  - `ECPAY_HASH_KEY`
+  - `ECPAY_HASH_IV`
+  - `ECPAY_MODE` (`stage` by default, set to `production` for live cashier URL)
+  - `ECPAY_RETURN_URL` (server-side callback endpoint, e.g. `https://your-domain/api/recharge/ecpay/notify`)
+  - `ECPAY_CLIENT_BACK_URL` (optional: where the customer returns after payment, defaults to `/recharge`)
+  - `ECPAY_ORDER_RESULT_URL` (optional: front-end result page)
+  - `ECPAY_BASE_URL` (optional: base URL used to build defaults; falls back to `http://localhost:3000`)
+- Do not hardcode credentials in source control. Use `.env.local` for local testing and configure the same keys in production.
+
 ## Cloudflare Pages Deployment
 
 ### Git integration
