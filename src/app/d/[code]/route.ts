@@ -447,13 +447,6 @@ function renderLangSwitcher(code: string, cur: Locale, translate: (key: string) 
       if(!sel) return;
       sel.addEventListener('change', function(){
         var url = new URL(location.href);
-        var parts = url.pathname.split('/').filter(Boolean);
-        if(parts.length){
-          parts[0] = this.value;
-        } else {
-          parts.push(this.value);
-        }
-        url.pathname = '/' + parts.join('/');
         url.searchParams.set('lang', this.value);
         location.href = url.toString();
       });
