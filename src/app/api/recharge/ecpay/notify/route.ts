@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyCheckMacValue } from '@/lib/ecpay';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const parseForm = async (req: Request) => {
   const formData = await req.formData();
@@ -36,4 +36,3 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({ ok: true });
 }
-

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildCheckoutForm } from '@/lib/ecpay';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const read = (value: unknown) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
 
@@ -56,4 +56,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
-
