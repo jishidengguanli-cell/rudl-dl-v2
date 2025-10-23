@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { isLanguageCode } from '@/lib/language';
 import { useI18n } from '@/i18n/provider';
@@ -58,7 +59,7 @@ const fallbackCopy = (text: string) => {
 };
 
 export default function DashboardClient({ initialData, initialLocale }: Props) {
-  const { t, setLocale: setProviderLocale } = useI18n();
+  const { t, locale, setLocale: setProviderLocale } = useI18n();
   const [data, setData] = useState<DashboardPage>(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +77,8 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
       setProviderLocale(initialLocale);
     }
   }, [initialLocale, setProviderLocale]);
+
+  const rechargeHref = locale === 'en' ? '/recharge' : `/${locale}/recharge`;
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data.total ?? 0) / data.pageSize)),
@@ -213,13 +216,21 @@ export default function DashboardClient({ initialData, initialLocale }: Props) {
               {t('dashboard.balanceLabel')}: <span className="font-semibold text-gray-900">{data.balance ?? 0}</span>
             </p>
           </div>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
-            onClick={openCreateModal}
-          >
-            {t('dashboard.addDistribution')}
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Link
+              href={rechargeHref}
+              className="inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
+            >
+              {t('recharge.title')}
+            </Link>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
+              onClick={openCreateModal}
+            >
+              {t('dashboard.addDistribution')}
+            </button>
+          </div>
         </div>
       </div>
 
