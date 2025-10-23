@@ -22,6 +22,8 @@ const shouldBypass = (pathname: string) =>
   pathname.startsWith("/_next") ||
   pathname.startsWith("/api") ||
   pathname.startsWith("/dl") ||
+  pathname === "/d" ||
+  pathname.startsWith("/d/") ||
   pathname === "/favicon.ico";
 
 export function middleware(req: NextRequest) {
