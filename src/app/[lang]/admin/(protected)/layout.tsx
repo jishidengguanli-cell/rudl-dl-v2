@@ -1,0 +1,85 @@
+import type { ReactNode } from 'react';
+import Link from 'next/link';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
+
+export const runtime = 'edge';
+
+type LayoutProps = {
+  children: ReactNode;
+  params: Promise<{ lang: string }>;
+};
+
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
+
+const isLocale = (value: string | undefined): value is Locale =>
+  Boolean(value && value in dictionaries);
+
+const resolveLocale = (langParam: string | undefined, cookieLang: string | undefined, cookieLocale: string | undefined): Locale => {
+  if (isLocale(langParam)) return langParam;
+  if (isLocale(cookieLang)) return cookieLang;
+  if (isLocale(cookieLocale)) return cookieLocale;
+  return DEFAULT_LOCALE;
+};
+
+async function ensureAdmin(uid: string | undefined, DB: D1Database | undefined, locale: Locale, currentPath: string) {
+  const loginUrl = `/${locale}/admin/login?next=${encodeURIComponent(currentPath)}`;
+  if (!uid || !DB) {
+    redirect(loginUrl);
+  }
+
+  const row = await DB.prepare('SELECT id, email, role FROM users WHERE id=? LIMIT 1')
+    .bind(uid)
+    .first<{ id: string; email?: string | null; role?: string | null }>()
+    .catch(() => null);
+  if (!row || (row.role ?? '').toLowerCase() !== 'admin') {
+    redirect(loginUrl);
+  }
+
+  return { id: row.id, email: row.email ?? null };
+}
+
+export default async function AdminProtectedLayout({ children, params }: LayoutProps) {
+  const { lang } = await params;
+  const cookieStore = await cookies();
+  const cookieLang = cookieStore.get('lang')?.value;
+  const cookieLocale = cookieStore.get('locale')?.value;
+  const locale = resolveLocale(lang, cookieLang, cookieLocale);
+  const dict = dictionaries[locale];
+
+  const basePath = `/${locale}/admin`;
+
+  const ctx = getRequestContext();
+  const bindings = (ctx.env ?? {}) as Env;
+  const DB = bindings.DB ?? bindings['rudl-app'];
+  const request = (ctx as { request?: Request }).request;
+  const currentPath = request ? new URL(request.url).pathname : basePath;
+  const uid = cookieStore.get('uid')?.value;
+
+  await ensureAdmin(uid, DB, locale, currentPath);
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">{dict['admin.overviewTitle'] ?? 'Admin'}</h1>
+          <p className="mt-1 text-sm text-gray-600">{dict['admin.overviewDescription'] ?? ''}</p>
+        </div>
+        <nav className="flex items-center gap-3 text-sm text-gray-700">
+          <Link className="underline" href={basePath}>
+            {dict['admin.nav.overview'] ?? 'Overview'}
+          </Link>
+          <Link className="underline" href={`${basePath}/members`}>
+            {dict['admin.nav.members'] ?? 'Members'}
+          </Link>
+        </nav>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}

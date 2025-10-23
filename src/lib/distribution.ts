@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { normalizeLanguageCode, type LangCode } from '@/lib/language';
 
-export type TableName = 'links' | 'files';
+export type TableName = 'links' | 'files' | 'users';
 
 export type TableInfo = {
   columns: Set<string>;

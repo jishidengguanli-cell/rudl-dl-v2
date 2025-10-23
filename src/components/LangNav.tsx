@@ -17,7 +17,7 @@ export default function LangNav() {
       })),
     [t]
   );
-  const [session, setSession] = useState<{ id: string; email: string | null } | null>(null);
+  const [session, setSession] = useState<{ id: string; email: string | null; role: string | null } | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function LangNav() {
       })
       .then((user) => {
         if (cancelled) return;
-        setSession(user ? { id: user.id, email: user.email ?? null } : null);
+        setSession(user ? { id: user.id, email: user.email ?? null, role: (user as { role?: string | null }).role ?? null } : null);
         setSessionLoaded(true);
       })
       .catch(() => {
@@ -74,6 +74,7 @@ export default function LangNav() {
 
   const localePrefix = `/${locale}`;
   const accountLabel = session?.email ?? session?.id ?? null;
+  const isAdmin = (session?.role ?? '').toLowerCase() === 'admin';
 
   const handleLogout = async () => {
     try {
@@ -110,9 +111,9 @@ export default function LangNav() {
         <Link className="underline" href={resolveHref('/dashboard')}>
           {t('nav.dashboard')}
         </Link>
-        {session ? (
-          <Link className="underline" href={resolveHref('/members')}>
-            {t('nav.members')}
+        {isAdmin ? (
+          <Link className="underline" href={resolveHref('/admin')}>
+            {t('nav.admin')}
           </Link>
         ) : null}
         {sessionLoaded && !session ? (

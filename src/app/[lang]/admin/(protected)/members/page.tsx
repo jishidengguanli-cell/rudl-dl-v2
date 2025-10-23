@@ -1,28 +1,34 @@
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 import { fetchMembers } from '@/lib/members';
 
 export const runtime = 'edge';
 
+type Params = { lang: string };
+
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
 };
 
-export default async function MembersPage() {
+const isLocale = (value: string | undefined): value is Locale =>
+  Boolean(value && value in dictionaries);
+
+const resolveLocale = (langParam: string | undefined, cookieLang: string | undefined, cookieLocale: string | undefined): Locale => {
+  if (isLocale(langParam)) return langParam;
+  if (isLocale(cookieLang)) return cookieLang;
+  if (isLocale(cookieLocale)) return cookieLocale;
+  return DEFAULT_LOCALE;
+};
+
+export default async function AdminMembers({ params }: { params: Promise<Params> }) {
+  const { lang } = await params;
   const cookieStore = await cookies();
-  const uid = cookieStore.get('uid')?.value;
-  if (!uid) {
-    const langCookie = cookieStore.get('lang')?.value as Locale | undefined;
-    const cookieLocale = cookieStore.get('locale')?.value as Locale | undefined;
-    const curLocale = langCookie && dictionaries[langCookie] ? langCookie : cookieLocale && dictionaries[cookieLocale] ? cookieLocale : DEFAULT_LOCALE;
-    const localePrefix = `/${curLocale}`;
-    const nextPath = `${localePrefix}/members`;
-    const qs = new URLSearchParams({ next: nextPath, reason: 'auth' });
-    redirect(`${localePrefix}/login?${qs.toString()}`);
-  }
+  const langCookie = cookieStore.get('lang')?.value;
+  const localeCookie = cookieStore.get('locale')?.value;
+  const locale = resolveLocale(lang, langCookie, localeCookie);
+  const dict = dictionaries[locale];
 
   const { env } = getRequestContext();
   const bindings = env as Env;
@@ -31,18 +37,13 @@ export default async function MembersPage() {
     throw new Error('D1 binding DB is missing');
   }
 
-  const langCookie = cookieStore.get('lang')?.value as Locale | undefined;
-  const cookieLocale = cookieStore.get('locale')?.value as Locale | undefined;
-  const locale = langCookie && dictionaries[langCookie] ? langCookie : cookieLocale && dictionaries[cookieLocale] ? cookieLocale : DEFAULT_LOCALE;
-  const dict = dictionaries[locale];
-
   const members = await fetchMembers(DB);
 
   const formatDate = (value: number) => {
     if (!value) return '-';
     const date = new Date(value * 1000);
-    const fallback = locale === 'zh-TW' ? 'zh-Hant' : locale;
-    return date.toLocaleString(fallback);
+    const localeHint = locale === 'zh-TW' ? 'zh-Hant' : locale;
+    return date.toLocaleString(localeHint);
   };
 
   return (

@@ -32,9 +32,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false }, { status: 200 });
   }
 
-  const user = await DB.prepare('SELECT id, email FROM users WHERE id=? LIMIT 1')
+  const user = await DB.prepare('SELECT id, email, role FROM users WHERE id=? LIMIT 1')
     .bind(uid)
-    .first<{ id: string; email?: string }>()
+    .first<{ id: string; email?: string; role?: string }>()
     .catch(() => null);
 
   if (!user) {
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     user: {
       id: user.id,
       email: user.email ?? null,
+      role: user.role ?? null,
     },
   });
 }
