@@ -21,14 +21,13 @@ export async function POST(req: Request) {
       return new Response('0|CheckMacValueError', { status: 400 });
     }
 
-    console.info('[ecpay] payment callback', payload);
-
-    // TODO: persist payment result and update point balance.
+    console.info('[ecpay] payment info callback', payload);
+    // TODO: persist issued payment code/barcode details.
 
     return new Response('1|OK', { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[ecpay] callback error', message);
+    console.error('[ecpay] payment info error', message);
     return new Response('0|Exception', { status: 500 });
   }
 }
@@ -36,3 +35,4 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({ ok: true });
 }
+

@@ -14,10 +14,14 @@ Next.js 15 + React 19 application prepared for Cloudflare Pages (Next on Pages).
   - `ECPAY_HASH_KEY`
   - `ECPAY_HASH_IV`
   - `ECPAY_MODE` (`stage` by default, set to `production` for live cashier URL)
-  - `ECPAY_RETURN_URL` (server-side callback endpoint, e.g. `https://your-domain/api/recharge/ecpay/notify`)
-  - `ECPAY_CLIENT_BACK_URL` (optional: where the customer returns after payment, defaults to `/recharge`)
-  - `ECPAY_ORDER_RESULT_URL` (optional: front-end result page)
+  - `ECPAY_RETURN_URL` (server-side background callback endpoint, e.g. `https://your-domain/api/recharge/ecpay/notify`)
+  - `ECPAY_ORDER_RESULT_URL` (front-end result page)
+  - `ECPAY_CLIENT_BACK_URL` (optional: “返回商店” URL, defaults to `/recharge`)
+  - `ECPAY_PAYMENT_INFO_URL` (background callback for ATM/CVS/BARCODE issue codes, defaults to `/api/recharge/ecpay/payment-info`)
+  - `ECPAY_CLIENT_REDIRECT_URL` (front-end redirect after code issuance, defaults to `/recharge/payment-info`)
+  - `ECPAY_NEED_EXTRA_PAID_INFO` (`Y` or `N`, defaults to `Y`)
   - `ECPAY_BASE_URL` (optional: base URL used to build defaults; falls back to `http://localhost:3000`)
+- The helper also exposes `getQueryTradeInfoUrl()` for hitting the official QueryTradeInfo endpoint (`/Cashier/QueryTradeInfo/V5`) in either stage or production mode.
 - Do not hardcode credentials in source control. Use `.env.local` for local testing and configure the same keys in production.
 
 ## Cloudflare Pages Deployment
