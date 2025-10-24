@@ -246,9 +246,9 @@ const ensureOrdersTable = async (DB: D1Database) => {
       raw_payment_info TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
-    )`
+    );`
   );
-  await DB.exec(`CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id)`);
+  await DB.exec(`CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id);`);
   ordersTableEnsured = true;
 };
 
