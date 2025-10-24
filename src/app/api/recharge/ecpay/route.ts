@@ -32,7 +32,10 @@ export async function POST(req: Request) {
     const description = read(payload.description) ?? 'Recharge order';
     const itemName = read(payload.itemName) ?? (displayPoints ? `Points ${displayPoints}` : `Recharge ${Math.round(amount)}`);
 
-    const defaultReturnUrl = read(process.env.ECPAY_RETURN_URL) ?? read(payload.returnUrl);
+    const defaultReturnUrl =
+      read(process.env.ECPAY_RETURN_URL) ??
+      read(payload.returnUrl) ??
+      `${fallbackBaseUrl}/api/recharge/ecpay/notify`;
     if (!defaultReturnUrl) {
       return badRequest('ECPAY_RETURN_URL must be configured');
     }
