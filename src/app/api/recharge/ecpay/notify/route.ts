@@ -1,5 +1,8 @@
+import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
-import { verifyCheckMacValue } from '@/lib/ecpay';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { verifyCheckMacValue, getEcpayOrder, markEcpayOrderPaid, markEcpayOrderFailed } from '@/lib/ecpay';
+import { applyRecharge, RechargeError } from '@/lib/recharge';
 
 export const runtime = 'edge';
 
@@ -14,6 +17,11 @@ const parseForm = async (req: Request) => {
   return result;
 };
 
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
+
 export async function POST(req: Request) {
   try {
     const payload = await parseForm(req);
@@ -21,10 +29,69 @@ export async function POST(req: Request) {
       return new Response('0|CheckMacValueError', { status: 400 });
     }
 
-    console.info('[ecpay] payment callback', payload);
+    const merchantTradeNo = payload.MerchantTradeNo;
+    if (!merchantTradeNo) {
+      return new Response('0|MissingTradeNo', { status: 400 });
+    }
 
-    // TODO: persist payment result and update point balance.
+    const { env } = getRequestContext();
+    const bindings = env as Env;
+    const DB = bindings.DB ?? bindings['rudl-app'];
+    if (!DB) {
+      return new Response('0|DBMissing', { status: 500 });
+    }
 
+    const order = await getEcpayOrder(DB, merchantTradeNo);
+    if (!order) {
+      console.warn('[ecpay] notify for unknown order', merchantTradeNo);
+      return new Response('1|OK', { status: 200 });
+    }
+
+    const rtnCode = payload.RtnCode ?? '0';
+    const rtnMsg = payload.RtnMsg ?? '';
+
+    if (rtnCode === '1') {
+      if (order.status !== 'PAID') {
+        try {
+          const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
+          await markEcpayOrderPaid(DB, merchantTradeNo, {
+            rtnCode,
+            rtnMsg,
+            paymentType: payload.PaymentType ?? payload.ChoosePayment,
+            paymentMethod: payload.ChoosePayment ?? payload.PaymentType,
+            tradeNo: payload.TradeNo ?? null,
+            tradeAmt: payload.TradeAmt ?? null,
+            paymentDate: payload.PaymentDate ?? null,
+            raw: payload,
+            ledgerId: recharge.ledgerId,
+            balanceAfter: recharge.balance,
+          });
+          console.info('[ecpay] order settled and balance updated', merchantTradeNo);
+        } catch (error) {
+          if (error instanceof RechargeError) {
+            console.error('[ecpay] recharge error', merchantTradeNo, error.message);
+            return new Response('0|RechargeError', { status: 500 });
+          }
+          console.error('[ecpay] unexpected error during recharge', merchantTradeNo, error);
+          return new Response('0|Exception', { status: 500 });
+        }
+      } else {
+        await markEcpayOrderPaid(DB, merchantTradeNo, {
+          rtnCode,
+          rtnMsg,
+          paymentType: payload.PaymentType ?? payload.ChoosePayment,
+          paymentMethod: payload.ChoosePayment ?? payload.PaymentType,
+          tradeNo: payload.TradeNo ?? null,
+          tradeAmt: payload.TradeAmt ?? null,
+          paymentDate: payload.PaymentDate ?? null,
+          raw: payload,
+        });
+      }
+      return new Response('1|OK', { status: 200 });
+    }
+
+    await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload });
+    console.warn('[ecpay] order failed', merchantTradeNo, rtnCode, rtnMsg);
     return new Response('1|OK', { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

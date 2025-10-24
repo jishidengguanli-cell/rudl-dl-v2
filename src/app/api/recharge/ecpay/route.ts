@@ -1,5 +1,7 @@
+import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
-import { buildCheckoutForm } from '@/lib/ecpay';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { buildCheckoutForm, createEcpayOrder } from '@/lib/ecpay';
 
 export const runtime = 'edge';
 
@@ -7,10 +9,25 @@ const read = (value: unknown) => (typeof value === 'string' && value.trim().leng
 
 const fallbackBaseUrl = read(process.env.ECPAY_BASE_URL) ?? read(process.env.NEXT_PUBLIC_APP_URL) ?? 'http://localhost:3000';
 
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
+
 export async function POST(req: Request) {
   const badRequest = (message: string) => NextResponse.json({ ok: false, error: message }, { status: 400 });
 
   try {
+    const cookieHeader = req.headers.get('cookie') ?? '';
+    const accountId =
+      cookieHeader
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith('uid='))?.split('=')[1] ?? null;
+    if (!accountId) {
+      return NextResponse.json({ ok: false, error: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+
     const payload = await req.json().catch(() => ({})) as Partial<{
       amount: number | string;
       description: string;
@@ -31,6 +48,7 @@ export async function POST(req: Request) {
 
     const description = read(payload.description) ?? 'Recharge order';
     const itemName = read(payload.itemName) ?? (displayPoints ? `Points ${displayPoints}` : `Recharge ${Math.round(amount)}`);
+    const pointsToCredit = displayPoints ?? Math.round(amount);
 
     const defaultReturnUrl =
       read(process.env.ECPAY_RETURN_URL) ??
@@ -55,11 +73,42 @@ export async function POST(req: Request) {
       paymentInfoUrl,
       clientRedirectUrl,
       needExtraPaidInfo,
+      customFields: {
+        CustomField1: accountId,
+        CustomField2: String(pointsToCredit),
+        CustomField3: String(Math.round(amount)),
+      },
+    });
+
+    const merchantTradeNo = formPayload.form.MerchantTradeNo;
+    if (!merchantTradeNo) {
+      return NextResponse.json({ ok: false, error: 'Missing MerchantTradeNo' }, { status: 500 });
+    }
+
+    const { env } = getRequestContext();
+    const bindings = env as Env;
+    const DB = bindings.DB ?? bindings['rudl-app'];
+    if (!DB) {
+      return NextResponse.json({ ok: false, error: 'D1 binding DB is missing' }, { status: 500 });
+    }
+
+    await createEcpayOrder(DB, {
+      merchantTradeNo,
+      accountId,
+      points: pointsToCredit,
+      amount: Math.round(amount),
+      description,
+      itemName,
+      customField1: accountId,
+      customField2: String(pointsToCredit),
+      customField3: String(Math.round(amount)),
     });
 
     return NextResponse.json({
       ok: true,
       ...formPayload,
+      merchantTradeNo,
+      points: pointsToCredit,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

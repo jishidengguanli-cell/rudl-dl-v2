@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { hasUsersBalanceColumn } from '@/lib/schema';
+import { applyRecharge, RechargeError } from '@/lib/recharge';
 
 export const runtime = 'edge';
 
@@ -31,73 +31,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'bad request' }, { status: 400 });
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const lid = crypto.randomUUID();
-
   try {
-    const hasBalance = await hasUsersBalanceColumn(DB);
-    await DB.exec('BEGIN');
-
-    if (hasBalance) {
-      const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
-        .bind(accountId)
-        .first<{ balance: number }>();
-      if (!current) {
-        await DB.exec('ROLLBACK');
-        return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
-      }
-
-      await DB.prepare(
-        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-      )
-        .bind(lid, accountId, n, `recharge:${memo ?? ''}`, now)
-        .run();
-
-      await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
-        .bind(n, accountId)
-        .run();
-
-      await DB.exec('COMMIT');
-
-      const baseBalance = Number(current.balance ?? 0);
-      return NextResponse.json({
-        ok: true,
-        amount: n,
-        balance: baseBalance + n,
-        ledger_id: lid,
-      });
-    }
-
-    const currentLegacy = await DB.prepare('SELECT balance FROM point_accounts WHERE id=? LIMIT 1')
-      .bind(accountId)
-      .first<{ balance: number }>();
-    if (!currentLegacy) {
-      await DB.exec('ROLLBACK');
-      return NextResponse.json({ ok: false, error: 'ACCOUNT_NOT_FOUND' }, { status: 404 });
-    }
-
-    await DB.prepare(
-      `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-    )
-      .bind(lid, accountId, n, `recharge:${memo ?? ''}`, now)
-      .run();
-
-    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
-      .bind(n, now, accountId)
-      .run();
-
-    await DB.exec('COMMIT');
-
+    const { amount, balance, ledgerId } = await applyRecharge(DB, accountId, n, memo ? `recharge:${memo}` : 'recharge');
     return NextResponse.json({
       ok: true,
-      amount: n,
-      balance: Number(currentLegacy.balance ?? 0) + n,
-      ledger_id: lid,
+      amount,
+      balance,
+      ledger_id: ledgerId,
     });
   } catch (error: unknown) {
-    await DB.exec('ROLLBACK');
+    if (error instanceof RechargeError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
