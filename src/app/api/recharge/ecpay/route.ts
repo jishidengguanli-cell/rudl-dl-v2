@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { buildCheckoutForm, createEcpayOrder } from '@/lib/ecpay';
+import { buildCheckoutForm, createEcpayOrder, type EcpayCheckoutParams } from '@/lib/ecpay';
 
 export const runtime = 'edge';
 
