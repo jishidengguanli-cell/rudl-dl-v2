@@ -58,10 +58,17 @@ export async function POST(req: Request) {
       return badRequest('ECPAY_RETURN_URL must be configured');
     }
 
-    const paymentInfoUrl = read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${fallbackBaseUrl}/api/recharge/ecpay/payment-info`;
-    const clientRedirectUrl = read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${fallbackBaseUrl}/recharge/payment-info`;
+    const paymentMethod = 'Credit';
+    const paymentInfoUrl =
+      paymentMethod === 'Credit'
+        ? ''
+        : read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${fallbackBaseUrl}/api/recharge/ecpay/payment-info`;
+    const clientRedirectUrl =
+      paymentMethod === 'Credit'
+        ? ''
+        : read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${fallbackBaseUrl}/recharge/payment-info`;
     const needExtraPaidInfoEnv = read(process.env.ECPAY_NEED_EXTRA_PAID_INFO);
-    const needExtraPaidInfo = needExtraPaidInfoEnv === 'N' ? 'N' : 'Y';
+    const needExtraPaidInfo = paymentMethod === 'Credit' ? 'N' : needExtraPaidInfoEnv === 'N' ? 'N' : 'Y';
 
     const formPayload = await buildCheckoutForm({
       totalAmount: amount,
@@ -70,6 +77,7 @@ export async function POST(req: Request) {
       returnUrl: defaultReturnUrl,
       clientBackUrl: read(process.env.ECPAY_CLIENT_BACK_URL) ?? read(payload.clientBackUrl) ?? `${fallbackBaseUrl}/recharge`,
       orderResultUrl: read(process.env.ECPAY_ORDER_RESULT_URL) ?? read(payload.orderResultUrl) ?? `${fallbackBaseUrl}/recharge/complete`,
+      paymentMethod,
       paymentInfoUrl,
       clientRedirectUrl,
       needExtraPaidInfo,
