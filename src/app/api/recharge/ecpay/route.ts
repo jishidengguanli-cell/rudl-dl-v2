@@ -58,17 +58,13 @@ export async function POST(req: Request) {
       return badRequest('ECPAY_RETURN_URL must be configured');
     }
 
-    const paymentMethod = 'Credit';
+    const paymentMethod = 'BARCODE';
     const paymentInfoUrl =
-      paymentMethod === 'Credit'
-        ? ''
-        : read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${fallbackBaseUrl}/api/recharge/ecpay/payment-info`;
+      read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${fallbackBaseUrl}/api/recharge/ecpay/payment-info`;
     const clientRedirectUrl =
-      paymentMethod === 'Credit'
-        ? ''
-        : read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${fallbackBaseUrl}/recharge/payment-info`;
+      read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${fallbackBaseUrl}/recharge/payment-info`;
     const needExtraPaidInfoEnv = read(process.env.ECPAY_NEED_EXTRA_PAID_INFO);
-    const needExtraPaidInfo = paymentMethod === 'Credit' ? 'N' : needExtraPaidInfoEnv === 'N' ? 'N' : 'Y';
+    const needExtraPaidInfo = needExtraPaidInfoEnv === 'N' ? 'N' : 'Y';
 
     const formPayload = await buildCheckoutForm({
       totalAmount: amount,
