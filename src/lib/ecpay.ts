@@ -219,35 +219,44 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
 
 const ensureOrdersTable = async (DB: D1Database) => {
   if (ordersTableEnsured) return;
-  await DB.exec(
-    `CREATE TABLE IF NOT EXISTS ${ORDERS_TABLE} (
-      merchant_trade_no TEXT PRIMARY KEY,
-      account_id TEXT NOT NULL,
-      points INTEGER NOT NULL,
-      amount INTEGER NOT NULL,
-      currency TEXT NOT NULL,
-      status TEXT NOT NULL,
-      description TEXT,
-      item_name TEXT,
-      custom_field1 TEXT,
-      custom_field2 TEXT,
-      custom_field3 TEXT,
-      rtn_code TEXT,
-      rtn_msg TEXT,
-      payment_type TEXT,
-      payment_method TEXT,
-      trade_no TEXT,
-      trade_amt INTEGER,
-      payment_date TEXT,
-      paid_at INTEGER,
-      ledger_id TEXT,
-      balance_after REAL,
-      raw_notify TEXT,
-      raw_payment_info TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );`
-  );
+  const tableExists = await DB.prepare(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`
+  )
+    .bind(ORDERS_TABLE)
+    .first<{ name: string }>();
+
+  if (!tableExists) {
+    await DB.exec(
+      `CREATE TABLE ${ORDERS_TABLE} (
+        merchant_trade_no TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT NOT NULL,
+        description TEXT,
+        item_name TEXT,
+        custom_field1 TEXT,
+        custom_field2 TEXT,
+        custom_field3 TEXT,
+        rtn_code TEXT,
+        rtn_msg TEXT,
+        payment_type TEXT,
+        payment_method TEXT,
+        trade_no TEXT,
+        trade_amt INTEGER,
+        payment_date TEXT,
+        paid_at INTEGER,
+        ledger_id TEXT,
+        balance_after REAL,
+        raw_notify TEXT,
+        raw_payment_info TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );`
+    );
+  }
+
   await DB.exec(`CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id);`);
   ordersTableEnsured = true;
 };
