@@ -59,10 +59,25 @@ export async function POST(req: Request) {
     }
 
     const paymentMethodEnv = read(process.env.ECPAY_PAYMENT_METHOD)?.toUpperCase();
-    const paymentMethod =
-      paymentMethodEnv && ['ALL', 'CREDIT', 'ATM', 'CVS', 'BARCODE'].includes(paymentMethodEnv)
-        ? paymentMethodEnv
-        : 'CREDIT';
+    let paymentMethod: EcpayCheckoutParams['paymentMethod'];
+    switch (paymentMethodEnv) {
+      case 'ALL':
+        paymentMethod = 'ALL';
+        break;
+      case 'ATM':
+        paymentMethod = 'ATM';
+        break;
+      case 'CVS':
+        paymentMethod = 'CVS';
+        break;
+      case 'BARCODE':
+        paymentMethod = 'BARCODE';
+        break;
+      case 'CREDIT':
+      default:
+        paymentMethod = 'Credit';
+        break;
+    }
     const requiresPaymentInfo = paymentMethod === 'ATM' || paymentMethod === 'CVS' || paymentMethod === 'BARCODE';
     const paymentInfoUrl =
       requiresPaymentInfo
