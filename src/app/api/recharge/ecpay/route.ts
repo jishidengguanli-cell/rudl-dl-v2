@@ -75,7 +75,7 @@ export async function POST(req: Request) {
         break;
       case 'CREDIT':
       default:
-        paymentMethod = 'Credit';
+        paymentMethod = 'ALL';
         break;
     }
     const requiresPaymentInfo = paymentMethod === 'ATM' || paymentMethod === 'CVS' || paymentMethod === 'BARCODE';

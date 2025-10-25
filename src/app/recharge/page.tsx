@@ -3,14 +3,19 @@
 import { useState, useCallback } from 'react';
 import { useI18n } from '@/i18n/provider';
 
+const USD_TO_TWD = 32;
+
 const PACKAGES = [
-  { points: 200, price: 1 },
-  { points: 1000, price: 5 },
-  { points: 5000, price: 15 },
-  { points: 15000, price: 35 },
-  { points: 50000, price: 100 },
-  { points: 100000, price: 200 },
-];
+  { points: 200, priceUsd: 1 },
+  { points: 1000, priceUsd: 5 },
+  { points: 5000, priceUsd: 15 },
+  { points: 15000, priceUsd: 35 },
+  { points: 50000, priceUsd: 100 },
+  { points: 100000, priceUsd: 200 },
+].map((item) => ({
+  ...item,
+  priceTwd: Math.round(item.priceUsd * USD_TO_TWD),
+}));
 
 type CheckoutResponse = {
   ok: boolean;
@@ -41,7 +46,7 @@ export default function RechargePage() {
   const [submittingPoints, setSubmittingPoints] = useState<number | null>(null);
 
   const handleCheckout = useCallback(
-    async (points: number, price: number) => {
+    async (points: number, priceUsd: number, priceTwd: number) => {
       try {
         setSubmittingPoints(points);
         const response = await fetch('/api/recharge/ecpay', {
@@ -50,8 +55,10 @@ export default function RechargePage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            amount: price,
+            amount: priceTwd,
             points,
+            priceUsd,
+            priceTwd,
           }),
         });
 
@@ -79,20 +86,23 @@ export default function RechargePage() {
         <p className="mt-2 text-sm text-gray-600">{t('recharge.selectPackage')}</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {PACKAGES.map((item) => {
-          const isSubmitting = submittingPoints === item.points;
+        {PACKAGES.map(({ points, priceUsd, priceTwd }) => {
+          const isSubmitting = submittingPoints === points;
           return (
             <div
-              key={item.points}
+              key={points}
               className="flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
             >
               <div className="text-sm font-medium text-gray-500">{t('recharge.pointsLabel')}</div>
-              <div className="mt-1 text-2xl font-semibold text-gray-900">{item.points.toLocaleString()}</div>
+              <div className="mt-1 text-2xl font-semibold text-gray-900">{points.toLocaleString()}</div>
               <div className="mt-4 text-sm font-medium text-gray-500">{t('recharge.priceLabel')}</div>
-              <div className="mt-1 text-lg font-semibold">${item.price.toFixed(2)} USD</div>
+              <div className="mt-1 text-lg font-semibold">
+                ${priceUsd.toFixed(2)} USD
+                <span className="ml-2 text-sm text-gray-500">(約 NT${priceTwd.toLocaleString()})</span>
+              </div>
               <button
                 type="button"
-                onClick={() => handleCheckout(item.points, item.price)}
+                onClick={() => handleCheckout(points, priceUsd, priceTwd)}
                 disabled={isSubmitting}
                 className="mt-6 rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80"
               >
