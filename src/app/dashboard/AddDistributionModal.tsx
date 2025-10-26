@@ -295,6 +295,7 @@ async function finalizeDistribution(body: {
   autofill: boolean;
   lang: LangCode;
   uploads: FinalizeUploadPayload[];
+  isActive: boolean;
 }) {
   const res = await fetch('/api/distributions', {
     method: 'POST',
@@ -318,6 +319,7 @@ async function patchDistribution(
     autofill: boolean;
     lang: LangCode;
     uploads: FinalizeUploadPayload[];
+    isActive: boolean;
   }
 ) {
   const res = await fetch(`/api/distributions/${linkId}`, {
@@ -362,6 +364,7 @@ export default function AddDistributionModal({
   const [ipaVersion, setIpaVersion] = useState('');
   const [language, setLanguage] = useState<LangCode>('en');
   const [autofill, setAutofill] = useState(true);
+  const [isActive, setIsActive] = useState(true);
   const [apkState, setApkState] = useState<FileState>({ file: null, metadata: null });
   const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
@@ -439,6 +442,7 @@ export default function AddDistributionModal({
     setIpaVersion(initialLink.ipaVersion ?? '');
     setLanguage(normalizeLanguageCode(initialLink.language));
     setAutofill(true);
+    setIsActive(initialLink.isActive);
     setApkState({ file: null, metadata: null });
     setIpaState({ file: null, metadata: null });
     setSubmitState('idle');
@@ -456,6 +460,13 @@ export default function AddDistributionModal({
 
     lastInitializedId.current = initialLink.id;
   }, [open, isEdit, initialLink]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isEdit) {
+      setIsActive(true);
+    }
+  }, [open, isEdit]);
 
   useEffect(() => {
     if (autofill) {
@@ -775,6 +786,7 @@ export default function AddDistributionModal({
           autofill,
           lang: language,
           uploads: uploadsPayload,
+          isActive,
         });
         if (update.ok) {
           setToast(t('dashboard.toastUpdated'));
@@ -795,6 +807,7 @@ export default function AddDistributionModal({
           autofill,
           lang: language,
           uploads: uploadsPayload,
+          isActive,
         });
 
         if (finalize.ok) {
@@ -942,6 +955,22 @@ export default function AddDistributionModal({
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="flex items-center justify-between rounded border px-3 py-2 text-sm text-gray-700">
+            <span className="font-medium">{t('dashboard.toggleActive')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">
+                {isActive ? t('dashboard.activeOn') : t('dashboard.activeOff')}
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={isActive}
+                onChange={(event) => setIsActive(event.target.checked)}
+                disabled={submitState === 'submitting'}
+              />
+            </div>
           </div>
 
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">

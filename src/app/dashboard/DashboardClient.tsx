@@ -302,7 +302,7 @@ export default function DashboardClient({
                             : 'bg-gray-100 text-gray-500'
                         }`}
                       >
-                        {link.isActive ? 'ON' : 'OFF'}
+                        {link.isActive ? t('dashboard.activeOn') : t('dashboard.activeOff')}
                       </span>
                     </td>
                     <td className="py-2 pr-4">

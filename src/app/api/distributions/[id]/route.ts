@@ -40,6 +40,7 @@ type UpdateBody = {
   autofill: boolean;
   lang: string;
   uploads: UploadInput[];
+  isActive?: boolean;
 };
 
 type JsonOk = { ok: true; linkId?: string; code?: string };
@@ -113,6 +114,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const ipaVersion = (payload.ipaVersion ?? '').trim();
   const autofill = Boolean(payload.autofill);
   const linkLang = normalizeLanguageCode(typeof payload.lang === 'string' ? payload.lang : '');
+  const isActive = typeof payload.isActive === 'boolean' ? payload.isActive : existing.isActive;
 
   const existingFiles = new Map<'apk' | 'ipa', DistributionFile>();
   for (const file of existing.files) {
@@ -182,6 +184,13 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
     if (hasColumn(linksInfo, 'bundle_id')) {
       // ensure the value exists even if empty string
+    }
+
+    if (hasColumn(linksInfo, 'is_active')) {
+      linkUpdates.push([
+        'is_active',
+        isTextColumn(linksInfo, 'is_active') ? (isActive ? '1' : '0') : isActive ? 1 : 0,
+      ]);
     }
 
     const linkColumns = linkUpdates

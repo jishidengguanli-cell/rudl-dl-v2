@@ -32,6 +32,7 @@ type FinalizeBody = {
   autofill: boolean;
   lang: string;
   uploads: UploadInput[];
+  isActive?: boolean;
 };
 
 const DEFAULT_TITLE = 'APP';
@@ -129,6 +130,7 @@ export async function POST(req: Request) {
     autofill,
     lang: langInputRaw,
     uploads: uploadsInput,
+    isActive: isActiveRaw,
   } = payload;
 
   if (!linkId || typeof linkId !== 'string') {
@@ -175,6 +177,7 @@ export async function POST(req: Request) {
   const apkVersionInput = (apkVersionInputRaw ?? '').trim();
   const ipaVersionInput = (ipaVersionInputRaw ?? '').trim();
   const linkLang = normalizeLanguageCode(typeof langInputRaw === 'string' ? langInputRaw : '');
+  const isActiveInput = typeof isActiveRaw === 'boolean' ? isActiveRaw : true;
   const platformString = uploads.map((upload) => upload.platform).join(',');
 
   const derivedTitle =
@@ -220,8 +223,8 @@ export async function POST(req: Request) {
       : undefined;
     const isActiveValue = hasColumn(linksInfo, 'is_active')
       ? isTextColumn(linksInfo, 'is_active')
-        ? '0'
-        : 0
+        ? isActiveInput ? '1' : '0'
+        : isActiveInput ? 1 : 0
       : undefined;
 
     await Promise.all(
@@ -333,7 +336,9 @@ export async function POST(req: Request) {
     const statements: D1PreparedStatement[] = [linkStatement, ...fileStatements];
 
     if (hasColumn(linksInfo, 'is_active')) {
-      const activeValue = isTextColumn(linksInfo, 'is_active') ? '1' : 1;
+      const activeValue = isTextColumn(linksInfo, 'is_active')
+        ? isActiveInput ? '1' : '0'
+        : isActiveInput ? 1 : 0;
       statements.push(
         DB.prepare('UPDATE links SET is_active=? WHERE id=?').bind(activeValue, linkId)
       );

@@ -1,4 +1,4 @@
-import type { LangCode } from '@/lib/language';
+﻿import type { LangCode } from '@/lib/language';
 
 type Dict = Record<string, string>;
 
@@ -35,6 +35,9 @@ const en: Dict = {
   'dashboard.paginationSummary': 'Page {page} of {pages}',
   'dashboard.autofill': 'Autofill from package metadata',
   'dashboard.progressPlaceholder': 'Upload progress will appear here.',
+  'dashboard.toggleActive': 'Distribution status',
+  'dashboard.activeOn': 'Active',
+  'dashboard.activeOff': 'Inactive',
   'dashboard.toastCreated': 'Distribution created successfully.',
   'dashboard.toastUpdated': 'Distribution updated successfully.',
   'dashboard.toastDeleted': 'Distribution deleted.',
@@ -630,6 +633,9 @@ const ru = makeLocaleDict('ru', {
   'dashboard.paginationSummary': 'Страница {page} из {pages}',
   'dashboard.autofill': 'Автозаполнение из метаданных пакета',
   'dashboard.progressPlaceholder': 'Прогресс загрузки появится здесь.',
+  'dashboard.toggleActive': '???????? ???????',
+  'dashboard.activeOn': '????????',
+  'dashboard.activeOff': '??????????',
   'dashboard.toastCreated': 'Дистрибуция создана.',
   'dashboard.toastUpdated': 'Дистрибуция обновлена.',
   'dashboard.toastDeleted': 'Дистрибуция удалена.',
