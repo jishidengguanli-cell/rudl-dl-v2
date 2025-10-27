@@ -37,11 +37,12 @@ const buildRedirectUrl = (entries: Iterable<[string, string]>) => {
 export async function POST(req: Request) {
   const payload = await parseForm(req);
   const redirectUrl = buildRedirectUrl(Object.entries(payload));
-  return NextResponse.redirect(redirectUrl, { status: 302 });
+  // Use 303 so the provider's POST follow-up becomes a GET when landing on our page.
+  return NextResponse.redirect(redirectUrl, { status: 303 });
 }
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const redirectUrl = buildRedirectUrl(url.searchParams.entries());
-  return NextResponse.redirect(redirectUrl, { status: 302 });
+  return NextResponse.redirect(redirectUrl, { status: 303 });
 }
