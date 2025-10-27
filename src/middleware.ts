@@ -29,6 +29,21 @@ const shouldBypass = (pathname: string) =>
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  if (req.method === "POST") {
+    const segments = pathname.split("/").filter(Boolean);
+    const isBaseComplete = segments.length === 2 && segments[0] === "recharge" && segments[1] === "complete";
+    const isLocaleComplete =
+      segments.length === 3 &&
+      segments[1] === "recharge" &&
+      segments[2] === "complete" &&
+      (locales as readonly string[]).includes(segments[0] ?? "");
+
+    if (isBaseComplete || isLocaleComplete) {
+      const url = req.nextUrl.clone();
+      return NextResponse.redirect(url, 303);
+    }
+  }
+
   if (shouldBypass(pathname)) {
     return NextResponse.next();
   }
