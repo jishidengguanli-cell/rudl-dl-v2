@@ -681,7 +681,7 @@ const ru = makeLocaleDict('ru', {
   'recharge.payWithEcpay': 'Оплатить через ECPay',
   'recharge.processingPayment': 'Платеж обрабатывается...',
   'recharge.paymentError': 'Не удалось оплатить. Повторите попытку.',
-  'recharge.contactSupport': 'Онлайн-оплата скоро появится. Свяжитесь с поддержкой для пополнения.'
+  'recharge.contactSupport': 'Онлайн-оплата скоро появится. Свяжитесь с поддержкой для пополнения.',
   'recharge.ecpayUnavailable': 'Оплата через ECPay доступна только на Тайване. Свяжитесь с поддержкой для других вариантов.',
   'admin.overviewTitle': 'Панель администратора',
   'admin.overviewDescription': 'Управляйте пользователями и следите за состоянием системы.',
@@ -865,7 +865,7 @@ const vi = makeLocaleDict('vi', {
   'recharge.payWithEcpay': 'Thanh toán bằng ECPay',
   'recharge.processingPayment': 'Đang xử lý thanh toán...',
   'recharge.paymentError': 'Thanh toán thất bại. Vui lòng thử lại.',
-  'recharge.contactSupport': 'Thanh toán trực tuyến sẽ sớm ra mắt. Vui lòng liên hệ hỗ trợ để nạp.'
+  'recharge.contactSupport': 'Thanh toán trực tuyến sẽ sớm ra mắt. Vui lòng liên hệ hỗ trợ để nạp.',
   'recharge.ecpayUnavailable': 'ECPay chỉ hỗ trợ khách tại Đài Loan. Vui lòng liên hệ hỗ trợ để chọn cách thanh toán khác.',
   'admin.overviewTitle': 'Bảng điều khiển quản trị',
   'admin.overviewDescription': 'Quản lý thành viên và theo dõi hệ thống.',
