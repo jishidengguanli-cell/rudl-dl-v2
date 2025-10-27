@@ -37,8 +37,18 @@ const buildRedirectUrl = (entries: Iterable<[string, string]>) => {
 export async function POST(req: Request) {
   const payload = await parseForm(req);
   const redirectUrl = buildRedirectUrl(Object.entries(payload));
-  // Use 303 so the provider's POST follow-up becomes a GET when landing on our page.
-  return NextResponse.redirect(redirectUrl, { status: 303 });
+  const response = NextResponse.redirect(redirectUrl, { status: 303 });
+  const tradeNo =
+    payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? null;
+  if (tradeNo) {
+    response.cookies.set('ecpay_last_trade', tradeNo, {
+      path: '/',
+      maxAge: 60 * 10, // keep for 10 minutes
+      sameSite: 'lax',
+      httpOnly: false,
+    });
+  }
+  return response;
 }
 
 export async function GET(req: Request) {

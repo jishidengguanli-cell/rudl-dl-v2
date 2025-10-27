@@ -41,17 +41,44 @@ const statusColor = (status: OrderStatus) => {
   }
 };
 
+const readCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') return null;
+  const cookies = document.cookie.split(';').map((part) => part.trim());
+  const target = cookies.find((part) => part.startsWith(`${name}=`));
+  if (!target) return null;
+  return decodeURIComponent(target.split('=')[1] ?? '');
+};
+
+const clearCookie = (name: string) => {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+};
+
 export default function RechargeCompletePage() {
   const searchParams = useSearchParams();
-  const merchantTradeNo =
+  const queryTradeNo =
     searchParams.get('MerchantTradeNo') ?? searchParams.get('merchantTradeNo') ?? searchParams.get('TradeNo') ?? '';
   const initialRtnCode = searchParams.get('RtnCode') ?? '';
   const initialRtnMsg = searchParams.get('RtnMsg') ?? '';
 
+  const [merchantTradeNo, setMerchantTradeNo] = useState<string>(queryTradeNo);
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(Boolean(merchantTradeNo));
+  const [loading, setLoading] = useState<boolean>(Boolean(queryTradeNo));
   const [refreshIndex, setRefreshIndex] = useState(0);
+
+  useEffect(() => {
+    if (queryTradeNo) {
+      setMerchantTradeNo(queryTradeNo);
+      clearCookie('ecpay_last_trade');
+      return;
+    }
+    const cookieTrade = readCookie('ecpay_last_trade');
+    if (cookieTrade) {
+      setMerchantTradeNo(cookieTrade);
+      clearCookie('ecpay_last_trade');
+    }
+  }, [queryTradeNo]);
 
   useEffect(() => {
     if (!merchantTradeNo) return;
@@ -87,6 +114,7 @@ export default function RechargeCompletePage() {
       }
     };
 
+    setOrder(null);
     setLoading(true);
     setError(null);
     fetchStatus();
