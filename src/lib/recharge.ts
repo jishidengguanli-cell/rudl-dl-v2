@@ -26,71 +26,51 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
 
   const now = Math.floor(Date.now() / 1000);
   const ledgerId = crypto.randomUUID();
+  const hasBalanceColumn = await hasUsersBalanceColumn(DB);
 
-  try {
-    const hasBalanceColumn = await hasUsersBalanceColumn(DB);
-    await DB.exec('BEGIN');
-
-    if (hasBalanceColumn) {
-      const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
-        .bind(accountId)
-        .first<{ balance: number }>();
-
-      if (!current) {
-        await DB.exec('ROLLBACK');
-        throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
-      }
-
-      await DB.prepare(
-        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-      )
-        .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
-        .run();
-
-      await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
-        .bind(delta, accountId)
-        .run();
-
-      await DB.exec('COMMIT');
-
-      const baseBalance = Number(current.balance ?? 0);
-      return {
-        amount: delta,
-        balance: baseBalance + delta,
-        ledgerId,
-      };
-    }
-
-    const currentLegacy = await DB.prepare('SELECT balance FROM point_accounts WHERE id=? LIMIT 1')
+  if (hasBalanceColumn) {
+    const current = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
       .bind(accountId)
       .first<{ balance: number }>();
-    if (!currentLegacy) {
-      await DB.exec('ROLLBACK');
+
+    if (!current) {
       throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
     }
 
-    await DB.prepare(
-      `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-    )
-      .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
-      .run();
+    await DB.batch([
+      DB.prepare(
+        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
+      ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
+      DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?').bind(delta, accountId),
+    ]);
 
-    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
-      .bind(delta, now, accountId)
-      .run();
-
-    await DB.exec('COMMIT');
-
+    const baseBalance = Number(current.balance ?? 0);
     return {
       amount: delta,
-      balance: Number(currentLegacy.balance ?? 0) + delta,
+      balance: baseBalance + delta,
       ledgerId,
     };
-  } catch (error) {
-    await DB.exec('ROLLBACK');
-    throw error;
   }
-}
 
+  const currentLegacy = await DB.prepare('SELECT balance FROM point_accounts WHERE id=? LIMIT 1')
+    .bind(accountId)
+    .first<{ balance: number }>();
+  if (!currentLegacy) {
+    throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
+  }
+
+  await DB.batch([
+    DB.prepare(
+      `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
+    ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
+    DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?').bind(delta, now, accountId),
+  ]);
+
+  return {
+    amount: delta,
+    balance: Number(currentLegacy.balance ?? 0) + delta,
+    ledgerId,
+  };
+}
