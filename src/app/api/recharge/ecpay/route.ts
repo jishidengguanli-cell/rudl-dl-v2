@@ -8,6 +8,7 @@ export const runtime = 'edge';
 const read = (value: unknown) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
 
 const fallbackBaseUrl = read(process.env.ECPAY_BASE_URL) ?? read(process.env.NEXT_PUBLIC_APP_URL) ?? 'http://localhost:3000';
+const baseUrl = fallbackBaseUrl.replace(/\/+$/, '');
 
 type Env = {
   DB?: D1Database;
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     const defaultReturnUrl =
       read(process.env.ECPAY_RETURN_URL) ??
       read(payload.returnUrl) ??
-      `${fallbackBaseUrl}/api/recharge/ecpay/notify`;
+      `${baseUrl}/api/recharge/ecpay/notify`;
     if (!defaultReturnUrl) {
       return badRequest('ECPAY_RETURN_URL must be configured');
     }
@@ -81,11 +82,11 @@ export async function POST(req: Request) {
     const requiresPaymentInfo = paymentMethod === 'ATM' || paymentMethod === 'CVS' || paymentMethod === 'BARCODE';
     const paymentInfoUrl =
       requiresPaymentInfo
-        ? read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${fallbackBaseUrl}/api/recharge/ecpay/payment-info`
+        ? read(process.env.ECPAY_PAYMENT_INFO_URL) ?? `${baseUrl}/api/recharge/ecpay/payment-info`
         : '';
     const clientRedirectUrl =
       requiresPaymentInfo
-        ? read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${fallbackBaseUrl}/recharge/payment-info`
+        ? read(process.env.ECPAY_CLIENT_REDIRECT_URL) ?? `${baseUrl}/recharge/payment-info`
         : '';
     const needExtraPaidInfoEnv = read(process.env.ECPAY_NEED_EXTRA_PAID_INFO);
     const needExtraPaidInfo =
@@ -96,8 +97,11 @@ export async function POST(req: Request) {
       description,
       itemName,
       returnUrl: defaultReturnUrl,
-      clientBackUrl: read(process.env.ECPAY_CLIENT_BACK_URL) ?? read(payload.clientBackUrl) ?? `${fallbackBaseUrl}/recharge`,
-      orderResultUrl: read(process.env.ECPAY_ORDER_RESULT_URL) ?? read(payload.orderResultUrl) ?? `${fallbackBaseUrl}/recharge/complete`,
+      clientBackUrl: read(process.env.ECPAY_CLIENT_BACK_URL) ?? read(payload.clientBackUrl) ?? `${baseUrl}/recharge`,
+      orderResultUrl:
+        read(process.env.ECPAY_ORDER_RESULT_URL) ??
+        read(payload.orderResultUrl) ??
+        `${baseUrl}/api/recharge/ecpay/order-result`,
       paymentMethod,
       paymentInfoUrl,
       clientRedirectUrl,
