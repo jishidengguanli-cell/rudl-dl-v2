@@ -72,7 +72,11 @@ export async function POST(req: Request) {
             console.error('[ecpay] recharge error', merchantTradeNo, error.message);
             return new Response('0|RechargeError', { status: 500 });
           }
-          console.error('[ecpay] unexpected error during recharge', merchantTradeNo, error);
+          console.error(
+            '[ecpay] unexpected error during recharge',
+            merchantTradeNo,
+            error instanceof Error ? error.stack ?? error.message : error
+          );
           return new Response('0|Exception', { status: 500 });
         }
       } else {

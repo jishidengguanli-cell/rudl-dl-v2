@@ -37,13 +37,21 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
       throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
     }
 
-    await DB.batch([
-      DB.prepare(
+    try {
+      await DB.prepare(
         `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
          VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-      ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
-      DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?').bind(delta, accountId),
-    ]);
+      )
+        .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
+        .run();
+
+      await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
+        .bind(delta, accountId)
+        .run();
+    } catch (error) {
+      console.error('[recharge] users-table update failed', error);
+      throw error;
+    }
 
     const baseBalance = Number(current.balance ?? 0);
     return {
@@ -60,13 +68,21 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
     throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
   }
 
-  await DB.batch([
-    DB.prepare(
+  try {
+    await DB.prepare(
       `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
        VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-    ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
-    DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?').bind(delta, now, accountId),
-  ]);
+    )
+      .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
+      .run();
+
+    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
+      .bind(delta, now, accountId)
+      .run();
+  } catch (error) {
+    console.error('[recharge] legacy-table update failed', error);
+    throw error;
+  }
 
   return {
     amount: delta,
