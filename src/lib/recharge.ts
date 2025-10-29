@@ -1,5 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { ensurePointTables, hasUsersBalanceColumn } from './schema';
+import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from './schema';
 
 export type RechargeResult = {
   amount: number;
@@ -69,6 +69,8 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
     throw new RechargeError('ACCOUNT_NOT_FOUND', 404);
   }
 
+  const hasUpdatedAt = await hasPointAccountsUpdatedAt(DB);
+
   try {
     await DB.prepare(
       `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
@@ -77,9 +79,15 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
       .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
       .run();
 
-    await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
-      .bind(delta, now, accountId)
-      .run();
+    if (hasUpdatedAt) {
+      await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
+        .bind(delta, now, accountId)
+        .run();
+    } else {
+      await DB.prepare('UPDATE point_accounts SET balance = balance + ? WHERE id=?')
+        .bind(delta, accountId)
+        .run();
+    }
   } catch (error) {
     console.error('[recharge] legacy-table update failed', error);
     throw error;

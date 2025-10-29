@@ -1,6 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
-let flagsStore: { hasUsersBalance?: boolean; pointTablesEnsured?: boolean } | undefined;
+type Flags = {
+  hasUsersBalance?: boolean;
+  pointTablesEnsured?: boolean;
+  pointAccountsHasUpdatedAt?: boolean;
+};
+
+let flagsStore: Flags | undefined;
 
 export async function hasUsersBalanceColumn(DB?: D1Database): Promise<boolean> {
   if (!DB) return false;
@@ -15,6 +21,21 @@ export async function hasUsersBalanceColumn(DB?: D1Database): Promise<boolean> {
     flagsStore.hasUsersBalance = false;
   }
   return flagsStore.hasUsersBalance;
+}
+
+export async function hasPointAccountsUpdatedAt(DB?: D1Database): Promise<boolean> {
+  if (!DB) return false;
+  if (!flagsStore) {
+    flagsStore = {};
+  }
+  if (flagsStore.pointAccountsHasUpdatedAt !== undefined) return flagsStore.pointAccountsHasUpdatedAt;
+  try {
+    await DB.prepare('SELECT updated_at FROM point_accounts LIMIT 1').first();
+    flagsStore.pointAccountsHasUpdatedAt = true;
+  } catch {
+    flagsStore.pointAccountsHasUpdatedAt = false;
+  }
+  return flagsStore.pointAccountsHasUpdatedAt;
 }
 
 export async function ensurePointTables(DB?: D1Database) {
@@ -43,7 +64,7 @@ export async function ensurePointTables(DB?: D1Database) {
     `CREATE TABLE IF NOT EXISTS point_accounts (
       id TEXT PRIMARY KEY,
       balance INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL DEFAULT 0
     );`
   );
 
@@ -57,5 +78,24 @@ export async function ensurePointTables(DB?: D1Database) {
     );`
   );
 
+  // Attempt to backfill legacy schemas that might be missing updated_at.
+  try {
+    await DB.exec('ALTER TABLE point_accounts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
+    if (flagsStore) {
+      flagsStore.pointAccountsHasUpdatedAt = true;
+    }
+  } catch (error) {
+    if (error instanceof Error && /duplicate column name/i.test(error.message)) {
+      // Column already exists, safe to ignore.
+    } else {
+      // Other errors should bubble up so we notice them.
+      throw error;
+    }
+  }
+
   flagsStore.pointTablesEnsured = true;
+  // Force re-check on next call in case we just added the column.
+  if (flagsStore) {
+    flagsStore.pointAccountsHasUpdatedAt = undefined;
+  }
 }

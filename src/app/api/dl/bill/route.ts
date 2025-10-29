@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 
@@ -71,13 +71,20 @@ export async function POST(req: Request) {
         DB.prepare(`UPDATE users SET balance = balance - ? WHERE id=?`).bind(cost, account_id)
       );
     } else {
-      statements.push(
-        DB.prepare(`UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`).bind(
-          cost,
-          now,
-          account_id
-        )
-      );
+      const hasUpdatedAt = await hasPointAccountsUpdatedAt(DB);
+      if (hasUpdatedAt) {
+        statements.push(
+          DB.prepare(`UPDATE point_accounts SET balance = balance - ?, updated_at=? WHERE id=?`).bind(
+            cost,
+            now,
+            account_id
+          )
+        );
+      } else {
+        statements.push(
+          DB.prepare(`UPDATE point_accounts SET balance = balance - ? WHERE id=?`).bind(cost, account_id)
+        );
+      }
     }
 
     statements.push(

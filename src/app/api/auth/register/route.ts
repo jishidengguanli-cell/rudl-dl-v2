@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { encodePasswordRecord, hashPassword, randomSaltHex } from '@/lib/pw';
-import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 // 0
@@ -43,10 +43,18 @@ export async function POST(req: Request) {
       await DB.prepare('INSERT INTO users (id, email, pw_hash, role, created_at) VALUES (?, ?, ?, ?, ?)')
         .bind(id, email, record, 'user', now)
         .run();
-      await DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance, updated_at) VALUES (?, 0, ?)')
-        .bind(id, now)
-        .run()
-        .catch(() => undefined);
+      const hasUpdatedAt = await hasPointAccountsUpdatedAt(DB);
+      if (hasUpdatedAt) {
+        await DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance, updated_at) VALUES (?, 0, ?)')
+          .bind(id, now)
+          .run()
+          .catch(() => undefined);
+      } else {
+        await DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance) VALUES (?, 0)')
+          .bind(id)
+          .run()
+          .catch(() => undefined);
+      }
     }
 
     return NextResponse.json({ ok: true, user_id: id });

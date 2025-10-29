@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import { fetchAdminUser } from '@/lib/admin';
-import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 import { getStatsTableName } from '@/lib/downloads';
 
 export const runtime = 'edge';
@@ -97,6 +97,7 @@ export async function PATCH(request: Request, context: { params: Promise<RoutePa
     }
 
     const hasBalanceColumn = await hasUsersBalanceColumn(DB);
+    const hasLegacyUpdatedAt = hasBalanceColumn ? false : await hasPointAccountsUpdatedAt(DB);
     let currentBalance = 0;
     if (hasBalanceColumn) {
       const balanceRow = await DB.prepare('SELECT balance FROM users WHERE id=? LIMIT 1')
@@ -140,17 +141,31 @@ export async function PATCH(request: Request, context: { params: Promise<RoutePa
       if (hasBalanceColumn) {
         updates.push(DB.prepare('UPDATE users SET balance=? WHERE id=?').bind(workingBalance, memberId).run());
       } else {
-        updates.push(
-          DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance, updated_at) VALUES (?, ?, ?)')
-            .bind(memberId, 0, now)
-            .run()
-            .catch(() => undefined)
-        );
-        updates.push(
-          DB.prepare('UPDATE point_accounts SET balance=?, updated_at=? WHERE id=?')
-            .bind(workingBalance, now, memberId)
-            .run()
-        );
+        if (hasLegacyUpdatedAt) {
+          updates.push(
+            DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance, updated_at) VALUES (?, ?, ?)')
+              .bind(memberId, 0, now)
+              .run()
+              .catch(() => undefined)
+          );
+          updates.push(
+            DB.prepare('UPDATE point_accounts SET balance=?, updated_at=? WHERE id=?')
+              .bind(workingBalance, now, memberId)
+              .run()
+          );
+        } else {
+          updates.push(
+            DB.prepare('INSERT OR IGNORE INTO point_accounts (id, balance) VALUES (?, 0)')
+              .bind(memberId)
+              .run()
+              .catch(() => undefined)
+          );
+          updates.push(
+            DB.prepare('UPDATE point_accounts SET balance=? WHERE id=?')
+              .bind(workingBalance, memberId)
+              .run()
+          );
+        }
       }
     }
 
