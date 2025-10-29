@@ -1,7 +1,7 @@
 ﻿import type { LangCode } from '@/lib/language';
 
 type Dict = Record<string, string>;
-
+// 0
 const en: Dict = {
   'action.download': 'Download',
   'app.name': 'DataruApp',
