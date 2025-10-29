@@ -78,24 +78,5 @@ export async function ensurePointTables(DB?: D1Database) {
     );`
   );
 
-  // Attempt to backfill legacy schemas that might be missing updated_at.
-  try {
-    await DB.exec('ALTER TABLE point_accounts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
-    if (flagsStore) {
-      flagsStore.pointAccountsHasUpdatedAt = true;
-    }
-  } catch (error) {
-    if (error instanceof Error && /duplicate column name/i.test(error.message)) {
-      // Column already exists, safe to ignore.
-    } else {
-      // Other errors should bubble up so we notice them.
-      throw error;
-    }
-  }
-
   flagsStore.pointTablesEnsured = true;
-  // Force re-check on next call in case we just added the column.
-  if (flagsStore) {
-    flagsStore.pointAccountsHasUpdatedAt = undefined;
-  }
 }
