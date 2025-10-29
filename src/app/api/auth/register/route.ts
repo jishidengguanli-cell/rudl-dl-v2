@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { encodePasswordRecord, hashPassword, randomSaltHex } from '@/lib/pw';
-import { hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 // 0
@@ -32,6 +32,7 @@ export async function POST(req: Request) {
     const hash = await hashPassword(password, salt);
     const record = encodePasswordRecord(salt, hash);
     const now = Math.floor(Date.now() / 1000);
+    await ensurePointTables(DB);
     const hasBalance = await hasUsersBalanceColumn(DB);
 
     if (hasBalance) {

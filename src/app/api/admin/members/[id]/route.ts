@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import { fetchAdminUser } from '@/lib/admin';
-import { hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
 import { getStatsTableName } from '@/lib/downloads';
 
 export const runtime = 'edge';
@@ -65,6 +65,8 @@ export async function PATCH(request: Request, context: { params: Promise<RoutePa
   if (!adminUser) {
     return jsonError('FORBIDDEN', 403);
   }
+
+  await ensurePointTables(DB);
 
   let payload: Partial<{
     role: unknown;
@@ -214,6 +216,8 @@ export async function DELETE(request: Request, context: { params: Promise<RouteP
   }
 
   try {
+    await ensurePointTables(DB);
+
     const memberExists = await DB.prepare('SELECT id FROM users WHERE id=? LIMIT 1')
       .bind(memberId)
       .first<{ id: string }>();

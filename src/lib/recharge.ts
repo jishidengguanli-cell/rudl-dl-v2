@@ -1,5 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { hasUsersBalanceColumn } from './schema';
+import { ensurePointTables, hasUsersBalanceColumn } from './schema';
 
 export type RechargeResult = {
   amount: number;
@@ -26,6 +26,7 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
 
   const now = Math.floor(Date.now() / 1000);
   const ledgerId = crypto.randomUUID();
+  await ensurePointTables(DB);
   const hasBalanceColumn = await hasUsersBalanceColumn(DB);
 
   if (hasBalanceColumn) {

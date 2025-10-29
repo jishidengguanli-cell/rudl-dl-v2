@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { hasUsersBalanceColumn } from '@/lib/schema';
+import { ensurePointTables, hasUsersBalanceColumn } from '@/lib/schema';
 
 export const runtime = 'edge';
 
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   const cost = platform === 'ipa' ? 5 : 3;
 
   try {
+    await ensurePointTables(DB);
     const hasBalance = await hasUsersBalanceColumn(DB);
 
     const exists = await DB.prepare(
