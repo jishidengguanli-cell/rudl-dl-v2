@@ -199,8 +199,81 @@ const toInteger = (value: unknown) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const parseEcpayDate = (value: Optional<string>) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const parts = match.slice(1).map(Number);
+  if (parts.some((part) => Number.isNaN(part))) return null;
+  const [year, month, day, hour, minute, second] = parts;
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}.000+08:00`;
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.floor(timestamp / 1000);
+};
+
+const parseRawPayload = (raw: Optional<unknown>): Record<string, string> | null => {
+  if (typeof raw !== 'string' || raw.trim().length === 0) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const result: Record<string, string> = {};
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (value === null || value === undefined) return;
+      result[key] = typeof value === 'string' ? value : String(value);
+    });
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
+};
+
+type NormalizedEcpayPayload = {
+  rtnCode: string | null;
+  rtnMsg: string | null;
+  paymentType: string | null;
+  paymentMethod: string | null;
+  tradeNo: string | null;
+  tradeAmt: number | null;
+  paymentDate: string | null;
+  tradeDate: string | null;
+  merchantTradeDate: string | null;
+};
+
 const mapOrder = (row: OrderRow): EcpayOrder | null => {
   if (!row) return null;
+  const rawNotify = (row.raw_notify as string) ?? null;
+  const rawPaymentInfo = (row.raw_payment_info as string) ?? null;
+  const parsedNotify = parseRawPayload(rawNotify);
+  const normalizedNotify = parsedNotify ? normalizeEcpayPayload(parsedNotify) : null;
+  const resolvedPaymentMethod =
+    (row.payment_method as string) ??
+    normalizedNotify?.paymentMethod ??
+    normalizedNotify?.paymentType ??
+    null;
+  const tradeAmtFromRow =
+    row.trade_amt !== null && row.trade_amt !== undefined ? Number(row.trade_amt) : null;
+  const tradeAmtFromNotify =
+    normalizedNotify && normalizedNotify.tradeAmt !== null ? normalizedNotify.tradeAmt : null;
+  const tradeAmt = tradeAmtFromRow ?? tradeAmtFromNotify;
+  const paymentDateFromRow = (row.payment_date as string) ?? null;
+  const paymentDate = paymentDateFromRow ?? normalizedNotify?.paymentDate ?? null;
+  const createdAtColumn = Number(row.created_at ?? 0);
+  const createdAtFromNotify = normalizedNotify
+    ? parseEcpayDate(normalizedNotify.tradeDate ?? normalizedNotify.paymentDate)
+    : null;
+  const createdAtValue =
+    Number.isFinite(createdAtColumn) && createdAtColumn > 0
+      ? createdAtColumn
+      : createdAtFromNotify ?? 0;
+  const updatedAtColumn = Number(row.updated_at ?? 0);
+  const updatedAtValue = Number.isFinite(updatedAtColumn) ? updatedAtColumn : 0;
+
+  const paidAtFromRow =
+    row.paid_at !== null && row.paid_at !== undefined ? Number(row.paid_at) : null;
+  const paidAtFromNotify = paymentDate ? parseEcpayDate(paymentDate) : null;
+
   return {
     merchantTradeNo: String(row.merchant_trade_no),
     accountId: String(row.account_id),
@@ -213,20 +286,20 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
     customField1: (row.custom_field1 as string) ?? null,
     customField2: (row.custom_field2 as string) ?? null,
     customField3: (row.custom_field3 as string) ?? null,
-    rtnCode: (row.rtn_code as string) ?? null,
-    rtnMsg: (row.rtn_msg as string) ?? null,
-    paymentType: (row.payment_type as string) ?? null,
-    paymentMethod: (row.payment_method as string) ?? null,
-    tradeNo: (row.trade_no as string) ?? null,
-    tradeAmt: row.trade_amt !== null && row.trade_amt !== undefined ? Number(row.trade_amt) : null,
-    paymentDate: (row.payment_date as string) ?? null,
-    paidAt: row.paid_at !== null && row.paid_at !== undefined ? Number(row.paid_at) : null,
+    rtnCode: (row.rtn_code as string) ?? normalizedNotify?.rtnCode ?? null,
+    rtnMsg: (row.rtn_msg as string) ?? normalizedNotify?.rtnMsg ?? null,
+    paymentType: (row.payment_type as string) ?? normalizedNotify?.paymentType ?? null,
+    paymentMethod: resolvedPaymentMethod,
+    tradeNo: (row.trade_no as string) ?? normalizedNotify?.tradeNo ?? null,
+    tradeAmt,
+    paymentDate,
+    paidAt: paidAtFromRow ?? paidAtFromNotify,
     ledgerId: (row.ledger_id as string) ?? null,
     balanceAfter: row.balance_after !== null && row.balance_after !== undefined ? Number(row.balance_after) : null,
-    rawNotify: (row.raw_notify as string) ?? null,
-    rawPaymentInfo: (row.raw_payment_info as string) ?? null,
-    createdAt: Number(row.created_at ?? 0),
-    updatedAt: Number(row.updated_at ?? 0),
+    rawNotify,
+    rawPaymentInfo,
+    createdAt: createdAtValue,
+    updatedAt: updatedAtValue,
   };
 };
 
@@ -334,29 +407,96 @@ export async function getEcpayOrder(DB: D1Database, merchantTradeNo: string): Pr
   return mapOrder(row ?? null);
 }
 
-export async function markEcpayOrderPaymentInfo(DB: D1Database, merchantTradeNo: string, payload: Record<string, string>) {
+const getPayloadValue = (payload: Record<string, string>, key: string): string | null => {
+  const candidates = [key, key.toLowerCase(), key.toUpperCase()];
+  for (const candidate of candidates) {
+    const value = payload[candidate];
+    if (value !== undefined && value !== null && String(value).length > 0) {
+      return String(value);
+    }
+  }
+  return null;
+};
+
+const normalizeEcpayPayload = (payload: Record<string, string>): NormalizedEcpayPayload => {
+  const rtnCode = getPayloadValue(payload, 'RtnCode');
+  const paymentType = getPayloadValue(payload, 'PaymentType');
+  const paymentMethod = getPayloadValue(payload, 'PaymentMethod') ?? getPayloadValue(payload, 'ChoosePayment');
+  const tradeNo = getPayloadValue(payload, 'TradeNo');
+  const tradeAmt = toInteger(getPayloadValue(payload, 'TradeAmt'));
+  const paymentDate = getPayloadValue(payload, 'PaymentDate');
+  const tradeDate = getPayloadValue(payload, 'TradeDate');
+  const merchantTradeDate = getPayloadValue(payload, 'MerchantTradeDate');
+  const rtnMsg = getPayloadValue(payload, 'RtnMsg');
+
+  return {
+    rtnCode,
+    rtnMsg,
+    paymentType,
+    paymentMethod,
+    tradeNo,
+    tradeAmt,
+    paymentDate: paymentDate ?? tradeDate ?? merchantTradeDate ?? null,
+    tradeDate: tradeDate ?? merchantTradeDate ?? null,
+    merchantTradeDate: merchantTradeDate ?? null,
+  };
+};
+
+export async function markEcpayOrderPaymentInfo(
+  DB: D1Database,
+  merchantTradeNo: string,
+  payload: Record<string, string>,
+  source: 'notify' | 'orderResult' = 'notify'
+) {
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
-  const paymentType = payload.PaymentType ?? null;
-  const tradeAmt = toInteger(payload.TradeAmt);
+  const normalized = normalizeEcpayPayload(payload);
+  const paymentMethod = normalized.paymentMethod ?? normalized.paymentType ?? null;
+  const tradeDateTimestamp = parseEcpayDate(normalized.tradeDate ?? normalized.paymentDate);
 
-  await DB.prepare(
-    `UPDATE ${ORDERS_TABLE}
-     SET payment_type = COALESCE(?, payment_type),
-         payment_method = COALESCE(?, payment_method),
-         trade_amt = COALESCE(?, trade_amt),
-         raw_payment_info = ?,
-         updated_at = ?
-     WHERE merchant_trade_no = ?`
-  )
-    .bind(
-      paymentType,
-      payload.ChoosePayment ?? null,
-      tradeAmt,
-      JSON.stringify(payload),
-      now,
-      merchantTradeNo
-    )
+  const assignments: string[] = [];
+  const params: Array<string | number> = [];
+
+  const setField = (column: string, value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return;
+    assignments.push(`${column} = ?`);
+    params.push(value);
+  };
+
+  setField('rtn_code', normalized.rtnCode);
+  setField('rtn_msg', normalized.rtnMsg);
+  setField('payment_type', normalized.paymentType);
+  setField('payment_method', paymentMethod);
+  setField('trade_no', normalized.tradeNo);
+  setField('trade_amt', normalized.tradeAmt);
+  setField('payment_date', normalized.paymentDate);
+
+  if (source === 'notify') {
+    if (normalized.rtnCode) {
+      const nextStatus = normalized.rtnCode === '1' ? 'PAID' : 'FAILED';
+      setField('status', nextStatus);
+    }
+    if (tradeDateTimestamp !== null) {
+      assignments.push('created_at = ?');
+      params.push(tradeDateTimestamp);
+    }
+    assignments.push('raw_notify = ?');
+    params.push(JSON.stringify(payload));
+  } else {
+    assignments.push('raw_payment_info = ?');
+    params.push(JSON.stringify(payload));
+  }
+
+  assignments.push('updated_at = ?');
+  params.push(now);
+
+  if (!assignments.length) return;
+
+  const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
+  params.push(merchantTradeNo);
+
+  await DB.prepare(sql)
+    .bind(...params)
     .run();
 }
 
@@ -376,56 +516,102 @@ type OrderNotifyPayload = {
 export async function markEcpayOrderPaid(DB: D1Database, merchantTradeNo: string, payload: OrderNotifyPayload) {
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
-  const tradeAmt = toInteger(payload.tradeAmt);
+  const normalized = normalizeEcpayPayload(payload.raw);
+  const rtnCode = normalized.rtnCode ?? payload.rtnCode;
+  const rtnMsg = normalized.rtnMsg ?? payload.rtnMsg;
+  const paymentType = normalized.paymentType ?? payload.paymentType ?? null;
+  const paymentMethod = normalized.paymentMethod ?? normalized.paymentType ?? payload.paymentMethod ?? payload.paymentType ?? null;
+  const tradeNo = normalized.tradeNo ?? payload.tradeNo ?? null;
+  const tradeAmt = normalized.tradeAmt ?? toInteger(payload.tradeAmt);
+  const paymentDate = normalized.paymentDate ?? payload.paymentDate ?? null;
+  const paymentDateTimestamp = parseEcpayDate(paymentDate);
+  const tradeDateTimestamp = parseEcpayDate(normalized.tradeDate ?? paymentDate);
 
-  await DB.prepare(
-    `UPDATE ${ORDERS_TABLE}
-     SET status = 'PAID',
-         rtn_code = ?,
-         rtn_msg = ?,
-         payment_type = COALESCE(?, payment_type),
-         payment_method = COALESCE(?, payment_method),
-         trade_no = ?,
-         trade_amt = COALESCE(?, trade_amt),
-         payment_date = COALESCE(?, payment_date),
-         paid_at = COALESCE(paid_at, ?),
-         ledger_id = COALESCE(?, ledger_id),
-         balance_after = COALESCE(?, balance_after),
-         raw_notify = ?,
-         updated_at = ?
-     WHERE merchant_trade_no = ?`
-  )
-    .bind(
-      payload.rtnCode,
-      payload.rtnMsg,
-      payload.paymentType ?? null,
-      payload.paymentMethod ?? null,
-      payload.tradeNo ?? null,
-      tradeAmt,
-      payload.paymentDate ?? null,
-      now,
-      payload.ledgerId ?? null,
-      payload.balanceAfter ?? null,
-      JSON.stringify(payload.raw),
-      now,
-      merchantTradeNo
-    )
+  const assignments: string[] = ['status = ?'];
+  const params: Array<string | number> = ['PAID'];
+
+  const setField = (column: string, value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return;
+    assignments.push(`${column} = ?`);
+    params.push(value);
+  };
+
+  setField('rtn_code', rtnCode);
+  setField('rtn_msg', rtnMsg);
+  setField('payment_type', paymentType);
+  setField('payment_method', paymentMethod);
+  setField('trade_no', tradeNo);
+  setField('trade_amt', tradeAmt);
+  setField('payment_date', paymentDate);
+
+  const paidAtTimestamp = paymentDateTimestamp ?? tradeDateTimestamp ?? now;
+  assignments.push('paid_at = COALESCE(paid_at, ?)');
+  params.push(paidAtTimestamp);
+
+  setField('ledger_id', payload.ledgerId ?? null);
+  if (payload.balanceAfter !== null && payload.balanceAfter !== undefined) {
+    setField('balance_after', payload.balanceAfter);
+  }
+
+  if (tradeDateTimestamp !== null) {
+    assignments.push('created_at = ?');
+    params.push(tradeDateTimestamp);
+  }
+
+  assignments.push('raw_notify = ?');
+  params.push(JSON.stringify(payload.raw));
+
+  assignments.push('updated_at = ?');
+  params.push(now);
+
+  const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
+  params.push(merchantTradeNo);
+
+  await DB.prepare(sql)
+    .bind(...params)
     .run();
 }
 
 export async function markEcpayOrderFailed(DB: D1Database, merchantTradeNo: string, payload: { rtnCode: string; rtnMsg: string; raw: Record<string, string> }) {
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
-  await DB.prepare(
-    `UPDATE ${ORDERS_TABLE}
-     SET status = 'FAILED',
-         rtn_code = ?,
-         rtn_msg = ?,
-         raw_notify = ?,
-         updated_at = ?
-     WHERE merchant_trade_no = ?`
-  )
-    .bind(payload.rtnCode, payload.rtnMsg, JSON.stringify(payload.raw), now, merchantTradeNo)
+  const normalized = normalizeEcpayPayload(payload.raw);
+  const paymentMethod = normalized.paymentMethod ?? normalized.paymentType ?? null;
+  const tradeDateTimestamp = parseEcpayDate(normalized.tradeDate ?? normalized.paymentDate);
+
+  const assignments: string[] = ['status = ?'];
+  const params: Array<string | number> = ['FAILED'];
+
+  const setField = (column: string, value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return;
+    assignments.push(`${column} = ?`);
+    params.push(value);
+  };
+
+  setField('rtn_code', normalized.rtnCode ?? payload.rtnCode);
+  setField('rtn_msg', normalized.rtnMsg ?? payload.rtnMsg);
+  setField('payment_type', normalized.paymentType);
+  setField('payment_method', paymentMethod);
+  setField('trade_no', normalized.tradeNo);
+  setField('trade_amt', normalized.tradeAmt);
+  setField('payment_date', normalized.paymentDate);
+
+  if (tradeDateTimestamp !== null) {
+    assignments.push('created_at = ?');
+    params.push(tradeDateTimestamp);
+  }
+
+  assignments.push('raw_notify = ?');
+  params.push(JSON.stringify(payload.raw));
+
+  assignments.push('updated_at = ?');
+  params.push(now);
+
+  const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
+  params.push(merchantTradeNo);
+
+  await DB.prepare(sql)
+    .bind(...params)
     .run();
 }
 

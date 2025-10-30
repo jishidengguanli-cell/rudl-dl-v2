@@ -64,7 +64,7 @@ const persistPaymentInfo = async (payload: Record<string, string>) => {
   });
 
   try {
-    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, normalized);
+    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, normalized, 'orderResult');
   } catch (error) {
     console.error(
       '[ecpay] order-result record payment info failed',
