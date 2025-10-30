@@ -23,7 +23,7 @@ const parseForm = async (req: Request) => {
   const formData = await req.formData();
   const result: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
-    if (typeof value === 'string' && value.length > 0) {
+    if (typeof value === 'string') {
       result[key] = value;
     }
   }
@@ -80,11 +80,12 @@ export async function POST(req: Request) {
     const merchantTradeNo =
       payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
     console.warn('[ecpay] order-result CheckMacValue mismatch', merchantTradeNo || 'unknown');
-    const errorUrl = new URL(`${baseUrl}/recharge/error`);
+    const errorUrl = new URL(`${baseUrl}/recharge`);
     if (merchantTradeNo) {
       errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
     }
     errorUrl.searchParams.set('error', 'CheckMacValueError');
+    errorUrl.searchParams.set('source', 'order-result');
     return NextResponse.redirect(errorUrl.toString(), { status: 303 });
   }
   await persistPaymentInfo(payload);
