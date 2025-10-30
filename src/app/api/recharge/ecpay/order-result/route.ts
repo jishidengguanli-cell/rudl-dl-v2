@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database } from '@cloudflare/workers-types';
-import { markEcpayOrderPaymentInfo } from '@/lib/ecpay';
+import { markEcpayOrderPaymentInfo, verifyCheckMacValue } from '@/lib/ecpay';
 
 export const runtime = 'edge';
 
@@ -76,6 +76,17 @@ const persistPaymentInfo = async (payload: Record<string, string>) => {
 
 export async function POST(req: Request) {
   const payload = await parseForm(req);
+  if (!(await verifyCheckMacValue(payload))) {
+    const merchantTradeNo =
+      payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
+    console.warn('[ecpay] order-result CheckMacValue mismatch', merchantTradeNo || 'unknown');
+    const errorUrl = new URL(`${baseUrl}/recharge/error`);
+    if (merchantTradeNo) {
+      errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
+    }
+    errorUrl.searchParams.set('error', 'CheckMacValueError');
+    return NextResponse.redirect(errorUrl.toString(), { status: 303 });
+  }
   await persistPaymentInfo(payload);
 
   const redirectUrl = buildRedirectUrl(Object.entries(payload));
