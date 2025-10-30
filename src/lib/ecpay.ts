@@ -428,3 +428,16 @@ export async function markEcpayOrderFailed(DB: D1Database, merchantTradeNo: stri
     .bind(payload.rtnCode, payload.rtnMsg, JSON.stringify(payload.raw), now, merchantTradeNo)
     .run();
 }
+
+export async function recordEcpayRawNotify(DB: D1Database, merchantTradeNo: string, payload: Record<string, string>) {
+  await ensureOrdersTable(DB);
+  const now = Math.floor(Date.now() / 1000);
+  await DB.prepare(
+    `UPDATE ${ORDERS_TABLE}
+     SET raw_notify = ?,
+         updated_at = ?
+     WHERE merchant_trade_no = ?`
+  )
+    .bind(JSON.stringify(payload), now, merchantTradeNo)
+    .run();
+}

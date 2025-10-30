@@ -1,7 +1,13 @@
-import type { D1Database } from '@cloudflare/workers-types';
+﻿import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { verifyCheckMacValue, getEcpayOrder, markEcpayOrderPaid, markEcpayOrderFailed } from '@/lib/ecpay';
+import {
+  verifyCheckMacValue,
+  getEcpayOrder,
+  markEcpayOrderPaid,
+  markEcpayOrderFailed,
+  recordEcpayRawNotify,
+} from '@/lib/ecpay';
 import { applyRecharge, RechargeError } from '@/lib/recharge';
 
 export const runtime = 'edge';
@@ -25,9 +31,6 @@ type Env = {
 export async function POST(req: Request) {
   try {
     const payload = await parseForm(req);
-    if (!(await verifyCheckMacValue(payload))) {
-      return new Response('0|CheckMacValueError', { status: 400 });
-    }
 
     const merchantTradeNo = payload.MerchantTradeNo;
     if (!merchantTradeNo) {
@@ -45,6 +48,16 @@ export async function POST(req: Request) {
     if (!order) {
       console.warn('[ecpay] notify for unknown order', merchantTradeNo);
       return new Response('1|OK', { status: 200 });
+    }
+
+    try {
+      await recordEcpayRawNotify(DB, merchantTradeNo, payload);
+    } catch (error) {
+      console.error('[ecpay] failed to record raw notify', merchantTradeNo, error);
+    }
+
+    if (!(await verifyCheckMacValue(payload))) {
+      return new Response('0|CheckMacValueError', { status: 400 });
     }
 
     const rtnCode = payload.RtnCode ?? '0';

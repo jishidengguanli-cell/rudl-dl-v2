@@ -1,0 +1,45 @@
+*** Begin Patch
+*** Update File: src/app/api/recharge/ecpay/orders/[tradeNo]/route.ts
+@@
+-    const safeOrder = {
+-      merchantTradeNo: order.merchantTradeNo,
+-      status: order.status,
+-      points: order.points,
+-      amount: order.amount,
+-      currency: order.currency,
+-      rtnCode: order.rtnCode,
+-      rtnMsg: order.rtnMsg,
+-      paymentType: order.paymentType,
+-      paymentMethod: order.paymentMethod,
+-      tradeNo: order.tradeNo,
+-      tradeAmt: order.tradeAmt,
+-      paymentDate: order.paymentDate,
+-      paidAt: order.paidAt,
+-      ledgerId: order.ledgerId,
+-      balanceAfter: order.balanceAfter,
+-      createdAt: order.createdAt,
+-      updatedAt: order.updatedAt,
+-      rawPaymentInfo: order.rawPaymentInfo ? JSON.parse(order.rawPaymentInfo) : null,
+-    };
++    const safeOrder = {
++      merchantTradeNo: order.merchantTradeNo,
++      status: order.status,
++      points: order.points,
++      amount: order.amount,
++      currency: order.currency,
++      rtnCode: order.rtnCode,
++      rtnMsg: order.rtnMsg,
++      paymentType: order.paymentType,
++      paymentMethod: order.paymentMethod,
++      tradeNo: order.tradeNo,
++      tradeAmt: order.tradeAmt,
++      paymentDate: order.paymentDate,
++      paidAt: order.paidAt,
++      ledgerId: order.ledgerId,
++      balanceAfter: order.balanceAfter,
++      createdAt: order.createdAt,
++      updatedAt: order.updatedAt,
++      rawPaymentInfo: order.rawPaymentInfo ? JSON.parse(order.rawPaymentInfo) : null,
++      rawNotify: order.rawNotify ? JSON.parse(order.rawNotify) : null,
++    };
+*** End Patch

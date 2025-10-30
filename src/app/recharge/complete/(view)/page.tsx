@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -31,14 +31,8 @@ type ApiResponse = {
 };
 
 const statusColor = (status: OrderStatus) => {
-  switch (status) {
-    case 'PAID':
-      return 'text-emerald-600';
-    case 'FAILED':
-      return 'text-red-600';
-    default:
-      return 'text-amber-600';
-  }
+  if (status === 'FAILED') return 'text-red-600';
+  return 'text-emerald-600';
 };
 
 const readCookie = (name: string): string | null => {
@@ -60,6 +54,14 @@ export default function RechargeCompletePage() {
     searchParams.get('MerchantTradeNo') ?? searchParams.get('merchantTradeNo') ?? searchParams.get('TradeNo') ?? '';
   const initialRtnCode = searchParams.get('RtnCode') ?? '';
   const initialRtnMsg = searchParams.get('RtnMsg') ?? '';
+
+  const redirectInfo = useMemo(() => {
+    const entries: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (value) entries[key] = value;
+    });
+    return entries;
+  }, [searchParams]);
 
   const [merchantTradeNo, setMerchantTradeNo] = useState<string>(queryTradeNo);
   const [order, setOrder] = useState<OrderSummary | null>(null);
@@ -140,16 +142,30 @@ export default function RechargeCompletePage() {
     return null;
   }, [order?.rtnMsg, initialRtnMsg]);
 
+  const gatewaySummary = useMemo(() => {
+    const keys = ['RtnCode', 'RtnMsg', 'PaymentType', 'TradeAmt', 'TradeNo', 'PaymentDate', 'SimulatePaid'];
+    const entries: Array<[string, string]> = [];
+    keys.forEach((key) => {
+      const value = redirectInfo[key] ?? redirectInfo[key.toLowerCase()];
+      if (value) {
+        entries.push([key, value]);
+      }
+    });
+    return entries;
+  }, [redirectInfo]);
+
   const statusLabel = useMemo(() => {
     if (!order) {
-      if (initialRtnCode === '1') return 'Payment successful';
+      if (initialRtnCode === '1') return 'Payment successful (processing)';
       if (initialRtnCode) return 'Payment failed';
       return 'Processing';
     }
-    if (order.status === 'PAID') return 'Payment successful';
     if (order.status === 'FAILED') return 'Payment failed';
-    return 'Processing';
+    if (order.status === 'PAID') return 'Payment successful';
+    return 'Payment successful (processing)';
   }, [order, initialRtnCode]);
+
+  const gatewayPending = order?.status === 'PENDING';
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -170,6 +186,26 @@ export default function RechargeCompletePage() {
               Merchant trade no.: <span className="font-mono">{merchantTradeNo}</span>
             </div>
           </div>
+
+          {gatewayPending && (
+            <p className="mt-2 text-sm text-amber-600">
+              Payment received，綠界尚在確認中，請稍後重新整理或留意後續通知。
+            </p>
+          )}
+
+          {gatewaySummary.length > 0 && (
+            <div className="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-600">
+              <div className="font-medium text-gray-500">Provider response (latest redirect)</div>
+              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                {gatewaySummary.map(([key, value]) => (
+                  <div key={key}>
+                    <dt className="text-xs uppercase tracking-wide text-gray-500">{key}</dt>
+                    <dd className="font-mono text-sm text-gray-900">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {loading && (
             <p className="mt-3 text-sm text-gray-500">Confirming payment status...</p>
