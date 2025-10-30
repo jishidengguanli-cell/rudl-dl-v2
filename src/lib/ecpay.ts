@@ -453,11 +453,13 @@ export async function markEcpayOrderPaymentInfo(
   const normalized = normalizeEcpayPayload(payload);
   const paymentMethod = normalized.paymentMethod ?? normalized.paymentType ?? null;
   const tradeDateTimestamp = parseEcpayDate(normalized.tradeDate ?? normalized.paymentDate);
+  const allowFieldUpdates = source === 'orderResult';
 
   const assignments: string[] = [];
   const params: Array<string | number> = [];
 
   const setField = (column: string, value: string | number | null | undefined) => {
+    if (!allowFieldUpdates) return;
     if (value === null || value === undefined) return;
     assignments.push(`${column} = ?`);
     params.push(value);
@@ -472,17 +474,19 @@ export async function markEcpayOrderPaymentInfo(
   setField('payment_date', normalized.paymentDate);
 
   if (source === 'notify') {
-    if (normalized.rtnCode) {
-      const nextStatus = normalized.rtnCode === '1' ? 'PAID' : 'FAILED';
-      setField('status', nextStatus);
-    }
     if (tradeDateTimestamp !== null) {
-      assignments.push('created_at = ?');
-      params.push(tradeDateTimestamp);
+      if (allowFieldUpdates) {
+        assignments.push('created_at = ?');
+        params.push(tradeDateTimestamp);
+      }
     }
     assignments.push('raw_notify = ?');
     params.push(JSON.stringify(payload));
   } else {
+    if (tradeDateTimestamp !== null) {
+      assignments.push('created_at = ?');
+      params.push(tradeDateTimestamp);
+    }
     assignments.push('raw_payment_info = ?');
     params.push(JSON.stringify(payload));
   }
@@ -513,7 +517,14 @@ type OrderNotifyPayload = {
   balanceAfter?: number | null;
 };
 
-export async function markEcpayOrderPaid(DB: D1Database, merchantTradeNo: string, payload: OrderNotifyPayload) {
+type OrderDataSource = 'notify' | 'orderResult';
+
+export async function markEcpayOrderPaid(
+  DB: D1Database,
+  merchantTradeNo: string,
+  payload: OrderNotifyPayload,
+  source: OrderDataSource = 'notify'
+) {
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
   const normalized = normalizeEcpayPayload(payload.raw);
@@ -558,7 +569,8 @@ export async function markEcpayOrderPaid(DB: D1Database, merchantTradeNo: string
     params.push(tradeDateTimestamp);
   }
 
-  assignments.push('raw_notify = ?');
+  const rawColumn = source === 'orderResult' ? 'raw_payment_info' : 'raw_notify';
+  assignments.push(`${rawColumn} = ?`);
   params.push(JSON.stringify(payload.raw));
 
   assignments.push('updated_at = ?');
@@ -572,7 +584,12 @@ export async function markEcpayOrderPaid(DB: D1Database, merchantTradeNo: string
     .run();
 }
 
-export async function markEcpayOrderFailed(DB: D1Database, merchantTradeNo: string, payload: { rtnCode: string; rtnMsg: string; raw: Record<string, string> }) {
+export async function markEcpayOrderFailed(
+  DB: D1Database,
+  merchantTradeNo: string,
+  payload: { rtnCode: string; rtnMsg: string; raw: Record<string, string> },
+  source: OrderDataSource = 'notify'
+) {
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
   const normalized = normalizeEcpayPayload(payload.raw);
@@ -601,7 +618,8 @@ export async function markEcpayOrderFailed(DB: D1Database, merchantTradeNo: stri
     params.push(tradeDateTimestamp);
   }
 
-  assignments.push('raw_notify = ?');
+  const rawColumn = source === 'orderResult' ? 'raw_payment_info' : 'raw_notify';
+  assignments.push(`${rawColumn} = ?`);
   params.push(JSON.stringify(payload.raw));
 
   assignments.push('updated_at = ?');

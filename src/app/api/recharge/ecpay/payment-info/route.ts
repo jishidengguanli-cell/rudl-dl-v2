@@ -1,7 +1,4 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import { verifyCheckMacValue, markEcpayOrderPaymentInfo } from '@/lib/ecpay';
 
 export const runtime = 'edge';
 
@@ -16,33 +13,16 @@ const parseForm = async (req: Request) => {
   return result;
 };
 
-type Env = {
-  DB?: D1Database;
-  ['rudl-app']?: D1Database;
-};
-
 export async function POST(req: Request) {
   try {
     const payload = await parseForm(req);
-    if (!(await verifyCheckMacValue(payload))) {
-      return new Response('0|CheckMacValueError', { status: 400 });
-    }
 
     const merchantTradeNo = payload.MerchantTradeNo;
     if (!merchantTradeNo) {
       return new Response('0|MissingTradeNo', { status: 400 });
     }
 
-    const { env } = getRequestContext();
-    const bindings = env as Env;
-    const DB = bindings.DB ?? bindings['rudl-app'];
-    if (!DB) {
-      return new Response('0|DBMissing', { status: 500 });
-    }
-
-    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, payload);
-    console.info('[ecpay] payment info stored', merchantTradeNo);
-
+    console.info('[ecpay] payment info callback received (handled by order-result)', merchantTradeNo);
     return new Response('1|OK', { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

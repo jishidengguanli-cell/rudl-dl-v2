@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database } from '@cloudflare/workers-types';
-import { markEcpayOrderPaymentInfo, verifyCheckMacValue } from '@/lib/ecpay';
+import {
+  verifyCheckMacValue,
+  getEcpayOrder,
+  markEcpayOrderPaid,
+  markEcpayOrderFailed,
+} from '@/lib/ecpay';
+import { applyRecharge, RechargeError } from '@/lib/recharge';
 
 export const runtime = 'edge';
 
@@ -56,21 +62,65 @@ const persistPaymentInfo = async (payload: Record<string, string>) => {
   const DB = bindings.DB ?? bindings['rudl-app'];
   if (!DB) return;
 
-  const normalized: Record<string, string> = {};
-  Object.entries(payload).forEach(([key, value]) => {
-    if (typeof value === 'string' && value.length > 0) {
-      normalized[key] = value;
-    }
-  });
+  const order = await getEcpayOrder(DB, merchantTradeNo);
+  if (!order) {
+    console.warn('[ecpay] order-result for unknown order', merchantTradeNo);
+    return;
+  }
 
-  try {
-    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, normalized, 'orderResult');
-  } catch (error) {
-    console.error(
-      '[ecpay] order-result record payment info failed',
-      merchantTradeNo,
-      error instanceof Error ? error.stack ?? error.message : error
-    );
+  const rtnCode = payload.RtnCode ?? payload.rtnCode ?? '0';
+  const rtnMsg = payload.RtnMsg ?? payload.rtnMsg ?? '';
+  const baseMarkPayload = {
+    rtnCode,
+    rtnMsg,
+    paymentType: payload.PaymentType ?? payload.ChoosePayment,
+    paymentMethod: payload.ChoosePayment ?? payload.PaymentType,
+    tradeNo: payload.TradeNo ?? null,
+    tradeAmt: payload.TradeAmt ?? null,
+    paymentDate: payload.PaymentDate ?? null,
+    raw: payload,
+  };
+
+  if (rtnCode === '1') {
+    if (order.status !== 'PAID') {
+      try {
+        const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
+        await markEcpayOrderPaid(DB, merchantTradeNo, { ...baseMarkPayload, ledgerId: recharge.ledgerId, balanceAfter: recharge.balance }, 'orderResult');
+        console.info('[ecpay] order-result settled and balance updated', merchantTradeNo);
+      } catch (error) {
+        if (error instanceof RechargeError) {
+          console.error('[ecpay] order-result recharge error', merchantTradeNo, error.message);
+          throw error;
+        }
+        console.error(
+          '[ecpay] order-result unexpected error during recharge',
+          merchantTradeNo,
+          error instanceof Error ? error.stack ?? error.message : error
+        );
+        throw error;
+      }
+    } else {
+      try {
+        await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
+      } catch (error) {
+        console.error(
+          '[ecpay] order-result mark paid failed',
+          merchantTradeNo,
+          error instanceof Error ? error.stack ?? error.message : error
+        );
+      }
+    }
+  } else {
+    try {
+      await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload }, 'orderResult');
+      console.warn('[ecpay] order-result marked failed', merchantTradeNo, rtnCode, rtnMsg);
+    } catch (error) {
+      console.error(
+        '[ecpay] order-result mark failed error',
+        merchantTradeNo,
+        error instanceof Error ? error.stack ?? error.message : error
+      );
+    }
   }
 };
 
@@ -88,7 +138,28 @@ export async function POST(req: Request) {
     errorUrl.searchParams.set('source', 'order-result');
     return NextResponse.redirect(errorUrl.toString(), { status: 303 });
   }
-  await persistPaymentInfo(payload);
+  try {
+    await persistPaymentInfo(payload);
+  } catch (error) {
+    const merchantTradeNo =
+      payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
+    console.error(
+      '[ecpay] order-result processing failed',
+      merchantTradeNo || 'unknown',
+      error instanceof Error ? error.stack ?? error.message : error
+    );
+    const errorUrl = new URL(`${baseUrl}/recharge`);
+    if (merchantTradeNo) {
+      errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
+    }
+    if (error instanceof RechargeError) {
+      errorUrl.searchParams.set('error', error.message ?? 'RechargeError');
+    } else {
+      errorUrl.searchParams.set('error', 'Exception');
+    }
+    errorUrl.searchParams.set('source', 'order-result');
+    return NextResponse.redirect(errorUrl.toString(), { status: 303 });
+  }
 
   const redirectUrl = buildRedirectUrl(Object.entries(payload));
   const response = NextResponse.redirect(redirectUrl, { status: 303 });
@@ -111,8 +182,32 @@ export async function GET(req: Request) {
   url.searchParams.forEach((value, key) => {
     if (value) paramsPayload[key] = value;
   });
-  await persistPaymentInfo(paramsPayload);
-
-  const redirectUrl = buildRedirectUrl(url.searchParams.entries());
-  return NextResponse.redirect(redirectUrl, { status: 303 });
+  try {
+    await persistPaymentInfo(paramsPayload);
+    const redirectUrl = buildRedirectUrl(url.searchParams.entries());
+    return NextResponse.redirect(redirectUrl, { status: 303 });
+  } catch (error) {
+    const merchantTradeNo =
+      paramsPayload.MerchantTradeNo ??
+      paramsPayload.merchantTradeNo ??
+      paramsPayload.TradeNo ??
+      paramsPayload.tradeNo ??
+      '';
+    console.error(
+      '[ecpay] order-result GET processing failed',
+      merchantTradeNo || 'unknown',
+      error instanceof Error ? error.stack ?? error.message : error
+    );
+    const errorUrl = new URL(`${baseUrl}/recharge`);
+    if (merchantTradeNo) {
+      errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
+    }
+    if (error instanceof RechargeError) {
+      errorUrl.searchParams.set('error', error.message ?? 'RechargeError');
+    } else {
+      errorUrl.searchParams.set('error', 'Exception');
+    }
+    errorUrl.searchParams.set('source', 'order-result');
+    return NextResponse.redirect(errorUrl.toString(), { status: 303 });
+  }
 }
