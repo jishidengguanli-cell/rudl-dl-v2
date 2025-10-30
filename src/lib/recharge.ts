@@ -39,15 +39,23 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
     }
 
     try {
-      await DB.batch([
-        DB.prepare(
-          `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-           VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-        ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
-        DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?').bind(delta, accountId),
-      ]);
+      await DB.prepare(
+        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
+      )
+        .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
+        .run();
     } catch (error) {
-      console.error('[recharge] users-table update failed', error);
+      logDbError('[recharge] insert ledger (users branch) failed', error);
+      throw error;
+    }
+
+    try {
+      await DB.prepare('UPDATE users SET balance = balance + ? WHERE id=?')
+        .bind(delta, accountId)
+        .run();
+    } catch (error) {
+      logDbError('[recharge] update users balance failed', error);
       throw error;
     }
 
@@ -69,19 +77,24 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
   const hasUpdatedAt = await hasPointAccountsUpdatedAt(DB);
 
   try {
-    const updateStmt = hasUpdatedAt
-      ? DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?').bind(delta, now, accountId)
-      : DB.prepare('UPDATE point_accounts SET balance = balance + ? WHERE id=?').bind(delta, accountId);
+    await DB.prepare(
+      `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
+    )
+      .bind(ledgerId, accountId, delta, memo ?? 'recharge', now)
+      .run();
 
-    await DB.batch([
-      DB.prepare(
-        `INSERT INTO point_ledger (id, account_id, delta, reason, link_id, download_id, bucket_minute, platform, created_at)
-         VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`
-      ).bind(ledgerId, accountId, delta, memo ?? 'recharge', now),
-      updateStmt,
-    ]);
+    if (hasUpdatedAt) {
+      await DB.prepare('UPDATE point_accounts SET balance = balance + ?, updated_at=? WHERE id=?')
+        .bind(delta, now, accountId)
+        .run();
+    } else {
+      await DB.prepare('UPDATE point_accounts SET balance = balance + ? WHERE id=?')
+        .bind(delta, accountId)
+        .run();
+    }
   } catch (error) {
-    console.error('[recharge] legacy-table update failed', error);
+    logDbError('[recharge] legacy-table update failed', error);
     throw error;
   }
 
@@ -91,3 +104,15 @@ export async function applyRecharge(DB: D1Database, accountId: string, delta: nu
     ledgerId,
   };
 }
+
+const logDbError = (context: string, error: unknown) => {
+  if (error instanceof Error) {
+    console.error(context, {
+      message: error.message,
+      stack: error.stack,
+      cause: (error as { cause?: unknown }).cause,
+    });
+  } else {
+    console.error(context, error);
+  }
+};
