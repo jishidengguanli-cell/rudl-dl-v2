@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { D1Database } from '@cloudflare/workers-types';
+import { markEcpayOrderPaymentInfo } from '@/lib/ecpay';
+
 export const runtime = 'edge';
+
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
 
 const read = (value: unknown) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
 
@@ -33,8 +42,41 @@ const buildRedirectUrl = (entries: Iterable<[string, string]>) => {
   return target.toString();
 };
 
+const persistPaymentInfo = async (payload: Record<string, string>) => {
+  const merchantTradeNo =
+    payload.MerchantTradeNo ??
+    payload.merchantTradeNo ??
+    payload.TradeNo ??
+    payload.tradeNo ??
+    '';
+  if (!merchantTradeNo) return;
+
+  const { env } = getRequestContext();
+  const bindings = env as Env;
+  const DB = bindings.DB ?? bindings['rudl-app'];
+  if (!DB) return;
+
+  const normalized: Record<string, string> = {};
+  Object.entries(payload).forEach(([key, value]) => {
+    if (typeof value === 'string' && value.length > 0) {
+      normalized[key] = value;
+    }
+  });
+
+  try {
+    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, normalized);
+  } catch (error) {
+    console.error(
+      '[ecpay] order-result record payment info failed',
+      merchantTradeNo,
+      error instanceof Error ? error.stack ?? error.message : error
+    );
+  }
+};
+
 export async function POST(req: Request) {
   const payload = await parseForm(req);
+  await persistPaymentInfo(payload);
 
   const redirectUrl = buildRedirectUrl(Object.entries(payload));
   const response = NextResponse.redirect(redirectUrl, { status: 303 });
@@ -43,7 +85,7 @@ export async function POST(req: Request) {
   if (tradeNo) {
     response.cookies.set('ecpay_last_trade', tradeNo, {
       path: '/',
-      maxAge: 60 * 10, // keep for 10 minutes
+      maxAge: 60 * 10,
       sameSite: 'lax',
       httpOnly: false,
     });
@@ -53,6 +95,12 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const paramsPayload: Record<string, string> = {};
+  url.searchParams.forEach((value, key) => {
+    if (value) paramsPayload[key] = value;
+  });
+  await persistPaymentInfo(paramsPayload);
+
   const redirectUrl = buildRedirectUrl(url.searchParams.entries());
   return NextResponse.redirect(redirectUrl, { status: 303 });
 }
