@@ -90,9 +90,22 @@ export const getQueryTradeInfoUrl = () => (mode === 'production' ? PROD_QUERY_TR
 export const verifyCheckMacValue = async (payload: Record<string, string | number>) => {
   const { hashKey, hashIv } = getCredentials();
   const provided = String(payload.CheckMacValue ?? '');
-  if (!provided) return false;
+  if (!provided) {
+    console.warn('[ecpay] missing CheckMacValue', payload);
+    return false;
+  }
   const expected = await computeCheckMacValue(payload, hashKey, hashIv);
-  return provided.toUpperCase() === expected.toUpperCase();
+  const providedUpper = provided.toUpperCase();
+  const expectedUpper = expected.toUpperCase();
+  if (providedUpper !== expectedUpper) {
+    console.warn('[ecpay] CheckMacValue mismatch', {
+      provided: providedUpper,
+      expected: expectedUpper,
+      payload,
+    });
+    return false;
+  }
+  return true;
 };
 
 const formatTradeDate = (date: Date) =>
