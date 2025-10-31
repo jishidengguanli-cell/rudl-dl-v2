@@ -14,6 +14,9 @@ export const runtime = 'edge';
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
+  ECPAY_MERCHANT_ID?: string;
+  ECPAY_HASH_KEY?: string;
+  ECPAY_HASH_IV?: string;
 };
 
 const read = (value: unknown) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
@@ -48,7 +51,7 @@ const buildRedirectUrl = (entries: Iterable<[string, string]>) => {
   return target.toString();
 };
 
-const persistPaymentInfo = async (payload: Record<string, string>) => {
+const persistPaymentInfo = async (payload: Record<string, string>, envBindings?: Env) => {
   const merchantTradeNo =
     payload.MerchantTradeNo ??
     payload.merchantTradeNo ??
@@ -57,8 +60,7 @@ const persistPaymentInfo = async (payload: Record<string, string>) => {
     '';
   if (!merchantTradeNo) return;
 
-  const { env } = getRequestContext();
-  const bindings = env as Env;
+  const bindings = envBindings ?? (getRequestContext().env as Env);
   const DB = bindings.DB ?? bindings['rudl-app'];
   if (!DB) return;
 
@@ -126,7 +128,20 @@ const persistPaymentInfo = async (payload: Record<string, string>) => {
 
 export async function POST(req: Request) {
   const payload = await parseForm(req);
-  if (!(await verifyCheckMacValue(payload))) {
+  const { env } = getRequestContext();
+  const bindings = env as Env;
+  const credentialsOverride =
+    typeof bindings.ECPAY_HASH_KEY === 'string' &&
+    bindings.ECPAY_HASH_KEY.length > 0 &&
+    typeof bindings.ECPAY_HASH_IV === 'string' &&
+    bindings.ECPAY_HASH_IV.length > 0
+      ? {
+          merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
+          hashKey: bindings.ECPAY_HASH_KEY,
+          hashIv: bindings.ECPAY_HASH_IV,
+        }
+      : undefined;
+  if (!(await verifyCheckMacValue(payload, credentialsOverride))) {
     const merchantTradeNo =
       payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
     console.warn('[ecpay] order-result CheckMacValue mismatch', merchantTradeNo || 'unknown');
@@ -139,7 +154,7 @@ export async function POST(req: Request) {
     return NextResponse.redirect(errorUrl.toString(), { status: 303 });
   }
   try {
-    await persistPaymentInfo(payload);
+    await persistPaymentInfo(payload, bindings);
   } catch (error) {
     const merchantTradeNo =
       payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
@@ -182,8 +197,37 @@ export async function GET(req: Request) {
   url.searchParams.forEach((value, key) => {
     if (value) paramsPayload[key] = value;
   });
+  const { env } = getRequestContext();
+  const bindings = env as Env;
+  const credentialsOverride =
+    typeof bindings.ECPAY_HASH_KEY === 'string' &&
+    bindings.ECPAY_HASH_KEY.length > 0 &&
+    typeof bindings.ECPAY_HASH_IV === 'string' &&
+    bindings.ECPAY_HASH_IV.length > 0
+      ? {
+          merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
+          hashKey: bindings.ECPAY_HASH_KEY,
+          hashIv: bindings.ECPAY_HASH_IV,
+        }
+      : undefined;
+  if (!(await verifyCheckMacValue(paramsPayload, credentialsOverride))) {
+    const merchantTradeNo =
+      paramsPayload.MerchantTradeNo ??
+      paramsPayload.merchantTradeNo ??
+      paramsPayload.TradeNo ??
+      paramsPayload.tradeNo ??
+      '';
+    console.warn('[ecpay] order-result (GET) CheckMacValue mismatch', merchantTradeNo || 'unknown');
+    const errorUrl = new URL(`${baseUrl}/recharge`);
+    if (merchantTradeNo) {
+      errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
+    }
+    errorUrl.searchParams.set('error', 'CheckMacValueError');
+    errorUrl.searchParams.set('source', 'order-result');
+    return NextResponse.redirect(errorUrl.toString(), { status: 303 });
+  }
   try {
-    await persistPaymentInfo(paramsPayload);
+    await persistPaymentInfo(paramsPayload, bindings);
     const redirectUrl = buildRedirectUrl(url.searchParams.entries());
     return NextResponse.redirect(redirectUrl, { status: 303 });
   } catch (error) {

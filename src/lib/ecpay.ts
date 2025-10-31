@@ -33,10 +33,10 @@ type Credentials = {
   hashIv: string;
 };
 
-const getCredentials = (): Credentials => {
-  const merchantId = normalizeEnv(process.env.ECPAY_MERCHANT_ID);
-  const hashKey = normalizeEnv(process.env.ECPAY_HASH_KEY);
-  const hashIv = normalizeEnv(process.env.ECPAY_HASH_IV);
+const getCredentials = (overrides?: Partial<Credentials>): Credentials => {
+  const merchantId = normalizeEnv(overrides?.merchantId ?? process.env.ECPAY_MERCHANT_ID);
+  const hashKey = normalizeEnv(overrides?.hashKey ?? process.env.ECPAY_HASH_KEY);
+  const hashIv = normalizeEnv(overrides?.hashIv ?? process.env.ECPAY_HASH_IV);
 
   if (!merchantId || !hashKey || !hashIv) {
     throw new Error('ECPAY credentials are not configured. Please set ECPAY_MERCHANT_ID, ECPAY_HASH_KEY, and ECPAY_HASH_IV.');
@@ -87,8 +87,11 @@ const computeCheckMacValue = async (payload: Record<string, string | number>, ha
 export const getCashierUrl = () => (mode === 'production' ? PROD_CASHIER_URL : STAGE_CASHIER_URL);
 export const getQueryTradeInfoUrl = () => (mode === 'production' ? PROD_QUERY_TRADE_INFO_URL : STAGE_QUERY_TRADE_INFO_URL);
 
-export const verifyCheckMacValue = async (payload: Record<string, string | number>) => {
-  const { hashKey, hashIv } = getCredentials();
+export const verifyCheckMacValue = async (
+  payload: Record<string, string | number>,
+  credentialsOverride?: Partial<Credentials>
+) => {
+  const { hashKey, hashIv } = getCredentials(credentialsOverride);
   const provided = String(payload.CheckMacValue ?? '');
   if (!provided) {
     console.warn('[ecpay] missing CheckMacValue', payload);
