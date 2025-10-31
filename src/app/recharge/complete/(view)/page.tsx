@@ -22,12 +22,14 @@ type OrderSummary = {
   paidAt: number | null;
   ledgerId: string | null;
   balanceAfter: number | null;
+  rawPaymentInfo: Record<string, string> | null;
+  rawNotify: Record<string, string> | null;
 };
 
 type ApiResponse = {
   ok: boolean;
   error?: string;
-  order?: OrderSummary & { rawPaymentInfo: Record<string, string> | null };
+  order?: OrderSummary;
 };
 
 const statusColor = (status: OrderStatus) => {
@@ -62,6 +64,10 @@ export default function RechargeCompletePage() {
     });
     return entries;
   }, [searchParams]);
+  const redirectEntries = useMemo(
+    () => Object.entries(redirectInfo).sort(([a], [b]) => a.localeCompare(b)),
+    [redirectInfo]
+  );
 
   const [merchantTradeNo, setMerchantTradeNo] = useState<string>(queryTradeNo);
   const [order, setOrder] = useState<OrderSummary | null>(null);
@@ -254,6 +260,58 @@ export default function RechargeCompletePage() {
             <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-600">
               <div className="font-medium text-gray-500">Provider message</div>
               <div>{combinedRtnMsg}</div>
+            </div>
+          )}
+
+          {redirectEntries.length > 0 && (
+            <div className="mt-6">
+              <div className="text-sm font-medium text-gray-500">OrderResultURL payload</div>
+              <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
+                <dl className="grid gap-2 p-4 text-xs sm:grid-cols-2 md:grid-cols-3">
+                  {redirectEntries.map(([key, value]) => (
+                    <div key={`redirect-${key}`} className="space-y-1">
+                      <dt className="font-semibold text-gray-500">{key}</dt>
+                      <dd className="font-mono text-gray-800 break-all">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </div>
+          )}
+
+          {order?.rawPaymentInfo && Object.keys(order.rawPaymentInfo).length > 0 && (
+            <div className="mt-6">
+              <div className="text-sm font-medium text-gray-500">Stored payment info (OrderResultURL)</div>
+              <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
+                <dl className="grid gap-2 p-4 text-xs sm:grid-cols-2 md:grid-cols-3">
+                  {Object.entries(order.rawPaymentInfo)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => (
+                      <div key={`payment-${key}`} className="space-y-1">
+                        <dt className="font-semibold text-gray-500">{key}</dt>
+                        <dd className="font-mono text-gray-800 break-all">{value}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </div>
+            </div>
+          )}
+
+          {order?.rawNotify && Object.keys(order.rawNotify).length > 0 && (
+            <div className="mt-6">
+              <div className="text-sm font-medium text-gray-500">backend notify payload (ReturnURL)</div>
+              <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
+                <dl className="grid gap-2 p-4 text-xs sm:grid-cols-2 md:grid-cols-3">
+                  {Object.entries(order.rawNotify)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => (
+                      <div key={`notify-${key}`} className="space-y-1">
+                        <dt className="font-semibold text-gray-500">{key}</dt>
+                        <dd className="font-mono text-gray-800 break-all">{value}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </div>
             </div>
           )}
         </div>

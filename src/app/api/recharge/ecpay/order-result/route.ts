@@ -6,6 +6,7 @@ import {
   getEcpayOrder,
   markEcpayOrderPaid,
   markEcpayOrderFailed,
+  markEcpayOrderPaymentInfo,
 } from '@/lib/ecpay';
 import { applyRecharge, RechargeError } from '@/lib/recharge';
 
@@ -51,7 +52,19 @@ const buildRedirectUrl = (entries: Iterable<[string, string]>) => {
   return target.toString();
 };
 
-const persistPaymentInfo = async (payload: Record<string, string>, envBindings?: Env) => {
+const resolveCredentialsOverride = (bindings: Env) =>
+  typeof bindings.ECPAY_HASH_KEY === 'string' &&
+  bindings.ECPAY_HASH_KEY.length > 0 &&
+  typeof bindings.ECPAY_HASH_IV === 'string' &&
+  bindings.ECPAY_HASH_IV.length > 0
+    ? {
+        merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
+        hashKey: bindings.ECPAY_HASH_KEY,
+        hashIv: bindings.ECPAY_HASH_IV,
+      }
+    : undefined;
+
+const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env) => {
   const merchantTradeNo =
     payload.MerchantTradeNo ??
     payload.merchantTradeNo ??
@@ -60,7 +73,6 @@ const persistPaymentInfo = async (payload: Record<string, string>, envBindings?:
     '';
   if (!merchantTradeNo) return;
 
-  const bindings = envBindings ?? (getRequestContext().env as Env);
   const DB = bindings.DB ?? bindings['rudl-app'];
   if (!DB) return;
 
@@ -68,6 +80,16 @@ const persistPaymentInfo = async (payload: Record<string, string>, envBindings?:
   if (!order) {
     console.warn('[ecpay] order-result for unknown order', merchantTradeNo);
     return;
+  }
+
+  try {
+    await markEcpayOrderPaymentInfo(DB, merchantTradeNo, payload, 'orderResult');
+  } catch (error) {
+    console.error(
+      '[ecpay] order-result record payment info failed',
+      merchantTradeNo,
+      error instanceof Error ? error.stack ?? error.message : error
+    );
   }
 
   const rtnCode = payload.RtnCode ?? payload.rtnCode ?? '0';
@@ -84,45 +106,34 @@ const persistPaymentInfo = async (payload: Record<string, string>, envBindings?:
   };
 
   if (rtnCode === '1') {
-    if (order.status !== 'PAID') {
-      try {
+    try {
+      if (order.status !== 'PAID') {
         const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
-        await markEcpayOrderPaid(DB, merchantTradeNo, { ...baseMarkPayload, ledgerId: recharge.ledgerId, balanceAfter: recharge.balance }, 'orderResult');
-        console.info('[ecpay] order-result settled and balance updated', merchantTradeNo);
-      } catch (error) {
-        if (error instanceof RechargeError) {
-          console.error('[ecpay] order-result recharge error', merchantTradeNo, error.message);
-          throw error;
-        }
-        console.error(
-          '[ecpay] order-result unexpected error during recharge',
+        await markEcpayOrderPaid(
+          DB,
           merchantTradeNo,
-          error instanceof Error ? error.stack ?? error.message : error
+          { ...baseMarkPayload, ledgerId: recharge.ledgerId, balanceAfter: recharge.balance },
+          'orderResult'
         );
+        console.info('[ecpay] order-result settled and balance updated', merchantTradeNo);
+      } else {
+        await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
+      }
+    } catch (error) {
+      if (error instanceof RechargeError) {
+        console.error('[ecpay] order-result recharge error', merchantTradeNo, error.message);
         throw error;
       }
-    } else {
-      try {
-        await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
-      } catch (error) {
-        console.error(
-          '[ecpay] order-result mark paid failed',
-          merchantTradeNo,
-          error instanceof Error ? error.stack ?? error.message : error
-        );
-      }
-    }
-  } else {
-    try {
-      await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload }, 'orderResult');
-      console.warn('[ecpay] order-result marked failed', merchantTradeNo, rtnCode, rtnMsg);
-    } catch (error) {
       console.error(
-        '[ecpay] order-result mark failed error',
+        '[ecpay] order-result unexpected error during recharge',
         merchantTradeNo,
         error instanceof Error ? error.stack ?? error.message : error
       );
+      throw error;
     }
+  } else {
+    await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload }, 'orderResult');
+    console.warn('[ecpay] order-result marked failed', merchantTradeNo, rtnCode, rtnMsg);
   }
 };
 
@@ -130,17 +141,7 @@ export async function POST(req: Request) {
   const payload = await parseForm(req);
   const { env } = getRequestContext();
   const bindings = env as Env;
-  const credentialsOverride =
-    typeof bindings.ECPAY_HASH_KEY === 'string' &&
-    bindings.ECPAY_HASH_KEY.length > 0 &&
-    typeof bindings.ECPAY_HASH_IV === 'string' &&
-    bindings.ECPAY_HASH_IV.length > 0
-      ? {
-          merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
-          hashKey: bindings.ECPAY_HASH_KEY,
-          hashIv: bindings.ECPAY_HASH_IV,
-        }
-      : undefined;
+  const credentialsOverride = resolveCredentialsOverride(bindings);
   if (!(await verifyCheckMacValue(payload, credentialsOverride))) {
     const merchantTradeNo =
       payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
@@ -199,17 +200,7 @@ export async function GET(req: Request) {
   });
   const { env } = getRequestContext();
   const bindings = env as Env;
-  const credentialsOverride =
-    typeof bindings.ECPAY_HASH_KEY === 'string' &&
-    bindings.ECPAY_HASH_KEY.length > 0 &&
-    typeof bindings.ECPAY_HASH_IV === 'string' &&
-    bindings.ECPAY_HASH_IV.length > 0
-      ? {
-          merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
-          hashKey: bindings.ECPAY_HASH_KEY,
-          hashIv: bindings.ECPAY_HASH_IV,
-        }
-      : undefined;
+  const credentialsOverride = resolveCredentialsOverride(bindings);
   if (!(await verifyCheckMacValue(paramsPayload, credentialsOverride))) {
     const merchantTradeNo =
       paramsPayload.MerchantTradeNo ??

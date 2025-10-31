@@ -1,23 +1,13 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import {
-  verifyCheckMacValue,
-  getEcpayOrder,
-  markEcpayOrderPaid,
-  markEcpayOrderFailed,
-  recordEcpayRawNotify,
-} from '@/lib/ecpay';
-import { applyRecharge, RechargeError } from '@/lib/recharge';
+import type { D1Database } from '@cloudflare/workers-types';
+import { recordEcpayRawNotify } from '@/lib/ecpay';
 
 export const runtime = 'edge';
 
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
-  ECPAY_MERCHANT_ID?: string;
-  ECPAY_HASH_KEY?: string;
-  ECPAY_HASH_IV?: string;
 };
 
 const parseForm = async (req: Request) => {
@@ -34,7 +24,6 @@ const parseForm = async (req: Request) => {
 export async function POST(req: Request) {
   try {
     const payload = await parseForm(req);
-
     const merchantTradeNo = payload.MerchantTradeNo;
     if (!merchantTradeNo) {
       return new Response('0|MissingTradeNo', { status: 400 });
@@ -43,87 +32,14 @@ export async function POST(req: Request) {
     const { env } = getRequestContext();
     const bindings = env as Env;
     const DB = bindings.DB ?? bindings['rudl-app'];
-    if (!DB) {
-      return new Response('0|DBMissing', { status: 500 });
-    }
-
-    try {
-      await recordEcpayRawNotify(DB, merchantTradeNo, payload);
-    } catch (error) {
-      console.error('[ecpay] failed to record raw notify', merchantTradeNo, error);
-    }
-
-    const credentialsOverride =
-      typeof bindings.ECPAY_HASH_KEY === 'string' &&
-      bindings.ECPAY_HASH_KEY.length > 0 &&
-      typeof bindings.ECPAY_HASH_IV === 'string' &&
-      bindings.ECPAY_HASH_IV.length > 0
-        ? {
-            merchantId: typeof bindings.ECPAY_MERCHANT_ID === 'string' ? bindings.ECPAY_MERCHANT_ID : undefined,
-            hashKey: bindings.ECPAY_HASH_KEY,
-            hashIv: bindings.ECPAY_HASH_IV,
-          }
-        : undefined;
-
-    if (!(await verifyCheckMacValue(payload, credentialsOverride))) {
-      return new Response('0|CheckMacValueError', { status: 400 });
-    }
-
-    const order = await getEcpayOrder(DB, merchantTradeNo);
-    if (!order) {
-      console.warn('[ecpay] notify for unknown order', merchantTradeNo);
-      return new Response('1|OK', { status: 200 });
-    }
-
-    const rtnCode = payload.RtnCode ?? '0';
-    const rtnMsg = payload.RtnMsg ?? '';
-
-    if (rtnCode === '1') {
-      if (order.status !== 'PAID') {
-        try {
-          const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
-          await markEcpayOrderPaid(DB, merchantTradeNo, {
-            rtnCode,
-            rtnMsg,
-            paymentType: payload.PaymentType ?? payload.ChoosePayment,
-            paymentMethod: payload.ChoosePayment ?? payload.PaymentType,
-            tradeNo: payload.TradeNo ?? null,
-            tradeAmt: payload.TradeAmt ?? null,
-            paymentDate: payload.PaymentDate ?? null,
-            raw: payload,
-            ledgerId: recharge.ledgerId,
-            balanceAfter: recharge.balance,
-          });
-          console.info('[ecpay] order settled and balance updated', merchantTradeNo);
-        } catch (error) {
-          if (error instanceof RechargeError) {
-            console.error('[ecpay] recharge error', merchantTradeNo, error.message);
-            return new Response('0|RechargeError', { status: 500 });
-          }
-          console.error(
-            '[ecpay] unexpected error during recharge',
-            merchantTradeNo,
-            error instanceof Error ? error.stack ?? error.message : error
-          );
-          return new Response('0|Exception', { status: 500 });
-        }
-      } else {
-        await markEcpayOrderPaid(DB, merchantTradeNo, {
-          rtnCode,
-          rtnMsg,
-          paymentType: payload.PaymentType ?? payload.ChoosePayment,
-          paymentMethod: payload.ChoosePayment ?? payload.PaymentType,
-          tradeNo: payload.TradeNo ?? null,
-          tradeAmt: payload.TradeAmt ?? null,
-          paymentDate: payload.PaymentDate ?? null,
-          raw: payload,
-        });
+    if (DB) {
+      try {
+        await recordEcpayRawNotify(DB, merchantTradeNo, payload);
+      } catch (error) {
+        console.error('[ecpay] failed to record raw notify', merchantTradeNo, error);
       }
-      return new Response('1|OK', { status: 200 });
     }
 
-    await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload });
-    console.warn('[ecpay] order failed', merchantTradeNo, rtnCode, rtnMsg);
     return new Response('1|OK', { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
