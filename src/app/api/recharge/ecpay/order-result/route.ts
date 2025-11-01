@@ -8,7 +8,7 @@ import {
   markEcpayOrderFailed,
   markEcpayOrderPaymentInfo,
 } from '@/lib/ecpay';
-import { applyRecharge, RechargeError } from '@/lib/recharge';
+import { enqueueRechargeTask } from '@/lib/recharge-queue';
 
 export const runtime = 'edge';
 
@@ -130,37 +130,13 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
   };
 
   if (rtnCode === '1') {
-    try {
-      if (order.status !== 'PAID') {
-        logContext('applying-recharge', merchantTradeNo, {
-          accountId: order.accountId,
-          points: order.points,
-        });
-        const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
-        await markEcpayOrderPaid(
-          DB,
-          merchantTradeNo,
-          { ...baseMarkPayload, ledgerId: recharge.ledgerId, balanceAfter: recharge.balance },
-          'orderResult'
-        );
-        logContext('recharge-success', merchantTradeNo, recharge);
-      } else {
-        logContext('order-already-paid', merchantTradeNo);
-        await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
-      }
-    } catch (error) {
-      if (error instanceof RechargeError) {
-        console.error('[ecpay] order-result recharge error', merchantTradeNo, error.message);
-        throw error;
-      }
-      console.error(
-        '[ecpay] order-result unexpected error during recharge',
-        merchantTradeNo,
-        error instanceof Error ? error.stack ?? error.message : error
-      );
-      throw error;
+    if (order.status === 'PAID') {
+      logContext('order-already-paid', merchantTradeNo);
+      await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
+      return;
     }
-    logContext('order-marked-paid', merchantTradeNo);
+    logContext('queue-recharge', merchantTradeNo, { accountId: order.accountId, points: order.points });
+    await enqueueRechargeTask(DB, merchantTradeNo, order.accountId, order.points, baseMarkPayload);
   } else {
     await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload }, 'orderResult');
     console.warn('[ecpay] order-result marked failed', merchantTradeNo, rtnCode, rtnMsg);
@@ -201,11 +177,7 @@ export async function POST(req: Request) {
     if (merchantTradeNo) {
       errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
     }
-    if (error instanceof RechargeError) {
-      errorUrl.searchParams.set('error', error.message ?? 'RechargeError');
-    } else {
-      errorUrl.searchParams.set('error', 'Exception');
-    }
+    errorUrl.searchParams.set('error', 'Exception');
     errorUrl.searchParams.set('source', 'order-result');
     return NextResponse.redirect(errorUrl.toString(), { status: 303 });
   }
@@ -277,11 +249,7 @@ export async function GET(req: Request) {
     if (merchantTradeNo) {
       errorUrl.searchParams.set('merchantTradeNo', merchantTradeNo);
     }
-    if (error instanceof RechargeError) {
-      errorUrl.searchParams.set('error', error.message ?? 'RechargeError');
-    } else {
-      errorUrl.searchParams.set('error', 'Exception');
-    }
+    errorUrl.searchParams.set('error', 'Exception');
     errorUrl.searchParams.set('source', 'order-result');
     return NextResponse.redirect(errorUrl.toString(), { status: 303 });
   }
