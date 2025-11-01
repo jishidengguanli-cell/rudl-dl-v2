@@ -29,6 +29,21 @@ const ensureNoTrailingSlash = (input: string) => input.replace(/\/+$/, '');
 
 const baseUrl = ensureNoTrailingSlash(fallbackBaseUrl);
 
+const logContext = (phase: string, merchantTradeNo: string | null, detail?: unknown) => {
+  const base = `[ecpay] order-result ${phase}`;
+  if (merchantTradeNo) {
+    if (detail !== undefined) {
+      console.info(base, merchantTradeNo, detail);
+    } else {
+      console.info(base, merchantTradeNo);
+    }
+  } else if (detail !== undefined) {
+    console.info(base, detail);
+  } else {
+    console.info(base);
+  }
+};
+
 const parseForm = async (req: Request) => {
   const formData = await req.formData();
   const result: Record<string, string> = {};
@@ -71,10 +86,18 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
     payload.TradeNo ??
     payload.tradeNo ??
     '';
-  if (!merchantTradeNo) return;
+  if (!merchantTradeNo) {
+    logContext('missing-merchantTradeNo', '(unknown)', payload);
+    return;
+  }
+
+  logContext('payload-received', merchantTradeNo, payload);
 
   const DB = bindings.DB ?? bindings['rudl-app'];
-  if (!DB) return;
+  if (!DB) {
+    console.error('[ecpay] order-result missing DB binding', merchantTradeNo);
+    return;
+  }
 
   const order = await getEcpayOrder(DB, merchantTradeNo);
   if (!order) {
@@ -84,6 +107,7 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
 
   try {
     await markEcpayOrderPaymentInfo(DB, merchantTradeNo, payload, 'orderResult');
+    logContext('stored-payment-info', merchantTradeNo);
   } catch (error) {
     console.error(
       '[ecpay] order-result record payment info failed',
@@ -108,6 +132,10 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
   if (rtnCode === '1') {
     try {
       if (order.status !== 'PAID') {
+        logContext('applying-recharge', merchantTradeNo, {
+          accountId: order.accountId,
+          points: order.points,
+        });
         const recharge = await applyRecharge(DB, order.accountId, order.points, `ecpay:${merchantTradeNo}`);
         await markEcpayOrderPaid(
           DB,
@@ -115,8 +143,9 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
           { ...baseMarkPayload, ledgerId: recharge.ledgerId, balanceAfter: recharge.balance },
           'orderResult'
         );
-        console.info('[ecpay] order-result settled and balance updated', merchantTradeNo);
+        logContext('recharge-success', merchantTradeNo, recharge);
       } else {
+        logContext('order-already-paid', merchantTradeNo);
         await markEcpayOrderPaid(DB, merchantTradeNo, baseMarkPayload, 'orderResult');
       }
     } catch (error) {
@@ -131,6 +160,7 @@ const persistPaymentInfo = async (payload: Record<string, string>, bindings: Env
       );
       throw error;
     }
+    logContext('order-marked-paid', merchantTradeNo);
   } else {
     await markEcpayOrderFailed(DB, merchantTradeNo, { rtnCode, rtnMsg, raw: payload }, 'orderResult');
     console.warn('[ecpay] order-result marked failed', merchantTradeNo, rtnCode, rtnMsg);
@@ -156,6 +186,9 @@ export async function POST(req: Request) {
   }
   try {
     await persistPaymentInfo(payload, bindings);
+    const merchantTradeNo =
+      payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
+    logContext('redirecting-success', merchantTradeNo, { status: '303', to: `${baseUrl}/recharge/complete` });
   } catch (error) {
     const merchantTradeNo =
       payload.MerchantTradeNo ?? payload.merchantTradeNo ?? payload.TradeNo ?? payload.tradeNo ?? '';
@@ -220,6 +253,13 @@ export async function GET(req: Request) {
   try {
     await persistPaymentInfo(paramsPayload, bindings);
     const redirectUrl = buildRedirectUrl(url.searchParams.entries());
+    const merchantTradeNo =
+      paramsPayload.MerchantTradeNo ??
+      paramsPayload.merchantTradeNo ??
+      paramsPayload.TradeNo ??
+      paramsPayload.tradeNo ??
+      '';
+    logContext('redirecting-success', merchantTradeNo, { status: '303', to: redirectUrl });
     return NextResponse.redirect(redirectUrl, { status: 303 });
   } catch (error) {
     const merchantTradeNo =
