@@ -19,7 +19,6 @@ type OrderSummary = {
   tradeNo: string | null;
   tradeAmt: number | null;
   paymentDate: string | null;
-  paidAt: number | null;
   ledgerId: string | null;
   balanceAfter: number | null;
   rawPaymentInfo: Record<string, string> | null;

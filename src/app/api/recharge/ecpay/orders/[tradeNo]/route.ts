@@ -54,11 +54,8 @@ export async function GET(req: Request, context: { params: Promise<{ tradeNo: st
       tradeNo: order.tradeNo,
       tradeAmt: order.tradeAmt,
       paymentDate: order.paymentDate,
-      paidAt: order.paidAt,
       ledgerId: order.ledgerId,
       balanceAfter: order.balanceAfter,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
       rawPaymentInfo: order.rawPaymentInfo ? JSON.parse(order.rawPaymentInfo) : null,
       rawNotify: order.rawNotify ? JSON.parse(order.rawNotify) : null,
     };

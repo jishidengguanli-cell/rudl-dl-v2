@@ -33,6 +33,19 @@ type Credentials = {
   hashIv: string;
 };
 
+let ordersTableEnsured = false;
+let ordersTableColumnsChecked = false;
+let ordersTableHasLegacyTimestamps = false;
+
+const detectOrdersTableColumns = async (DB: D1Database) => {
+  if (ordersTableColumnsChecked) return;
+  const result = await DB.prepare(`PRAGMA table_info(${ORDERS_TABLE})`)
+    .all<{ name: string }>();
+  const names = result.results?.map((row) => row.name) ?? [];
+  ordersTableHasLegacyTimestamps = names.includes('created_at') && names.includes('updated_at') && names.includes('paid_at');
+  ordersTableColumnsChecked = true;
+};
+
 const getCredentials = (overrides?: Partial<Credentials>): Credentials => {
   const merchantId = normalizeEnv(overrides?.merchantId ?? process.env.ECPAY_MERCHANT_ID);
   const hashKey = normalizeEnv(overrides?.hashKey ?? process.env.ECPAY_HASH_KEY);
@@ -184,18 +197,13 @@ export type EcpayOrder = {
   tradeNo: string | null;
   tradeAmt: number | null;
   paymentDate: string | null;
-  paidAt: number | null;
   ledgerId: string | null;
   balanceAfter: number | null;
   rawNotify: string | null;
   rawPaymentInfo: string | null;
-  createdAt: number;
-  updatedAt: number;
 };
 
 type OrderRow = Record<string, unknown> | null;
-
-let ordersTableEnsured = false;
 
 const toInteger = (value: unknown) => {
   const n = Number(value);
@@ -262,21 +270,6 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
   const tradeAmt = tradeAmtFromRow ?? tradeAmtFromNotify;
   const paymentDateFromRow = (row.payment_date as string) ?? null;
   const paymentDate = paymentDateFromRow ?? normalizedNotify?.paymentDate ?? null;
-  const createdAtColumn = Number(row.created_at ?? 0);
-  const createdAtFromNotify = normalizedNotify
-    ? parseEcpayDate(normalizedNotify.tradeDate ?? normalizedNotify.paymentDate)
-    : null;
-  const createdAtValue =
-    Number.isFinite(createdAtColumn) && createdAtColumn > 0
-      ? createdAtColumn
-      : createdAtFromNotify ?? 0;
-  const updatedAtColumn = Number(row.updated_at ?? 0);
-  const updatedAtValue = Number.isFinite(updatedAtColumn) ? updatedAtColumn : 0;
-
-  const paidAtFromRow =
-    row.paid_at !== null && row.paid_at !== undefined ? Number(row.paid_at) : null;
-  const paidAtFromNotify = paymentDate ? parseEcpayDate(paymentDate) : null;
-
   return {
     merchantTradeNo: String(row.merchant_trade_no),
     accountId: String(row.account_id),
@@ -296,13 +289,10 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
     tradeNo: (row.trade_no as string) ?? normalizedNotify?.tradeNo ?? null,
     tradeAmt,
     paymentDate,
-    paidAt: paidAtFromRow ?? paidAtFromNotify,
     ledgerId: (row.ledger_id as string) ?? null,
     balanceAfter: row.balance_after !== null && row.balance_after !== undefined ? Number(row.balance_after) : null,
     rawNotify,
     rawPaymentInfo,
-    createdAt: createdAtValue,
-    updatedAt: updatedAtValue,
   };
 };
 
@@ -335,18 +325,16 @@ const ensureOrdersTable = async (DB: D1Database) => {
         trade_no TEXT,
         trade_amt INTEGER,
         payment_date TEXT,
-        paid_at INTEGER,
         ledger_id TEXT,
         balance_after REAL,
         raw_notify TEXT,
-        raw_payment_info TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        raw_payment_info TEXT
       );`
     );
   }
 
   await DB.exec(`CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id);`);
+  await detectOrdersTableColumns(DB);
   ordersTableEnsured = true;
 };
 
@@ -367,38 +355,43 @@ export async function createEcpayOrder(DB: D1Database, params: CreateOrderParams
   await ensureOrdersTable(DB);
   const now = Math.floor(Date.now() / 1000);
 
-  await DB.prepare(
-    `INSERT INTO ${ORDERS_TABLE} (
-      merchant_trade_no,
-      account_id,
-      points,
-      amount,
-      currency,
-      status,
-      description,
-      item_name,
-      custom_field1,
-      custom_field2,
-      custom_field3,
-      created_at,
-      updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      params.merchantTradeNo,
-      params.accountId,
-      Math.round(params.points),
-      Math.round(params.amount),
-      params.currency ?? 'TWD',
-      'PENDING',
-      params.description,
-      params.itemName,
-      params.customField1 ?? null,
-      params.customField2 ?? null,
-      params.customField3 ?? null,
-      now,
-      now
-    )
+  const columns = [
+    'merchant_trade_no',
+    'account_id',
+    'points',
+    'amount',
+    'currency',
+    'status',
+    'description',
+    'item_name',
+    'custom_field1',
+    'custom_field2',
+    'custom_field3',
+  ];
+  const values: Array<string | number | null> = [
+    params.merchantTradeNo,
+    params.accountId,
+    Math.round(params.points),
+    Math.round(params.amount),
+    params.currency ?? 'TWD',
+    'PENDING',
+    params.description,
+    params.itemName,
+    params.customField1 ?? null,
+    params.customField2 ?? null,
+    params.customField3 ?? null,
+  ];
+
+  if (ordersTableHasLegacyTimestamps) {
+    columns.push('created_at', 'updated_at');
+    values.push(now, now);
+  }
+
+  const placeholders = columns.map(() => '?').join(', ');
+  const sql = `INSERT INTO ${ORDERS_TABLE} (${columns.join(', ')}) VALUES (${placeholders})`;
+
+  await DB.prepare(sql)
+    .bind(...values)
     .run();
 }
 
@@ -477,16 +470,14 @@ export async function markEcpayOrderPaymentInfo(
   setField('payment_date', normalized.paymentDate);
 
   if (source === 'notify') {
-    if (tradeDateTimestamp !== null) {
-      if (allowFieldUpdates) {
-        assignments.push('created_at = ?');
-        params.push(tradeDateTimestamp);
-      }
+    if (ordersTableHasLegacyTimestamps && allowFieldUpdates && tradeDateTimestamp !== null) {
+      assignments.push('created_at = ?');
+      params.push(tradeDateTimestamp);
     }
     assignments.push('raw_notify = ?');
     params.push(JSON.stringify(payload));
   } else {
-    if (tradeDateTimestamp !== null) {
+    if (ordersTableHasLegacyTimestamps && tradeDateTimestamp !== null) {
       assignments.push('created_at = ?');
       params.push(tradeDateTimestamp);
     }
@@ -494,8 +485,10 @@ export async function markEcpayOrderPaymentInfo(
     params.push(JSON.stringify(payload));
   }
 
-  assignments.push('updated_at = ?');
-  params.push(now);
+  if (ordersTableHasLegacyTimestamps) {
+    assignments.push('updated_at = ?');
+    params.push(now);
+  }
 
   if (!assignments.length) return;
 
@@ -570,16 +563,18 @@ export async function markEcpayOrderPaid(
   setField('trade_amt', tradeAmt);
   setField('payment_date', paymentDate);
 
-  const paidAtTimestamp = paymentDateTimestamp ?? tradeDateTimestamp ?? now;
-  assignments.push('paid_at = COALESCE(paid_at, ?)');
-  params.push(paidAtTimestamp);
+  if (ordersTableHasLegacyTimestamps) {
+    const paidAtTimestamp = paymentDateTimestamp ?? tradeDateTimestamp ?? now;
+    assignments.push('paid_at = COALESCE(paid_at, ?)');
+    params.push(paidAtTimestamp);
+  }
 
   setField('ledger_id', payload.ledgerId ?? null);
   if (payload.balanceAfter !== null && payload.balanceAfter !== undefined) {
     setField('balance_after', payload.balanceAfter);
   }
 
-  if (tradeDateTimestamp !== null) {
+  if (ordersTableHasLegacyTimestamps && tradeDateTimestamp !== null) {
     assignments.push('created_at = ?');
     params.push(tradeDateTimestamp);
   }
@@ -588,8 +583,10 @@ export async function markEcpayOrderPaid(
   assignments.push(`${rawColumn} = ?`);
   params.push(JSON.stringify(payload.raw));
 
-  assignments.push('updated_at = ?');
-  params.push(now);
+  if (ordersTableHasLegacyTimestamps) {
+    assignments.push('updated_at = ?');
+    params.push(now);
+  }
 
   const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
   params.push(merchantTradeNo);
@@ -628,7 +625,7 @@ export async function markEcpayOrderFailed(
   setField('trade_amt', normalized.tradeAmt);
   setField('payment_date', normalized.paymentDate);
 
-  if (tradeDateTimestamp !== null) {
+  if (ordersTableHasLegacyTimestamps && tradeDateTimestamp !== null) {
     assignments.push('created_at = ?');
     params.push(tradeDateTimestamp);
   }
@@ -637,8 +634,10 @@ export async function markEcpayOrderFailed(
   assignments.push(`${rawColumn} = ?`);
   params.push(JSON.stringify(payload.raw));
 
-  assignments.push('updated_at = ?');
-  params.push(now);
+  if (ordersTableHasLegacyTimestamps) {
+    assignments.push('updated_at = ?');
+    params.push(now);
+  }
 
   const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
   params.push(merchantTradeNo);
@@ -650,13 +649,11 @@ export async function markEcpayOrderFailed(
 
 export async function recordEcpayRawNotify(DB: D1Database, merchantTradeNo: string, payload: Record<string, string>) {
   await ensureOrdersTable(DB);
-  const now = Math.floor(Date.now() / 1000);
   await DB.prepare(
     `UPDATE ${ORDERS_TABLE}
-     SET raw_notify = ?,
-         updated_at = ?
+     SET raw_notify = ?
      WHERE merchant_trade_no = ?`
   )
-    .bind(JSON.stringify(payload), now, merchantTradeNo)
+    .bind(JSON.stringify(payload), merchantTradeNo)
     .run();
 }
