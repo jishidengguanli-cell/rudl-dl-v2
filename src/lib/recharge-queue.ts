@@ -23,9 +23,11 @@ type QueueTask = {
   attempts: number;
 };
 
-const pendingTasks = new Map<string, QueueTask>();
+const pendingTasks = new Map<string, boolean>();
 
-const getDelay = (attempt: number) => Math.min(1000 * 2 ** attempt, 60_000);
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const getDelay = (attempt: number) => Math.min(200 * 2 ** attempt, 5_000);
+const MAX_ATTEMPTS = 6;
 
 const processTask = async (task: QueueTask) => {
   try {
@@ -53,14 +55,25 @@ const processTask = async (task: QueueTask) => {
       return;
     }
 
+    if (task.attempts >= MAX_ATTEMPTS) {
+      console.error('[recharge-queue] exhausted retries', {
+        merchantTradeNo: task.merchantTradeNo,
+        attempts: task.attempts,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      pendingTasks.delete(task.merchantTradeNo);
+      throw error;
+    }
+
     const delay = getDelay(task.attempts);
-    console.warn('[recharge-queue] retry scheduled', {
+    console.warn('[recharge-queue] retrying', {
       merchantTradeNo: task.merchantTradeNo,
       attempts: task.attempts,
       delay,
       error: error instanceof Error ? error.message : String(error),
     });
-    setTimeout(() => processTask(task), delay);
+    await wait(delay);
+    await processTask(task);
   }
 };
 
@@ -71,9 +84,12 @@ export const enqueueRechargeTask = async (
   points: number,
   payload: BaseMarkPayload
 ) => {
-  if (pendingTasks.has(merchantTradeNo)) return;
-  const task: QueueTask = { merchantTradeNo, accountId, points, payload, DB, attempts: 0 };
-  pendingTasks.set(merchantTradeNo, task);
+  if (pendingTasks.get(merchantTradeNo)) return;
+  pendingTasks.set(merchantTradeNo, true);
   console.info('[recharge-queue] task enqueued', { merchantTradeNo });
-  setTimeout(() => processTask(task), 0);
+  try {
+    await processTask({ merchantTradeNo, accountId, points, payload, DB, attempts: 0 });
+  } finally {
+    pendingTasks.delete(merchantTradeNo);
+  }
 };
