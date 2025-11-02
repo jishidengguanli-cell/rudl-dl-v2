@@ -507,9 +507,15 @@ export async function markEcpayOrderPaymentInfo(
     .run();
 
   const changes = (result as { meta?: { changes?: number } })?.meta?.changes ?? 0;
-  console.info('[ecpay] mark paid result', { merchantTradeNo, changes, success: (result as { success?: boolean }).success });
+  console.info('[ecpay] mark paid result', {
+    merchantTradeNo,
+    changes,
+    success: (result as { success?: boolean }).success,
+    params,
+    sql,
+  });
   if (!changes) {
-    console.warn('[ecpay] mark paid did not update any row', { merchantTradeNo });
+    console.warn('[ecpay] mark paid did not update any row', { merchantTradeNo, params, sql });
   }
 }
 
