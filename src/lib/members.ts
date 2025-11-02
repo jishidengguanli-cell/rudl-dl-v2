@@ -35,7 +35,7 @@ const toEpochSeconds = (value: unknown): number => {
   return 0;
 };
 
-export async function fetchMembers(DB: D1Database): Promise<MemberRecord[]> {
+const buildSelectColumns = async (DB: D1Database) => {
   const usersInfo = await getTableInfo(DB, 'users');
   const selectColumns = [
     'id',
@@ -44,7 +44,25 @@ export async function fetchMembers(DB: D1Database): Promise<MemberRecord[]> {
     hasColumn(usersInfo, 'balance') ? 'balance' : null,
     hasColumn(usersInfo, 'created_at') ? 'created_at' : null,
   ].filter((column): column is string => Boolean(column));
+  return { selectColumns, usersInfo };
+};
 
+const mapMemberRow = (row: Record<string, unknown>): MemberRecord => {
+  const emailValue = 'email' in row ? (row as Record<string, unknown>).email : null;
+  const roleValue = 'role' in row ? (row as Record<string, unknown>).role : null;
+  const balanceValue = 'balance' in row ? (row as Record<string, unknown>).balance : null;
+  const createdAtValue = 'created_at' in row ? (row as Record<string, unknown>).created_at : null;
+  return {
+    id: toStringOrNull(row.id) ?? '',
+    email: toStringOrNull(emailValue),
+    role: toStringOrNull(roleValue),
+    balance: toNumberOrNull(balanceValue),
+    createdAt: toEpochSeconds(createdAtValue),
+  };
+};
+
+export async function fetchMembers(DB: D1Database): Promise<MemberRecord[]> {
+  const { selectColumns, usersInfo } = await buildSelectColumns(DB);
   if (!selectColumns.includes('id')) return [];
 
   const orderParts: string[] = [];
@@ -55,11 +73,16 @@ export async function fetchMembers(DB: D1Database): Promise<MemberRecord[]> {
   const result = await DB.prepare(query).all();
   const rows = (result.results as Record<string, unknown>[] | undefined) ?? [];
 
-  return rows.map((row) => ({
-    id: toStringOrNull(row.id) ?? '',
-    email: toStringOrNull(row.email),
-    role: toStringOrNull(row.role),
-    balance: toNumberOrNull(row.balance),
-    createdAt: toEpochSeconds((row as Record<string, unknown>).created_at),
-  }));
+  return rows.map((row) => mapMemberRow(row as Record<string, unknown>));
+}
+
+export async function fetchMemberById(DB: D1Database, memberId: string): Promise<MemberRecord | null> {
+  const { selectColumns } = await buildSelectColumns(DB);
+  if (!selectColumns.includes('id')) return null;
+  const query = `SELECT ${selectColumns.join(', ')} FROM users WHERE id=? LIMIT 1`;
+  const row = await DB.prepare(query)
+    .bind(memberId)
+    .first<Record<string, unknown>>();
+  if (!row) return null;
+  return mapMemberRow(row);
 }

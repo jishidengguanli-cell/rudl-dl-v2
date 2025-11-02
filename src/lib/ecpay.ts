@@ -201,6 +201,9 @@ export type EcpayOrder = {
   balanceAfter: number | null;
   rawNotify: string | null;
   rawPaymentInfo: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  paidAt: number | null;
 };
 
 type OrderRow = Record<string, unknown> | null;
@@ -208,6 +211,17 @@ type OrderRow = Record<string, unknown> | null;
 const toInteger = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+};
+
+const toTimestamp = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+  }
+  return null;
 };
 
 const parseEcpayDate = (value: Optional<string>) => {
@@ -270,6 +284,12 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
   const tradeAmt = tradeAmtFromRow ?? tradeAmtFromNotify;
   const paymentDateFromRow = (row.payment_date as string) ?? null;
   const paymentDate = paymentDateFromRow ?? normalizedNotify?.paymentDate ?? null;
+  const createdAt =
+    row && typeof row === 'object' && 'created_at' in row ? toTimestamp((row as Record<string, unknown>).created_at) : null;
+  const updatedAt =
+    row && typeof row === 'object' && 'updated_at' in row ? toTimestamp((row as Record<string, unknown>).updated_at) : null;
+  const paidAt =
+    row && typeof row === 'object' && 'paid_at' in row ? toTimestamp((row as Record<string, unknown>).paid_at) : null;
   return {
     merchantTradeNo: String(row.merchant_trade_no),
     accountId: String(row.account_id),
@@ -293,6 +313,9 @@ const mapOrder = (row: OrderRow): EcpayOrder | null => {
     balanceAfter: row.balance_after !== null && row.balance_after !== undefined ? Number(row.balance_after) : null,
     rawNotify,
     rawPaymentInfo,
+    createdAt,
+    updatedAt,
+    paidAt,
   };
 };
 
@@ -401,6 +424,18 @@ export async function getEcpayOrder(DB: D1Database, merchantTradeNo: string): Pr
     .bind(merchantTradeNo)
     .first<Record<string, unknown>>();
   return mapOrder(row ?? null);
+}
+
+export async function listEcpayOrdersForAccount(DB: D1Database, accountId: string): Promise<EcpayOrder[]> {
+  await ensureOrdersTable(DB);
+  const orderBy = ordersTableHasLegacyTimestamps ? 'created_at DESC' : 'rowid DESC';
+  const result = await DB.prepare(`SELECT * FROM ${ORDERS_TABLE} WHERE account_id=? ORDER BY ${orderBy}`)
+    .bind(accountId)
+    .all<Record<string, unknown>>();
+  const rows = (result.results as OrderRow[] | undefined) ?? [];
+  return rows
+    .map((row) => mapOrder(row))
+    .filter((order): order is EcpayOrder => order !== null);
 }
 
 const getPayloadValue = (payload: Record<string, string>, key: string): string | null => {

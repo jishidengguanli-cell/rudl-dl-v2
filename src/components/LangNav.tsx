@@ -74,7 +74,6 @@ export default function LangNav() {
 
   const localePrefix = `/${locale}`;
   const accountLabel = session?.email ?? session?.id ?? null;
-  const isAdmin = (session?.role ?? '').toLowerCase() === 'admin';
 
   const handleLogout = async () => {
     try {
@@ -111,9 +110,9 @@ export default function LangNav() {
         <Link className="underline" href={resolveHref('/dashboard')}>
           {t('nav.dashboard')}
         </Link>
-        {isAdmin ? (
-          <Link className="underline" href={resolveHref('/admin')}>
-            {t('nav.admin')}
+        {session ? (
+          <Link className="underline" href={resolveHref('/member')}>
+            {t('nav.member')}
           </Link>
         ) : null}
         {sessionLoaded && !session ? (
