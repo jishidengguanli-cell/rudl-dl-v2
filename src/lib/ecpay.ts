@@ -502,9 +502,15 @@ export async function markEcpayOrderPaymentInfo(
   const sql = `UPDATE ${ORDERS_TABLE} SET ${assignments.join(', ')} WHERE merchant_trade_no = ?`;
   params.push(merchantTradeNo);
 
-  await DB.prepare(sql)
+  const result = await DB.prepare(sql)
     .bind(...params)
     .run();
+
+  const changes = (result as { meta?: { changes?: number } })?.meta?.changes ?? 0;
+  console.info('[ecpay] mark paid result', { merchantTradeNo, changes, success: (result as { success?: boolean }).success });
+  if (!changes) {
+    console.warn('[ecpay] mark paid did not update any row', { merchantTradeNo });
+  }
 }
 
 type OrderNotifyPayload = {
