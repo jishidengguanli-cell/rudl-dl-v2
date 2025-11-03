@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/i18n/provider';
 
 type OrderStatus = 'PENDING' | 'PAID' | 'FAILED';
 
@@ -49,6 +50,8 @@ const clearCookie = (name: string) => {
 
 export default function RechargeCompletePage() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const { t, locale } = useI18n();
   const queryTradeNo =
     searchParams.get('MerchantTradeNo') ?? searchParams.get('merchantTradeNo') ?? searchParams.get('TradeNo') ?? '';
   const initialRtnCode = searchParams.get('RtnCode') ?? '';
@@ -66,6 +69,13 @@ export default function RechargeCompletePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(queryTradeNo));
   const [refreshIndex, setRefreshIndex] = useState(0);
+  const dashboardHref = useMemo(() => {
+    const segments = pathname?.split('/').filter(Boolean) ?? [];
+    if (segments[0] === locale) {
+      return `/${locale}/dashboard`;
+    }
+    return '/dashboard';
+  }, [locale, pathname]);
 
   useEffect(() => {
     if (queryTradeNo) {
@@ -154,46 +164,46 @@ export default function RechargeCompletePage() {
 
   const statusLabel = useMemo(() => {
     if (!order) {
-      if (initialRtnCode === '1') return 'Payment successful (processing)';
-      if (initialRtnCode) return 'Payment failed';
-      return 'Processing';
+      if (initialRtnCode === '1') return t('recharge.complete.status.successProcessing');
+      if (initialRtnCode) return t('recharge.complete.status.failed');
+      return t('recharge.complete.status.processing');
     }
-    if (order.status === 'FAILED') return 'Payment failed';
-    if (order.status === 'PAID') return 'Payment successful';
-    return 'Payment successful (processing)';
-  }, [order, initialRtnCode]);
+    if (order.status === 'FAILED') return t('recharge.complete.status.failed');
+    if (order.status === 'PAID') return t('recharge.complete.status.success');
+    return t('recharge.complete.status.successProcessing');
+  }, [order, initialRtnCode, t]);
 
   const gatewayPending = order?.status === 'PENDING';
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Payment Result</h1>
-        <p className="mt-1 text-sm text-gray-600">You can review the transaction status below.</p>
+        <h1 className="text-2xl font-semibold">{t('recharge.complete.title')}</h1>
+        <p className="mt-1 text-sm text-gray-600">{t('recharge.complete.subtitle')}</p>
       </div>
 
       {!merchantTradeNo ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Missing payment reference. Please check your order history.
+          {t('recharge.complete.missingRef')}
         </div>
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div className={`text-lg font-semibold ${statusColor(order?.status ?? 'PENDING')}`}>{statusLabel}</div>
             <div className="text-sm text-gray-500">
-              Merchant trade no.: <span className="font-mono">{merchantTradeNo}</span>
+              {t('member.orders.table.tradeNo')}: <span className="font-mono">{merchantTradeNo}</span>
             </div>
           </div>
 
           {gatewayPending && (
             <p className="mt-2 text-sm text-amber-600">
-              Payment received，綠界尚在確認中，請稍後重新整理或留意後續通知。
+              {t('recharge.complete.gatewayPending')}
             </p>
           )}
 
           {gatewaySummary.length > 0 && (
             <div className="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-600">
-              <div className="font-medium text-gray-500">Provider response (latest redirect)</div>
+              <div className="font-medium text-gray-500">{t('recharge.complete.gatewayHeading')}</div>
               <dl className="mt-2 grid gap-2 sm:grid-cols-2">
                 {gatewaySummary.map(([key, value]) => (
                   <div key={key}>
@@ -206,42 +216,42 @@ export default function RechargeCompletePage() {
           )}
 
           {loading && (
-            <p className="mt-3 text-sm text-gray-500">Confirming payment status...</p>
+            <p className="mt-3 text-sm text-gray-500">{t('recharge.complete.loading')}</p>
           )}
 
           {error && (
             <p className="mt-3 text-sm text-red-600">
-              Error: {error}
+              {t('recharge.complete.errorPrefix')} {error}
             </p>
           )}
 
           {order && (
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="font-medium text-gray-500">Points credited</dt>
+                <dt className="font-medium text-gray-500">{t('recharge.complete.points')}</dt>
                 <dd className="font-semibold text-gray-900">{order.points.toLocaleString()}</dd>
               </div>
               <div>
-                <dt className="font-medium text-gray-500">Amount paid</dt>
+                <dt className="font-medium text-gray-500">{t('recharge.complete.amount')}</dt>
                 <dd className="font-semibold text-gray-900">
                   {order.amount.toLocaleString()} {order.currency}
                 </dd>
               </div>
               {order.balanceAfter !== null && (
                 <div>
-                  <dt className="font-medium text-gray-500">New balance</dt>
+                  <dt className="font-medium text-gray-500">{t('recharge.complete.balance')}</dt>
                   <dd className="font-semibold text-gray-900">{order.balanceAfter.toLocaleString()}</dd>
                 </div>
               )}
               {order.paymentType && (
                 <div>
-                  <dt className="font-medium text-gray-500">Payment method</dt>
+                  <dt className="font-medium text-gray-500">{t('recharge.complete.method')}</dt>
                   <dd className="font-semibold text-gray-900">{order.paymentType}</dd>
                 </div>
               )}
               {order.paymentDate && (
                 <div>
-                  <dt className="font-medium text-gray-500">Payment time</dt>
+                  <dt className="font-medium text-gray-500">{t('recharge.complete.time')}</dt>
                   <dd className="font-semibold text-gray-900">{order.paymentDate}</dd>
                 </div>
               )}
@@ -250,7 +260,7 @@ export default function RechargeCompletePage() {
 
           {combinedRtnMsg && (
             <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-600">
-              <div className="font-medium text-gray-500">Provider message</div>
+              <div className="font-medium text-gray-500">{t('recharge.complete.providerMessage')}</div>
               <div>{combinedRtnMsg}</div>
             </div>
           )}
@@ -260,10 +270,10 @@ export default function RechargeCompletePage() {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Link
-          href="/recharge"
+          href={dashboardHref}
           className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700"
         >
-          {'<'} Back to recharge
+          {t('recharge.complete.back')}
         </Link>
         {merchantTradeNo && (
           <button
@@ -274,7 +284,7 @@ export default function RechargeCompletePage() {
             }}
             className="inline-flex items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Refresh status
+            {t('recharge.complete.refresh')}
           </button>
         )}
       </div>
