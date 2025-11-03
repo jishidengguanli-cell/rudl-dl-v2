@@ -110,5 +110,6 @@
   "dashboard.linkInfo.rangeTooLarge": "时间范围过大，请缩小范围。",
   "dashboard.linkInfo.totalDownloads": "范围内下载总数",
   "dashboard.linkInfo.table.time": "时间",
-  "dashboard.linkInfo.table.selected": "已选 {count} 条数据"
+  "dashboard.linkInfo.table.selected": "已选 {count} 条数据",
+  "dashboard.linkInfo.minuteDisabled": "目前暂未提供分钟级的统计数据。"
 }

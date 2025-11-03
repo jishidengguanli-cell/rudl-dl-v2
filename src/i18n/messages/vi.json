@@ -110,5 +110,6 @@
   "dashboard.linkInfo.rangeTooLarge": "Khoảng thời gian quá lớn, vui lòng thu hẹp lại.",
   "dashboard.linkInfo.totalDownloads": "Tổng lượt tải trong khoảng",
   "dashboard.linkInfo.table.time": "Thời điểm",
-  "dashboard.linkInfo.table.selected": "Đã chọn {count} mốc dữ liệu"
+  "dashboard.linkInfo.table.selected": "Đã chọn {count} mốc dữ liệu",
+  "dashboard.linkInfo.minuteDisabled": "Chưa hỗ trợ thống kê theo phút."
 }

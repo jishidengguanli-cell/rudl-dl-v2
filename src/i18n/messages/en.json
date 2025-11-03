@@ -110,5 +110,6 @@
   "dashboard.linkInfo.rangeTooLarge": "The selected range is too large. Please narrow it down.",
   "dashboard.linkInfo.totalDownloads": "Downloads in range",
   "dashboard.linkInfo.table.time": "Timestamp",
-  "dashboard.linkInfo.table.selected": "{count} data points selected"
+  "dashboard.linkInfo.table.selected": "{count} data points selected",
+  "dashboard.linkInfo.minuteDisabled": "Minute-level stats are not yet available."
 }

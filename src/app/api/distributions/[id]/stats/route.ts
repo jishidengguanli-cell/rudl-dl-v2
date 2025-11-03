@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database } from '@cloudflare/workers-types';
 import { fetchDistributionById } from '@/lib/distribution';
+import { getStatsTableName } from '@/lib/downloads';
 
 export const runtime = 'edge';
 
@@ -31,6 +32,10 @@ const clampInterval = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return Math.min(240, Math.max(1, Math.floor(value)));
 };
+
+const startOfDayUTC = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+const formatDayKey = (date: Date) => startOfDayUTC(date).toISOString().slice(0, 10);
 
 const alignTimestamp = (ms: number, frequency: Frequency, minuteInterval: number) => {
   const date = new Date(ms);
@@ -151,11 +156,11 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     return jsonError('INVALID_RANGE', 400);
   }
 
-  const startBucketMinute = Math.floor(fromDate.getTime() / 60000);
-  const endBucketMinute = Math.floor(toDate.getTime() / 60000);
+  const alignedFromDay = startOfDayUTC(fromDate);
+  const alignedToDay = startOfDayUTC(toDate);
 
-  const alignedStart = alignTimestamp(startBucketMinute * 60000, frequency, minuteInterval);
-  const alignedEnd = alignTimestamp(endBucketMinute * 60000, frequency, minuteInterval);
+  const alignedStart = alignTimestamp(alignedFromDay.getTime(), frequency, minuteInterval);
+  const alignedEnd = alignTimestamp(alignedToDay.getTime(), frequency, minuteInterval);
 
   const bucketTimes: number[] = [];
   let cursor = alignedStart;
@@ -170,19 +175,16 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     bucketTimes.push(alignedStart);
   }
 
-  type Row = { bucket_minute: number | string; platform: string | null; count: number | string | null };
-  let rows: Row[] = [];
+  const statsTable = getStatsTableName(linkId);
+  type StatsRow = { date: string; apk_dl: number | string | null; ipa_dl: number | string | null };
+  let rows: StatsRow[] = [];
   try {
     const result = await DB.prepare(
-      `SELECT bucket_minute, platform, COUNT(*) as count
-       FROM point_ledger
-       WHERE link_id=? AND reason='download' AND bucket_minute BETWEEN ? AND ?
-       GROUP BY bucket_minute, platform
-       ORDER BY bucket_minute ASC`
+      `SELECT date, apk_dl, ipa_dl FROM "${statsTable}" WHERE date BETWEEN ? AND ? ORDER BY date ASC`
     )
-      .bind(linkId, startBucketMinute, endBucketMinute)
-      .all<Row>();
-    rows = (result.results as Row[] | undefined) ?? [];
+      .bind(formatDayKey(alignedFromDay), formatDayKey(alignedToDay))
+      .all<StatsRow>();
+    rows = (result?.results as StatsRow[] | undefined) ?? [];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/no such table/i.test(message)) {
@@ -191,20 +193,23 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     rows = [];
   }
 
+  const toNumber = (value: number | string | null | undefined) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+
   const bucketMap = new Map<number, { apk: number; ipa: number }>();
   for (const row of rows) {
-    const minuteValue = Number(row.bucket_minute ?? 0);
-    if (!Number.isFinite(minuteValue)) continue;
-    const platform = (row.platform ?? '').toLowerCase() === 'ipa' ? 'ipa' : 'apk';
-    const count = Number(row.count ?? 0);
-    if (!Number.isFinite(count)) continue;
-    const bucketKey = alignTimestamp(minuteValue * 60000, frequency, minuteInterval);
+    const dateValue = row.date ? new Date(`${row.date}T00:00:00Z`).getTime() : NaN;
+    if (!Number.isFinite(dateValue)) continue;
+    const bucketKey = alignTimestamp(dateValue, frequency, minuteInterval);
     const entry = bucketMap.get(bucketKey) ?? { apk: 0, ipa: 0 };
-    if (platform === 'ipa') {
-      entry.ipa += count;
-    } else {
-      entry.apk += count;
-    }
+    entry.apk += toNumber(row.apk_dl);
+    entry.ipa += toNumber(row.ipa_dl);
     bucketMap.set(bucketKey, entry);
   }
 

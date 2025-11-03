@@ -110,5 +110,6 @@
   "dashboard.linkInfo.rangeTooLarge": "Слишком большой диапазон. Уточните параметры.",
   "dashboard.linkInfo.totalDownloads": "Загрузки за период",
   "dashboard.linkInfo.table.time": "Время",
-  "dashboard.linkInfo.table.selected": "Выбрано точек: {count}"
+  "dashboard.linkInfo.table.selected": "Выбрано точек: {count}",
+  "dashboard.linkInfo.minuteDisabled": "Статистика по минутам пока недоступна."
 }

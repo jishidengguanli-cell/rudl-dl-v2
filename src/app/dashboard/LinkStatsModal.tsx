@@ -327,6 +327,8 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
     [t],
   );
 
+  const isMinuteFrequency = frequency === 'minute';
+
   const activeSeries: LineChartSeries[] = useMemo(
     () =>
       PLATFORM_ORDER.filter((key) => selectedPlatforms.includes(key)).map((key) => ({
@@ -470,6 +472,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
                   value={minuteInterval}
                   onChange={(event) => setMinuteInterval(Number(event.target.value) || 1)}
                   className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  disabled
                 />
               </div>
             ) : null}
@@ -511,10 +514,14 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
               type="button"
               onClick={fetchStats}
               className="inline-flex items-center justify-center rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={loading}
+              disabled={loading || isMinuteFrequency}
+              title={isMinuteFrequency ? t('dashboard.linkInfo.minuteDisabled') : undefined}
             >
               {loading ? t('status.loading') : t('dashboard.linkInfo.apply')}
             </button>
+            {isMinuteFrequency ? (
+              <p className="text-xs text-gray-500">{t('dashboard.linkInfo.minuteDisabled')}</p>
+            ) : null}
           </div>
         </div>
 
