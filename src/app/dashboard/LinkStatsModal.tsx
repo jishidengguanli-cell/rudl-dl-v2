@@ -27,6 +27,7 @@ type StatsResponse =
   | { ok: false; error: string };
 
 const FREQUENCY_OPTIONS: Frequency[] = ['day', 'hour', 'minute', 'month', 'year'];
+const DISABLED_FREQUENCIES = new Set<Frequency>(['hour', 'minute']);
 
 const CHART_COLORS: Record<'apk' | 'ipa' | 'total', string> = {
   apk: '#0ea5e9',
@@ -442,21 +443,34 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
 
           <div className="flex flex-col gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="stats-frequency">
-                {t('dashboard.linkInfo.frequency')}
-              </label>
-              <select
-                id="stats-frequency"
-                className="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                value={frequency}
-                onChange={(event) => setFrequency(event.target.value as Frequency)}
-              >
-                {FREQUENCY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {frequencyLabels[option]}
-                  </option>
-                ))}
-              </select>
+      <label className="block text-sm font-medium text-gray-700" htmlFor="stats-frequency">
+        {t('dashboard.linkInfo.frequency')}
+      </label>
+      <select
+        id="stats-frequency"
+        className="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        value={frequency}
+        onChange={(event) => {
+          const next = event.target.value as Frequency;
+          if (DISABLED_FREQUENCIES.has(next)) return;
+          setFrequency(next);
+        }}
+      >
+        {FREQUENCY_OPTIONS.map((option) => {
+          const disabled = DISABLED_FREQUENCIES.has(option);
+          const title =
+            option === 'minute'
+              ? t('dashboard.linkInfo.minuteDisabled')
+              : disabled
+              ? t('dashboard.linkInfo.minuteDisabled')
+              : undefined;
+          return (
+            <option key={option} value={option} disabled={disabled} title={title}>
+              {frequencyLabels[option]}
+            </option>
+          );
+        })}
+      </select>
             </div>
 
             {frequency === 'minute' ? (
