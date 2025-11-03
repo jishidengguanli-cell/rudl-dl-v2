@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import type { Locale } from '@/i18n/dictionary';
 import AddDistributionModal from './AddDistributionModal';
+import LinkStatsModal from './LinkStatsModal';
 
 type Props = {
   initialData: DashboardPage;
@@ -79,6 +80,7 @@ export default function DashboardClient({
   const [deleteStatus, setDeleteStatus] = useState<'idle' | 'pending'>('idle');
   const [toast, setToast] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [statsLink, setStatsLink] = useState<DashboardLink | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -122,6 +124,14 @@ export default function DashboardClient({
   const closeModal = () => {
     setModalOpen(false);
     setEditingLink(null);
+  };
+
+  const openStatsModal = (link: DashboardLink) => {
+    setStatsLink(link);
+  };
+
+  const closeStatsModal = () => {
+    setStatsLink(null);
   };
 
   const openCreateModal = () => {
@@ -330,6 +340,14 @@ export default function DashboardClient({
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
+                          className="rounded border border-blue-200 px-2 py-1 text-xs font-medium text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => openStatsModal(link)}
+                          disabled={loading}
+                        >
+                          {t('dashboard.actionInfo')}
+                        </button>
+                        <button
+                          type="button"
                           className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={() => allowManage && openEditModal(link)}
                           disabled={loading || !allowManage}
@@ -422,6 +440,7 @@ export default function DashboardClient({
           onError={handleModalError}
         />
       )}
+      {statsLink ? <LinkStatsModal open={Boolean(statsLink)} link={statsLink} onClose={closeStatsModal} /> : null}
 
       {allowManage && deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8">
