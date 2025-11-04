@@ -51,13 +51,22 @@ type Props = {
   enableEcpay: boolean;
 };
 
+type CheckoutOptions = {
+  bypassAvailability?: boolean;
+};
+
 export default function RechargeClient({ enableEcpay }: Props) {
   const { t } = useI18n();
   const [submittingPoints, setSubmittingPoints] = useState<number | null>(null);
 
   const handleCheckout = useCallback(
-    async (points: number, priceUsd: number, priceTwd: number) => {
-      if (!enableEcpay) {
+    async (
+      points: number,
+      priceUsd: number,
+      priceTwd: number,
+      { bypassAvailability }: CheckoutOptions = {}
+    ) => {
+      if (!enableEcpay && !bypassAvailability) {
         return;
       }
       try {
@@ -118,16 +127,14 @@ export default function RechargeClient({ enableEcpay }: Props) {
                 ${priceUsd.toFixed(2)} USD
                 <span className="ml-2 text-sm text-gray-500">(NT${priceTwd.toLocaleString()})</span>
               </div>
-              {enableEcpay && (
-                <button
-                  type="button"
-                  onClick={() => handleCheckout(points, priceUsd, priceTwd)}
-                  disabled={isSubmitting}
-                  className="mt-6 rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80"
-                >
-                  {isSubmitting ? t('recharge.processingPayment') : t('recharge.payWithEcpay')}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => handleCheckout(points, priceUsd, priceTwd)}
+                disabled={isSubmitting || !enableEcpay}
+                className="mt-6 rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80"
+              >
+                {isSubmitting ? t('recharge.processingPayment') : t('recharge.payWithEcpay')}
+              </button>
             </div>
           );
         })}
@@ -135,16 +142,18 @@ export default function RechargeClient({ enableEcpay }: Props) {
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-600">
         {t('recharge.contactSupport')}
       </div>
-      {enableEcpay && (
-        <button
-          type="button"
-          onClick={() => handleCheckout(TEST_PACKAGE.points, TEST_PACKAGE.priceUsd, TEST_PACKAGE.priceTwd)}
-          disabled={submittingPoints === TEST_PACKAGE.points}
-          className="w-full rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-80"
-        >
-          {submittingPoints === TEST_PACKAGE.points ? t('recharge.processingPayment') : t('recharge.testPayment')}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() =>
+          handleCheckout(TEST_PACKAGE.points, TEST_PACKAGE.priceUsd, TEST_PACKAGE.priceTwd, {
+            bypassAvailability: true,
+          })
+        }
+        disabled={submittingPoints === TEST_PACKAGE.points}
+        className="w-full rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-80"
+      >
+        {submittingPoints === TEST_PACKAGE.points ? t('recharge.processingPayment') : t('recharge.testPayment')}
+      </button>
     </div>
   );
 }

@@ -4,9 +4,14 @@ import RechargeClient from './RechargeClient';
 export const runtime = 'edge';
 
 export default function RechargePage() {
-  const { cf } = getRequestContext();
-  const country = cf?.country;
-  const enableEcpay = country ? country === 'TW' : true;
+  let enableEcpay = true;
+  try {
+    const context = getRequestContext();
+    const country = context?.cf?.country;
+    enableEcpay = country ? country === 'TW' : true;
+  } catch {
+    enableEcpay = true;
+  }
 
   return <RechargeClient enableEcpay={enableEcpay} />;
 }
