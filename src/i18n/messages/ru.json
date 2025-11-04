@@ -114,7 +114,7 @@
   "dashboard.linkInfo.minuteDisabled": "Статистика по минутам пока недоступна.",
   "admin.nav.orders": "Заказы",
   "admin.orders.title": "Заказы",
-  "admin.orders.description": "Просматривайте заказы аккаунта hjp7y94.",
+  "admin.orders.description": "Просматривайте все заказы ECPay.",
   "admin.orders.empty": "Заказы отсутствуют.",
   "admin.orders.table.tradeNo": "Номер заказа",
   "admin.orders.table.status": "Статус",

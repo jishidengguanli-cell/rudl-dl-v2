@@ -114,7 +114,7 @@
   "dashboard.linkInfo.minuteDisabled": "目前尚未提供分鐘級的統計資料。",
   "admin.nav.orders": "訂單管理",
   "admin.orders.title": "訂單管理",
-  "admin.orders.description": "查看帳號 hjp7y94 的儲值訂單。",
+  "admin.orders.description": "查看所有會員的儲值訂單。",
   "admin.orders.empty": "目前沒有訂單資料。",
   "admin.orders.table.tradeNo": "商店訂單編號",
   "admin.orders.table.status": "狀態",

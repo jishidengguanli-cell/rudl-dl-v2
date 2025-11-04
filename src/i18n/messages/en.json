@@ -114,7 +114,7 @@
   "dashboard.linkInfo.minuteDisabled": "Minute-level stats are not yet available.",
   "admin.nav.orders": "Order management",
   "admin.orders.title": "Order management",
-  "admin.orders.description": "Review recharge orders for account hjp7y94.",
+  "admin.orders.description": "Review all ECPay recharge orders.",
   "admin.orders.empty": "No orders found.",
   "admin.orders.table.tradeNo": "Merchant trade no.",
   "admin.orders.table.status": "Status",

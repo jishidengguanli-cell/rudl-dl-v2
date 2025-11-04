@@ -426,16 +426,21 @@ export async function getEcpayOrder(DB: D1Database, merchantTradeNo: string): Pr
   return mapOrder(row ?? null);
 }
 
-export async function listEcpayOrdersForAccount(DB: D1Database, accountId: string): Promise<EcpayOrder[]> {
+export async function listEcpayOrders(DB: D1Database, accountId?: string | null): Promise<EcpayOrder[]> {
   await ensureOrdersTable(DB);
   const orderBy = ordersTableHasLegacyTimestamps ? 'created_at DESC' : 'rowid DESC';
-  const result = await DB.prepare(`SELECT * FROM ${ORDERS_TABLE} WHERE account_id=? ORDER BY ${orderBy}`)
-    .bind(accountId)
-    .all<Record<string, unknown>>();
+  const statement = accountId
+    ? DB.prepare(`SELECT * FROM ${ORDERS_TABLE} WHERE account_id=? ORDER BY ${orderBy}`).bind(accountId)
+    : DB.prepare(`SELECT * FROM ${ORDERS_TABLE} ORDER BY ${orderBy}`);
+  const result = await statement.all<Record<string, unknown>>();
   const rows = (result.results as OrderRow[] | undefined) ?? [];
   return rows
     .map((row) => mapOrder(row))
     .filter((order): order is EcpayOrder => order !== null);
+}
+
+export async function listEcpayOrdersForAccount(DB: D1Database, accountId: string): Promise<EcpayOrder[]> {
+  return listEcpayOrders(DB, accountId);
 }
 
 const getPayloadValue = (payload: Record<string, string>, key: string): string | null => {

@@ -22,14 +22,14 @@ const resolveLocale = (langCookie: string | undefined, localeCookie: string | un
 };
 
 const formatDateTime = (timestamp: number | null, locale: Locale) => {
-  if (!timestamp) return '—';
+  if (!timestamp) return '-';
   const date = new Date(timestamp * 1000);
   const localeHint = locale === 'zh-TW' ? 'zh-Hant' : locale;
   return date.toLocaleString(localeHint);
 };
 
 const formatNumber = (value: number | null, locale: Locale) => {
-  if (value === null || Number.isNaN(value)) return '—';
+  if (value === null || Number.isNaN(value)) return '-';
   const localeHint = locale === 'zh-TW' ? 'zh-Hant' : locale;
   return new Intl.NumberFormat(localeHint).format(value);
 };
@@ -126,7 +126,7 @@ export default async function MemberOrderHistoryPage() {
                       <span className="text-xs text-gray-500">{order.currency}</span>
                     </td>
                     <td className="px-3 py-2 text-gray-700">
-                      {order.paymentDate ?? '—'}
+                      {order.paymentDate ?? '-'}
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {formatDateTime(order.createdAt, locale)}
