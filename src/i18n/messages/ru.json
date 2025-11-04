@@ -111,5 +111,16 @@
   "dashboard.linkInfo.totalDownloads": "Загрузки за период",
   "dashboard.linkInfo.table.time": "Время",
   "dashboard.linkInfo.table.selected": "Выбрано точек: {count}",
-  "dashboard.linkInfo.minuteDisabled": "Статистика по минутам пока недоступна."
+  "dashboard.linkInfo.minuteDisabled": "Статистика по минутам пока недоступна.",
+  "admin.nav.orders": "Заказы",
+  "admin.orders.title": "Заказы",
+  "admin.orders.description": "Просматривайте заказы аккаунта hjp7y94.",
+  "admin.orders.empty": "Заказы отсутствуют.",
+  "admin.orders.table.tradeNo": "Номер заказа",
+  "admin.orders.table.status": "Статус",
+  "admin.orders.table.amount": "Сумма",
+  "admin.orders.table.points": "Баллы",
+  "admin.orders.table.paymentDate": "Время оплаты",
+  "admin.orders.table.description": "Описание",
+  "admin.orders.table.method": "Способ оплаты"
 }

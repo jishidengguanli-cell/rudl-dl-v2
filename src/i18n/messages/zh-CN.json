@@ -111,5 +111,16 @@
   "dashboard.linkInfo.totalDownloads": "范围内下载总数",
   "dashboard.linkInfo.table.time": "时间",
   "dashboard.linkInfo.table.selected": "已选 {count} 条数据",
-  "dashboard.linkInfo.minuteDisabled": "目前暂未提供分钟级的统计数据。"
+  "dashboard.linkInfo.minuteDisabled": "目前暂未提供分钟级的统计数据。",
+  "admin.nav.orders": "订单管理",
+  "admin.orders.title": "订单管理",
+  "admin.orders.description": "查看账号 hjp7y94 的充值订单。",
+  "admin.orders.empty": "目前没有订单资料。",
+  "admin.orders.table.tradeNo": "商店订单编号",
+  "admin.orders.table.status": "状态",
+  "admin.orders.table.amount": "金额",
+  "admin.orders.table.points": "点数",
+  "admin.orders.table.paymentDate": "付款时间",
+  "admin.orders.table.description": "描述",
+  "admin.orders.table.method": "付款方式"
 }

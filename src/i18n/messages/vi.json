@@ -111,5 +111,16 @@
   "dashboard.linkInfo.totalDownloads": "Tổng lượt tải trong khoảng",
   "dashboard.linkInfo.table.time": "Thời điểm",
   "dashboard.linkInfo.table.selected": "Đã chọn {count} mốc dữ liệu",
-  "dashboard.linkInfo.minuteDisabled": "Chưa hỗ trợ thống kê theo phút."
+  "dashboard.linkInfo.minuteDisabled": "Chưa hỗ trợ thống kê theo phút.",
+  "admin.nav.orders": "Quản lý đơn hàng",
+  "admin.orders.title": "Quản lý đơn hàng",
+  "admin.orders.description": "Xem đơn nạp của tài khoản hjp7y94.",
+  "admin.orders.empty": "Không có đơn hàng.",
+  "admin.orders.table.tradeNo": "Mã đơn hàng",
+  "admin.orders.table.status": "Trạng thái",
+  "admin.orders.table.amount": "Số tiền",
+  "admin.orders.table.points": "Điểm",
+  "admin.orders.table.paymentDate": "Thời gian thanh toán",
+  "admin.orders.table.description": "Mô tả",
+  "admin.orders.table.method": "Phương thức thanh toán"
 }

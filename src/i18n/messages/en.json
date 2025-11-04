@@ -111,5 +111,16 @@
   "dashboard.linkInfo.totalDownloads": "Downloads in range",
   "dashboard.linkInfo.table.time": "Timestamp",
   "dashboard.linkInfo.table.selected": "{count} data points selected",
-  "dashboard.linkInfo.minuteDisabled": "Minute-level stats are not yet available."
+  "dashboard.linkInfo.minuteDisabled": "Minute-level stats are not yet available.",
+  "admin.nav.orders": "Order management",
+  "admin.orders.title": "Order management",
+  "admin.orders.description": "Review recharge orders for account hjp7y94.",
+  "admin.orders.empty": "No orders found.",
+  "admin.orders.table.tradeNo": "Merchant trade no.",
+  "admin.orders.table.status": "Status",
+  "admin.orders.table.amount": "Amount",
+  "admin.orders.table.points": "Points",
+  "admin.orders.table.paymentDate": "Payment date",
+  "admin.orders.table.description": "Description",
+  "admin.orders.table.method": "Payment method"
 }

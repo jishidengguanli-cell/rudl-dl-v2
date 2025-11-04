@@ -111,5 +111,16 @@
   "dashboard.linkInfo.totalDownloads": "範圍內下載總數",
   "dashboard.linkInfo.table.time": "時間",
   "dashboard.linkInfo.table.selected": "已選 {count} 筆資料",
-  "dashboard.linkInfo.minuteDisabled": "目前尚未提供分鐘級的統計資料。"
+  "dashboard.linkInfo.minuteDisabled": "目前尚未提供分鐘級的統計資料。",
+  "admin.nav.orders": "訂單管理",
+  "admin.orders.title": "訂單管理",
+  "admin.orders.description": "查看帳號 hjp7y94 的儲值訂單。",
+  "admin.orders.empty": "目前沒有訂單資料。",
+  "admin.orders.table.tradeNo": "商店訂單編號",
+  "admin.orders.table.status": "狀態",
+  "admin.orders.table.amount": "金額",
+  "admin.orders.table.points": "點數",
+  "admin.orders.table.paymentDate": "付款時間",
+  "admin.orders.table.description": "描述",
+  "admin.orders.table.method": "付款方式"
 }
