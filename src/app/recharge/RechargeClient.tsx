@@ -17,12 +17,6 @@ const PACKAGES = [
   priceTwd: Math.round(item.priceUsd * USD_TO_TWD),
 }));
 
-const TEST_PACKAGE = {
-  points: 10,
-  priceUsd: 10 / USD_TO_TWD,
-  priceTwd: 10,
-};
-
 type CheckoutResponse = {
   ok: boolean;
   action?: string;
@@ -51,22 +45,13 @@ type Props = {
   enableEcpay: boolean;
 };
 
-type CheckoutOptions = {
-  bypassAvailability?: boolean;
-};
-
 export default function RechargeClient({ enableEcpay }: Props) {
   const { t } = useI18n();
   const [submittingPoints, setSubmittingPoints] = useState<number | null>(null);
 
   const handleCheckout = useCallback(
-    async (
-      points: number,
-      priceUsd: number,
-      priceTwd: number,
-      { bypassAvailability }: CheckoutOptions = {}
-    ) => {
-      if (!enableEcpay && !bypassAvailability) {
+    async (points: number, priceUsd: number, priceTwd: number) => {
+      if (!enableEcpay) {
         return;
       }
       try {
@@ -142,18 +127,6 @@ export default function RechargeClient({ enableEcpay }: Props) {
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-600">
         {t('recharge.contactSupport')}
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          handleCheckout(TEST_PACKAGE.points, TEST_PACKAGE.priceUsd, TEST_PACKAGE.priceTwd, {
-            bypassAvailability: true,
-          })
-        }
-        disabled={submittingPoints === TEST_PACKAGE.points}
-        className="w-full rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-80"
-      >
-        {submittingPoints === TEST_PACKAGE.points ? t('recharge.processingPayment') : t('recharge.testPayment')}
-      </button>
     </div>
   );
 }
