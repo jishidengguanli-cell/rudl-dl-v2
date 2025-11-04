@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database } from '@cloudflare/workers-types';
 import { fetchDistributionById } from '@/lib/distribution';
-import { getStatsTableName } from '@/lib/downloads';
+import { fetchDownloadStatsRange, type DownloadStatsRow } from '@/lib/downloads';
 
 export const runtime = 'edge';
 
@@ -175,22 +175,17 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     bucketTimes.push(alignedStart);
   }
 
-  const statsTable = getStatsTableName(linkId);
-  type StatsRow = { date: string; apk_dl: number | string | null; ipa_dl: number | string | null };
-  let rows: StatsRow[] = [];
+  let rows: DownloadStatsRow[] = [];
   try {
-    const result = await DB.prepare(
-      `SELECT date, apk_dl, ipa_dl FROM "${statsTable}" WHERE date BETWEEN ? AND ? ORDER BY date ASC`
-    )
-      .bind(formatDayKey(alignedFromDay), formatDayKey(alignedToDay))
-      .all<StatsRow>();
-    rows = (result?.results as StatsRow[] | undefined) ?? [];
+    rows = await fetchDownloadStatsRange(
+      DB,
+      linkId,
+      formatDayKey(alignedFromDay),
+      formatDayKey(alignedToDay)
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/no such table/i.test(message)) {
-      return jsonError(message || 'QUERY_FAILED', 500);
-    }
-    rows = [];
+    return jsonError(message || 'QUERY_FAILED', 500);
   }
 
   const toNumber = (value: number | string | null | undefined) => {

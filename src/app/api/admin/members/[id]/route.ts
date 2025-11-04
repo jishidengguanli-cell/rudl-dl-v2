@@ -3,7 +3,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import { fetchAdminUser } from '@/lib/admin';
 import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
-import { getStatsTableName } from '@/lib/downloads';
+import { deleteDownloadStatsForLink } from '@/lib/downloads';
 
 export const runtime = 'edge';
 
@@ -271,8 +271,11 @@ export async function DELETE(request: Request, context: { params: Promise<RouteP
 
     await Promise.all(
       linkIds.map(async (linkId) => {
-        const tableName = getStatsTableName(linkId);
-        await DB.exec(`DROP TABLE IF EXISTS "${tableName}"`).catch(() => undefined);
+        try {
+          await deleteDownloadStatsForLink(DB, linkId);
+        } catch {
+          // ignore failures while cleaning up stats
+        }
       })
     );
 

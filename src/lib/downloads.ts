@@ -9,27 +9,75 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
 
 const formatDate = (date: Date) => DATE_FORMATTER.format(date);
 
-export const getStatsTableName = (linkId: string) =>
-  `stats_${linkId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+const DOWNLOAD_STATS_TABLE = 'link_download_stats';
+const LEGACY_STATS_PREFIX = 'stats_';
 
-export async function ensureDownloadStatsTable(DB: D1Database, linkId: string) {
-  const tableName = getStatsTableName(linkId);
+const sanitizeLinkId = (linkId: string) => linkId.replace(/[^a-zA-Z0-9]/g, '_');
+
+const getLegacyStatsTableName = (linkId: string) =>
+  `${LEGACY_STATS_PREFIX}${sanitizeLinkId(linkId)}`;
+
+let statsTableEnsured = false;
+
+const ensureBaseTable = async (DB: D1Database) => {
+  if (statsTableEnsured) return;
   await DB.exec(
-    `CREATE TABLE IF NOT EXISTS "${tableName}" (date TEXT PRIMARY KEY, apk_dl INTEGER DEFAULT 0, ipa_dl INTEGER DEFAULT 0)`
+    `CREATE TABLE IF NOT EXISTS ${DOWNLOAD_STATS_TABLE} (
+      link_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      apk_dl INTEGER NOT NULL DEFAULT 0,
+      ipa_dl INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (link_id, date),
+      FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+    )`
   );
+  await DB.exec(
+    `CREATE INDEX IF NOT EXISTS idx_${DOWNLOAD_STATS_TABLE}_link_date
+      ON ${DOWNLOAD_STATS_TABLE} (link_id, date)`
+  );
+  statsTableEnsured = true;
+};
+
+const migrateLegacyStatsTable = async (DB: D1Database, linkId: string) => {
+  const legacyTable = getLegacyStatsTableName(linkId);
+  const legacyExists = await DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1"
+  )
+    .bind(legacyTable)
+    .first<{ name?: string }>();
+
+  if (!legacyExists?.name) return;
+
+  await ensureBaseTable(DB);
+
+  await DB.prepare(
+    `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
+     SELECT ?, date, apk_dl, ipa_dl FROM "${legacyTable}"
+     ON CONFLICT(link_id, date) DO UPDATE SET
+       apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
+       ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
+  )
+    .bind(linkId)
+    .run();
+
+  await DB.exec(`DROP TABLE IF EXISTS "${legacyTable}"`);
+};
+
+export async function ensureDownloadStatsTable(DB: D1Database, linkId?: string) {
+  await ensureBaseTable(DB);
+  if (linkId) {
+    await migrateLegacyStatsTable(DB, linkId);
+  }
 }
 
-type TotalsRow = {
-  apk_dl?: number;
-  ipa_dl?: number;
-  apkSum?: number;
-  ipaSum?: number;
-};
-
-const toNumber = (value: unknown): number => {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? numeric : 0;
-};
+export async function deleteDownloadStatsForLink(DB: D1Database, linkId: string) {
+  await ensureBaseTable(DB);
+  await DB.prepare(
+    `DELETE FROM ${DOWNLOAD_STATS_TABLE} WHERE link_id=?`
+  )
+    .bind(linkId)
+    .run();
+}
 
 export async function recordDownload(
   DB: D1Database,
@@ -37,53 +85,43 @@ export async function recordDownload(
   platform: 'apk' | 'ipa',
   now: Date = new Date()
 ) {
-  const tableName = getStatsTableName(linkId);
   await ensureDownloadStatsTable(DB, linkId);
 
   const today = formatDate(now);
-
-  const insertRow = DB.prepare(
-    `INSERT OR IGNORE INTO "${tableName}" (date, apk_dl, ipa_dl) VALUES (?, 0, 0)`
-  ).bind(today);
-
-  const updateRow = DB.prepare(
-    `UPDATE "${tableName}" SET ${platform === 'apk' ? 'apk_dl' : 'ipa_dl'} = ${
-      platform === 'apk' ? 'apk_dl' : 'ipa_dl'
-    } + 1 WHERE date=?`
-  ).bind(today);
-
-  await DB.batch([insertRow, updateRow]);
-
-  const todayRow = (await DB.prepare(
-    `SELECT apk_dl, ipa_dl FROM "${tableName}" WHERE date=?`
-  )
-    .bind(today)
-    .first<TotalsRow>()) ?? { apk_dl: 0, ipa_dl: 0 };
-
-  const totals =
-    (await DB.prepare(
-      `SELECT SUM(apk_dl) as apkSum, SUM(ipa_dl) as ipaSum FROM "${tableName}"`
-    ).first<TotalsRow>()) ?? ({} as TotalsRow);
-
-  const todayApk = toNumber(todayRow.apk_dl);
-  const todayIpa = toNumber(todayRow.ipa_dl);
-  const totalApk = toNumber(totals.apkSum);
-  const totalIpa = toNumber(totals.ipaSum);
+  const apkDelta = platform === 'apk' ? 1 : 0;
+  const ipaDelta = platform === 'ipa' ? 1 : 0;
 
   await DB.prepare(
-    `UPDATE links
-     SET today_apk_dl=?, today_ipa_dl=?, today_total_dl=?,
-         total_apk_dl=?, total_ipa_dl=?, total_total_dl=?
-     WHERE id=?`
+    `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(link_id, date) DO UPDATE SET
+       apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
+       ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
   )
-    .bind(
-      todayApk,
-      todayIpa,
-      todayApk + todayIpa,
-      totalApk,
-      totalIpa,
-      totalApk + totalIpa,
-      linkId
-    )
+    .bind(linkId, today, apkDelta, ipaDelta)
     .run();
+}
+
+export type DownloadStatsRow = {
+  date: string;
+  apk_dl: number | string | null;
+  ipa_dl: number | string | null;
+};
+
+export async function fetchDownloadStatsRange(
+  DB: D1Database,
+  linkId: string,
+  startDate: string,
+  endDate: string
+) {
+  await ensureDownloadStatsTable(DB, linkId);
+  const result = await DB.prepare(
+    `SELECT date, apk_dl, ipa_dl
+     FROM ${DOWNLOAD_STATS_TABLE}
+     WHERE link_id=? AND date BETWEEN ? AND ?
+     ORDER BY date ASC`
+  )
+    .bind(linkId, startDate, endDate)
+    .all<DownloadStatsRow>();
+  return (result?.results as DownloadStatsRow[] | undefined) ?? [];
 }

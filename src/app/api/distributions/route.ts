@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { generateLinkCode } from '@/lib/code';
-import { ensureDownloadStatsTable, getStatsTableName } from '@/lib/downloads';
+import { deleteDownloadStatsForLink, ensureDownloadStatsTable } from '@/lib/downloads';
 import { normalizeLanguageCode } from '@/lib/language';
 
 export const runtime = 'edge';
@@ -353,8 +353,7 @@ export async function POST(req: Request) {
       DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
       DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
     ]).catch(() => null);
-    const statsTable = getStatsTableName(linkId);
-    await DB.exec(`DROP TABLE IF EXISTS "${statsTable}"`).catch(() => null);
+    await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
     await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
