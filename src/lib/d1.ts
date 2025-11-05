@@ -1,6 +1,6 @@
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const isMetaDurationError = (error: unknown) => {
+const isMetaDurationError = (error: unknown) => {
   if (!(error instanceof Error)) return false;
   const message = error.message ?? '';
   return typeof message === 'string' && message.includes("reading 'duration'");
@@ -34,3 +34,4 @@ export async function runWithD1Retry<T>(
   console.error('[d1] meta.duration missing after retries', { context, attempts: maxAttempts, error: lastError });
   throw lastError instanceof Error ? lastError : new Error('D1 meta.duration missing after retries');
 }
+

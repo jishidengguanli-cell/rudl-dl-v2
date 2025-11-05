@@ -1,5 +1,4 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { isMetaDurationError, runWithD1Retry } from './d1';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'UTC',
@@ -22,69 +21,46 @@ let statsTableEnsured = false;
 
 const ensureBaseTable = async (DB: D1Database) => {
   if (statsTableEnsured) return;
-  await runWithD1Retry(
-    () =>
-      DB.exec(
-        `CREATE TABLE IF NOT EXISTS ${DOWNLOAD_STATS_TABLE} (
-          link_id TEXT NOT NULL,
-          date TEXT NOT NULL,
-          apk_dl INTEGER NOT NULL DEFAULT 0,
-          ipa_dl INTEGER NOT NULL DEFAULT 0,
-          PRIMARY KEY (link_id, date),
-          FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
-        )`
-      ),
-    'downloads:ensure-base-table:create'
+  await DB.exec(
+    `CREATE TABLE IF NOT EXISTS ${DOWNLOAD_STATS_TABLE} (
+      link_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      apk_dl INTEGER NOT NULL DEFAULT 0,
+      ipa_dl INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (link_id, date),
+      FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+    )`
   );
-  await runWithD1Retry(
-    () =>
-      DB.exec(
-        `CREATE INDEX IF NOT EXISTS idx_${DOWNLOAD_STATS_TABLE}_link_date
-          ON ${DOWNLOAD_STATS_TABLE} (link_id, date)`
-      ),
-    'downloads:ensure-base-table:index'
+  await DB.exec(
+    `CREATE INDEX IF NOT EXISTS idx_${DOWNLOAD_STATS_TABLE}_link_date
+      ON ${DOWNLOAD_STATS_TABLE} (link_id, date)`
   );
   statsTableEnsured = true;
 };
 
 const migrateLegacyStatsTable = async (DB: D1Database, linkId: string) => {
   const legacyTable = getLegacyStatsTableName(linkId);
-  const legacyExists = await runWithD1Retry(
-    () =>
-      DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1")
-        .bind(legacyTable)
-        .first<{ name?: string }>(),
-    'downloads:migrate-legacy:exists'
-  );
+  const legacyExists = await DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1"
+  )
+    .bind(legacyTable)
+    .first<{ name?: string }>();
 
   if (!legacyExists?.name) return;
 
   await ensureBaseTable(DB);
 
-  try {
-    await DB.prepare(
-      `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
-       SELECT ?, date, apk_dl, ipa_dl FROM "${legacyTable}"
-       ON CONFLICT(link_id, date) DO UPDATE SET
-         apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
-         ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
-    )
-      .bind(linkId)
-      .run();
-  } catch (error) {
-    if (isMetaDurationError(error)) {
-      console.warn('[downloads] legacy stats insert completed with missing meta.duration, continuing', {
-        linkId,
-      });
-    } else {
-      throw error;
-    }
-  }
+  await DB.prepare(
+    `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
+     SELECT ?, date, apk_dl, ipa_dl FROM "${legacyTable}"
+     ON CONFLICT(link_id, date) DO UPDATE SET
+       apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
+       ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
+  )
+    .bind(linkId)
+    .run();
 
-  await runWithD1Retry(
-    () => DB.exec(`DROP TABLE IF EXISTS "${legacyTable}"`),
-    'downloads:migrate-legacy:drop'
-  );
+  await DB.exec(`DROP TABLE IF EXISTS "${legacyTable}"`);
 };
 
 export async function ensureDownloadStatsTable(DB: D1Database, linkId?: string) {
@@ -96,13 +72,11 @@ export async function ensureDownloadStatsTable(DB: D1Database, linkId?: string) 
 
 export async function deleteDownloadStatsForLink(DB: D1Database, linkId: string) {
   await ensureBaseTable(DB);
-  await runWithD1Retry(
-    () =>
-      DB.prepare(`DELETE FROM ${DOWNLOAD_STATS_TABLE} WHERE link_id=?`)
-        .bind(linkId)
-        .run(),
-    'downloads:delete-link-stats'
-  );
+  await DB.prepare(
+    `DELETE FROM ${DOWNLOAD_STATS_TABLE} WHERE link_id=?`
+  )
+    .bind(linkId)
+    .run();
 }
 
 export async function recordDownload(
@@ -117,26 +91,15 @@ export async function recordDownload(
   const apkDelta = platform === 'apk' ? 1 : 0;
   const ipaDelta = platform === 'ipa' ? 1 : 0;
 
-  try {
-    await DB.prepare(
-      `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(link_id, date) DO UPDATE SET
-         apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
-         ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
-    )
-      .bind(linkId, today, apkDelta, ipaDelta)
-      .run();
-  } catch (error) {
-    if (isMetaDurationError(error)) {
-      console.warn('[downloads] recordDownload succeeded with missing meta.duration, continuing', {
-        linkId,
-        platform,
-      });
-    } else {
-      throw error;
-    }
-  }
+  await DB.prepare(
+    `INSERT INTO ${DOWNLOAD_STATS_TABLE} (link_id, date, apk_dl, ipa_dl)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(link_id, date) DO UPDATE SET
+       apk_dl = link_download_stats.apk_dl + excluded.apk_dl,
+       ipa_dl = link_download_stats.ipa_dl + excluded.ipa_dl`
+  )
+    .bind(linkId, today, apkDelta, ipaDelta)
+    .run();
 }
 
 export type DownloadStatsRow = {
@@ -152,17 +115,13 @@ export async function fetchDownloadStatsRange(
   endDate: string
 ) {
   await ensureDownloadStatsTable(DB, linkId);
-  const result = await runWithD1Retry(
-    () =>
-      DB.prepare(
-        `SELECT date, apk_dl, ipa_dl
-         FROM ${DOWNLOAD_STATS_TABLE}
-         WHERE link_id=? AND date BETWEEN ? AND ?
-         ORDER BY date ASC`
-      )
-        .bind(linkId, startDate, endDate)
-        .all<DownloadStatsRow>(),
-    'downloads:fetch-range'
-  );
+  const result = await DB.prepare(
+    `SELECT date, apk_dl, ipa_dl
+     FROM ${DOWNLOAD_STATS_TABLE}
+     WHERE link_id=? AND date BETWEEN ? AND ?
+     ORDER BY date ASC`
+  )
+    .bind(linkId, startDate, endDate)
+    .all<DownloadStatsRow>();
   return (result?.results as DownloadStatsRow[] | undefined) ?? [];
 }
