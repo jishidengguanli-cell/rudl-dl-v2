@@ -20,3 +20,12 @@ bucket_name = "dataruapp-files"
 # [[email]]
 # binding = "EMAIL"
 # type = "send"
+
+[[email]]
+binding = "EMAIL"
+type = "send"
+address = "verify@dataruapp.com"
+# Configure an Email (send) binding to enable verification emails
+# [[email]]
+# binding = "EMAIL"
+# type = "send"
