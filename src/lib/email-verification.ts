@@ -1,8 +1,13 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { EmailMessage } from 'cloudflare:email';
+
+type RawEmailMessage = {
+  from: string;
+  to: string;
+  raw: string;
+};
 
 type EmailBinding = {
-  send(message: EmailMessage): Promise<void>;
+  send(message: RawEmailMessage): Promise<void>;
 };
 
 type EmailEnv = {
@@ -125,6 +130,9 @@ export type VerificationEmailParams = {
   appName?: string;
 };
 
+const encodeHeader = (value: string) =>
+  `=?UTF-8?B?${btoa(unescape(encodeURIComponent(value)))}?=`;
+
 export async function sendVerificationEmail({
   env,
   to,
@@ -145,17 +153,8 @@ export async function sendVerificationEmail({
   const fromName = env.EMAIL_FROM_NAME ?? appName;
   const displayFrom = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
 
-  const toBase64 = (input: string) =>
-    btoa(
-      encodeURIComponent(input).replace(/%([0-9A-F]{2})/g, (_, hex) =>
-        String.fromCharCode(Number.parseInt(hex, 16))
-      )
-    );
-
-  const encodeSubject = (value: string) => `=?UTF-8?B?${toBase64(value)}?=`;
-
   const textBody = [
-    `${appName}`,
+    appName,
     '',
     '您好：',
     '',
@@ -167,20 +166,58 @@ export async function sendVerificationEmail({
     `— ${appName} 團隊`,
   ].join('\r\n');
 
-  const raw = [
-    `From: ${displayFrom}`,
-    `To: ${to}`,
-    `Subject: ${encodeSubject(subject)}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
+  const htmlBody = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+      <h2>${appName}</h2>
+      <p>您好：</p>
+      <p>請點擊下方按鈕完成電子郵件驗證：</p>
+      <p style="text-align:center; margin: 24px 0;">
+        <a href="${verificationUrl}" style="background-color:#2563eb;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+          驗證電子郵件
+        </a>
+      </p>
+      <p>若按鈕無法點擊，請將以下連結貼到瀏覽器開啟：</p>
+      <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+      <p>此連結將在 60 分鐘後失效。</p>
+      <p>— ${appName} 團隊</p>
+    </div>
+  `.trim();
+
+  const boundary = `boundary_${crypto.randomUUID()}`;
+
+  const mimeParts = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: 8bit',
     '',
     textBody,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    htmlBody,
+    '',
+    `--${boundary}--`,
+    '',
+  ];
+
+  const raw = [
+    `From: ${displayFrom}`,
+    `To: ${to}`,
+    `Subject: ${encodeHeader(subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    ...mimeParts,
   ].join('\r\n');
 
-  const message = new EmailMessage(fromAddress, to, raw);
   try {
-    await sender.send(message);
+    await sender.send({
+      from: fromAddress,
+      to,
+      raw,
+    });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to dispatch verification email: ${reason}`);

@@ -12,12 +12,7 @@ type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
   EMAIL?: {
-    send: (message: {
-      from: string;
-      to: string;
-      subject: string;
-      content: Array<{ type: 'text/plain' | 'text/html'; value: string }>;
-    }) => Promise<void>;
+    send: (message: { from: string; to: string; raw: string }) => Promise<void>;
   };
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
