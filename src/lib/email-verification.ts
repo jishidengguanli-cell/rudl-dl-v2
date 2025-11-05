@@ -199,11 +199,12 @@ export async function sendVerificationEmail({
   };
 
   try {
+    const credentials = btoa(`api:${apiKey}`);
     const response = await fetch(`${apiBase}/send`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Basic ${credentials}`,
       },
       body: JSON.stringify(payload),
     });
@@ -214,6 +215,11 @@ export async function sendVerificationEmail({
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    console.error('[email] verification mail failure', {
+      error: reason,
+      to,
+      endpoint: `${apiBase}/send`,
+    });
     throw new Error(`Failed to dispatch verification email: ${reason}`);
   }
 }
