@@ -13,9 +13,7 @@ type Env = {
 };
 
 type PageProps = {
-  searchParams?: {
-    status?: string;
-  };
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const isLocale = (value: string | undefined): value is Locale =>
@@ -70,7 +68,12 @@ export default async function MemberEmailVerificationPage({ searchParams }: Page
     );
   }
 
-  const initialStatus = normalizeStatus(searchParams?.status);
+  const resolvedSearchParams = (searchParams
+    ? await searchParams
+    : {}) as Record<string, string | string[] | undefined>;
+  const rawStatus = resolvedSearchParams?.status;
+  const statusValue = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus ?? null;
+  const initialStatus = normalizeStatus(statusValue);
 
   const texts = {
     title: t('member.emailVerification.title'),
