@@ -11,13 +11,12 @@ export const runtime = 'edge';
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
-  EMAIL?: {
-    send: (message: { from: string; to: string; raw: string }) => Promise<void>;
-  };
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
   APP_BASE_URL?: string;
   APP_NAME?: string;
+  MAILCHANNELS_API_KEY?: string;
+  MAILCHANNELS_API_BASE?: string;
 };
 
 const parseUid = (req: Request): string | null => {

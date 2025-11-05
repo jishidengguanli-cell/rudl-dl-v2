@@ -16,15 +16,7 @@ migrations_dir = "migrations"
 binding = "R2_BUCKET"
 bucket_name = "dataruapp-files"
 
-# Configure an Email (send) binding to enable verification emails
-# [[email]]
-# binding = "EMAIL"
-# type = "send"
-
-[[email]]
-binding = "EMAIL"
-type = "send"
-address = "verify@dataruapp.com"
+# Email sending now handled via MailChannels HTTP API (see README / env vars)
 # Configure an Email (send) binding to enable verification emails
 # [[email]]
 # binding = "EMAIL"

@@ -1,20 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
-type RawEmailMessage = {
-  from: string;
-  to: string;
-  raw: string;
-};
-
-type EmailBinding = {
-  send(message: RawEmailMessage): Promise<void>;
-};
-
 type EmailEnv = {
-  EMAIL?: EmailBinding;
+  MAILCHANNELS_API_KEY?: string;
+  MAILCHANNELS_API_BASE?: string;
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
   APP_BASE_URL?: string;
+  APP_NAME?: string;
 };
 
 const TOKENS_TABLE = 'email_verification_tokens';
@@ -130,9 +122,6 @@ export type VerificationEmailParams = {
   appName?: string;
 };
 
-const encodeHeader = (value: string) =>
-  `=?UTF-8?B?${btoa(unescape(encodeURIComponent(value)))}?=`;
-
 export async function sendVerificationEmail({
   env,
   to,
@@ -140,18 +129,21 @@ export async function sendVerificationEmail({
   subject = 'Verify your email address',
   appName = 'DataruApp',
 }: VerificationEmailParams): Promise<void> {
-  const sender = env.EMAIL;
-  if (!sender) {
-    throw new Error('EMAIL binding is not configured for this environment.');
-  }
-
   const fromAddress = env.EMAIL_FROM;
   if (!fromAddress) {
     throw new Error('EMAIL_FROM must be configured to send verification emails.');
   }
 
   const fromName = env.EMAIL_FROM_NAME ?? appName;
-  const displayFrom = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
+  const apiKey = env.MAILCHANNELS_API_KEY;
+  if (!apiKey) {
+    throw new Error('MAILCHANNELS_API_KEY must be configured to send verification emails.');
+  }
+
+  const apiBase = (env.MAILCHANNELS_API_BASE ?? 'https://api.mailchannels.net/tx/v1').replace(
+    /\/+$/,
+    ''
+  );
 
   const textBody = [
     appName,
@@ -164,7 +156,7 @@ export async function sendVerificationEmail({
     '此連結將在 60 分鐘後失效，如果無法點擊，請複製連結到瀏覽器開啟。',
     '',
     `— ${appName} 團隊`,
-  ].join('\r\n');
+  ].join('\n');
 
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6;">
@@ -183,41 +175,43 @@ export async function sendVerificationEmail({
     </div>
   `.trim();
 
-  const boundary = `boundary_${crypto.randomUUID()}`;
-
-  const mimeParts = [
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    textBody,
-    '',
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    htmlBody,
-    '',
-    `--${boundary}--`,
-    '',
-  ];
-
-  const raw = [
-    `From: ${displayFrom}`,
-    `To: ${to}`,
-    `Subject: ${encodeHeader(subject)}`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    '',
-    ...mimeParts,
-  ].join('\r\n');
+  const payload = {
+    personalizations: [
+      {
+        to: [{ email: to }],
+      },
+    ],
+    from: {
+      email: fromAddress,
+      name: fromName,
+    },
+    subject,
+    content: [
+      {
+        type: 'text/plain',
+        value: textBody,
+      },
+      {
+        type: 'text/html',
+        value: htmlBody,
+      },
+    ],
+  };
 
   try {
-    await sender.send({
-      from: fromAddress,
-      to,
-      raw,
+    const response = await fetch(`${apiBase}/send`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
     });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`MailChannels responded with ${response.status}: ${text || response.statusText}`);
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to dispatch verification email: ${reason}`);
