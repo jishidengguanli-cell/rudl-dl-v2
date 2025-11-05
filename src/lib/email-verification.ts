@@ -1,17 +1,8 @@
 import type { D1Database } from '@cloudflare/workers-types';
-
-type EmailContent = {
-  type: 'text/plain' | 'text/html';
-  value: string;
-};
+import { EmailMessage } from 'cloudflare:email';
 
 type EmailBinding = {
-  send(message: {
-    from: string;
-    to: string;
-    subject: string;
-    content: EmailContent[];
-  }): Promise<void>;
+  send(message: EmailMessage): Promise<void>;
 };
 
 type EmailEnv = {
@@ -154,41 +145,44 @@ export async function sendVerificationEmail({
   const fromName = env.EMAIL_FROM_NAME ?? appName;
   const displayFrom = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-      <h2>${appName}</h2>
-      <p>您好，</p>
-      <p>請按下方按鈕完成電子郵件驗證：</p>
-      <p style="text-align: center; margin: 24px 0;">
-        <a href="${verificationUrl}" style="background-color:#2563eb;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-          驗證電子郵件
-        </a>
-      </p>
-      <p>如果按鈕無法點擊，請將以下連結貼到瀏覽器：</p>
-      <p><a href="${verificationUrl}">${verificationUrl}</a></p>
-      <p>此連結將在60分鐘後失效。</p>
-      <p>— ${appName} 團隊</p>
-    </div>
-  `.trim();
+  const toBase64 = (input: string) =>
+    btoa(
+      encodeURIComponent(input).replace(/%([0-9A-F]{2})/g, (_, hex) =>
+        String.fromCharCode(Number.parseInt(hex, 16))
+      )
+    );
 
-  const text = [
+  const encodeSubject = (value: string) => `=?UTF-8?B?${toBase64(value)}?=`;
+
+  const textBody = [
     `${appName}`,
     '',
-    '請開啟以下連結完成電子郵件驗證：',
+    '您好：',
+    '',
+    '請點擊以下連結完成電子郵件驗證：',
     verificationUrl,
     '',
-    '此連結將在60分鐘後失效。',
+    '此連結將在 60 分鐘後失效，如果無法點擊，請複製連結到瀏覽器開啟。',
     '',
     `— ${appName} 團隊`,
-  ].join('\n');
+  ].join('\r\n');
 
-  await sender.send({
-    from: displayFrom,
-    to,
-    subject,
-    content: [
-      { type: 'text/plain', value: text },
-      { type: 'text/html', value: html },
-    ],
-  });
+  const raw = [
+    `From: ${displayFrom}`,
+    `To: ${to}`,
+    `Subject: ${encodeSubject(subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    textBody,
+  ].join('\r\n');
+
+  const message = new EmailMessage(fromAddress, to, raw);
+  try {
+    await sender.send(message);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to dispatch verification email: ${reason}`);
+  }
 }
