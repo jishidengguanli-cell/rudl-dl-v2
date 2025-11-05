@@ -129,6 +129,14 @@ export async function sendVerificationEmail({
   subject = 'Verify your email address',
   appName = 'DataruApp',
 }: VerificationEmailParams): Promise<void> {
+  console.log('[email] sendVerificationEmail invoked', {
+    to,
+    verificationUrl,
+    hasApiKey: Boolean(env.MAILCHANNELS_API_KEY),
+    hasFrom: Boolean(env.EMAIL_FROM),
+    apiBase: env.MAILCHANNELS_API_BASE ?? 'https://api.mailchannels.net/tx/v1',
+  });
+
   const fromAddress = env.EMAIL_FROM;
   if (!fromAddress) {
     throw new Error('EMAIL_FROM must be configured to send verification emails.');
@@ -209,10 +217,25 @@ export async function sendVerificationEmail({
       body: JSON.stringify(payload),
     });
 
+    const debugSnippet = await response
+      .clone()
+      .text()
+      .then((text) => text.slice(0, 500))
+      .catch(() => '<body unavailable>');
+
+    console.log('[email] mailchannels response', {
+      status: response.status,
+      ok: response.ok,
+      bodySnippet: debugSnippet,
+    });
+
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`MailChannels responded with ${response.status}: ${text || response.statusText}`);
+      throw new Error(
+        `MailChannels responded with ${response.status}: ${debugSnippet || response.statusText}`
+      );
     }
+
+    console.log('[email] verification mail enqueued successfully', { to });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error('[email] verification mail failure', {
