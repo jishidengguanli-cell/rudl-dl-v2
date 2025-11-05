@@ -7,6 +7,7 @@ export type MemberRecord = {
   role: string | null;
   balance: number | null;
   createdAt: number;
+  isEmailVerified: boolean;
 };
 
 const toStringOrNull = (value: unknown): string | null => {
@@ -42,6 +43,7 @@ const buildSelectColumns = async (DB: D1Database) => {
     hasColumn(usersInfo, 'email') ? 'email' : null,
     hasColumn(usersInfo, 'role') ? 'role' : null,
     hasColumn(usersInfo, 'balance') ? 'balance' : null,
+    hasColumn(usersInfo, 'is_email_verified') ? 'is_email_verified' : null,
     hasColumn(usersInfo, 'created_at') ? 'created_at' : null,
   ].filter((column): column is string => Boolean(column));
   return { selectColumns, usersInfo };
@@ -51,6 +53,8 @@ const mapMemberRow = (row: Record<string, unknown>): MemberRecord => {
   const emailValue = 'email' in row ? (row as Record<string, unknown>).email : null;
   const roleValue = 'role' in row ? (row as Record<string, unknown>).role : null;
   const balanceValue = 'balance' in row ? (row as Record<string, unknown>).balance : null;
+  const verifiedValue =
+    'is_email_verified' in row ? (row as Record<string, unknown>).is_email_verified : null;
   const createdAtValue = 'created_at' in row ? (row as Record<string, unknown>).created_at : null;
   return {
     id: toStringOrNull(row.id) ?? '',
@@ -58,6 +62,13 @@ const mapMemberRow = (row: Record<string, unknown>): MemberRecord => {
     role: toStringOrNull(roleValue),
     balance: toNumberOrNull(balanceValue),
     createdAt: toEpochSeconds(createdAtValue),
+    isEmailVerified: Boolean(
+      typeof verifiedValue === 'string'
+        ? Number(verifiedValue)
+        : typeof verifiedValue === 'number'
+        ? verifiedValue
+        : verifiedValue
+    ),
   };
 };
 

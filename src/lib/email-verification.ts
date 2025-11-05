@@ -1,0 +1,194 @@
+import type { D1Database } from '@cloudflare/workers-types';
+
+type EmailContent = {
+  type: 'text/plain' | 'text/html';
+  value: string;
+};
+
+type EmailBinding = {
+  send(message: {
+    from: string;
+    to: string;
+    subject: string;
+    content: EmailContent[];
+  }): Promise<void>;
+};
+
+type EmailEnv = {
+  EMAIL?: EmailBinding;
+  EMAIL_FROM?: string;
+  EMAIL_FROM_NAME?: string;
+  APP_BASE_URL?: string;
+};
+
+const TOKENS_TABLE = 'email_verification_tokens';
+
+let tokensTableEnsured = false;
+
+const ensureTokensTable = async (DB: D1Database) => {
+  if (tokensTableEnsured) return;
+  await DB.exec(
+    `CREATE TABLE IF NOT EXISTS ${TOKENS_TABLE} (
+      user_id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`
+  );
+  await DB.exec(
+    `CREATE INDEX IF NOT EXISTS idx_${TOKENS_TABLE}_token_hash
+      ON ${TOKENS_TABLE} (token_hash)`
+  );
+  tokensTableEnsured = true;
+};
+
+const toHex = (buffer: ArrayBuffer) =>
+  [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+
+const hashToken = async (token: string) => {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(token);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return toHex(digest);
+};
+
+export type VerificationToken = {
+  token: string;
+  expiresAt: number;
+};
+
+export const EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60; // 1 hour
+
+export async function createEmailVerificationToken(
+  DB: D1Database,
+  userId: string,
+  ttlSeconds = EMAIL_VERIFICATION_TTL_SECONDS
+): Promise<VerificationToken> {
+  await ensureTokensTable(DB);
+  const token = crypto.randomUUID().replace(/-/g, '');
+  const tokenHash = await hashToken(token);
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + Math.max(60, ttlSeconds);
+
+  await DB.prepare(
+    `INSERT INTO ${TOKENS_TABLE} (user_id, token_hash, expires_at, created_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       token_hash=excluded.token_hash,
+       expires_at=excluded.expires_at,
+       created_at=excluded.created_at`
+  )
+    .bind(userId, tokenHash, expiresAt, now)
+    .run();
+
+  return { token, expiresAt };
+}
+
+type ConsumeResult =
+  | { status: 'success'; userId: string }
+  | { status: 'expired' }
+  | { status: 'invalid' };
+
+export async function consumeEmailVerificationToken(
+  DB: D1Database,
+  token: string
+): Promise<ConsumeResult> {
+  await ensureTokensTable(DB);
+  const tokenHash = await hashToken(token);
+  const now = Math.floor(Date.now() / 1000);
+  const record = await DB.prepare(
+    `SELECT user_id, expires_at FROM ${TOKENS_TABLE} WHERE token_hash=? LIMIT 1`
+  )
+    .bind(tokenHash)
+    .first<{ user_id: string; expires_at: number }>()
+    .catch(() => null);
+
+  if (!record?.user_id) {
+    return { status: 'invalid' };
+  }
+
+  const userId = record.user_id;
+
+  if (!record.expires_at || record.expires_at < now) {
+    await DB.prepare(`DELETE FROM ${TOKENS_TABLE} WHERE user_id=?`).bind(userId).run();
+    return { status: 'expired' };
+  }
+
+  await DB.prepare(`DELETE FROM ${TOKENS_TABLE} WHERE user_id=?`).bind(userId).run();
+
+  return { status: 'success', userId };
+}
+
+export async function markEmailVerified(DB: D1Database, userId: string): Promise<void> {
+  await ensureTokensTable(DB);
+  await DB.prepare(`UPDATE users SET is_email_verified=1 WHERE id=?`).bind(userId).run();
+  await DB.prepare(`DELETE FROM ${TOKENS_TABLE} WHERE user_id=?`).bind(userId).run();
+}
+
+export type VerificationEmailParams = {
+  env: EmailEnv;
+  to: string;
+  subject?: string;
+  verificationUrl: string;
+  appName?: string;
+};
+
+export async function sendVerificationEmail({
+  env,
+  to,
+  verificationUrl,
+  subject = 'Verify your email address',
+  appName = 'DataruApp',
+}: VerificationEmailParams): Promise<void> {
+  const sender = env.EMAIL;
+  if (!sender) {
+    throw new Error('EMAIL binding is not configured for this environment.');
+  }
+
+  const fromAddress = env.EMAIL_FROM;
+  if (!fromAddress) {
+    throw new Error('EMAIL_FROM must be configured to send verification emails.');
+  }
+
+  const fromName = env.EMAIL_FROM_NAME ?? appName;
+  const displayFrom = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+      <h2>${appName}</h2>
+      <p>您好，</p>
+      <p>請按下方按鈕完成電子郵件驗證：</p>
+      <p style="text-align: center; margin: 24px 0;">
+        <a href="${verificationUrl}" style="background-color:#2563eb;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+          驗證電子郵件
+        </a>
+      </p>
+      <p>如果按鈕無法點擊，請將以下連結貼到瀏覽器：</p>
+      <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+      <p>此連結將在60分鐘後失效。</p>
+      <p>— ${appName} 團隊</p>
+    </div>
+  `.trim();
+
+  const text = [
+    `${appName}`,
+    '',
+    '請開啟以下連結完成電子郵件驗證：',
+    verificationUrl,
+    '',
+    '此連結將在60分鐘後失效。',
+    '',
+    `— ${appName} 團隊`,
+  ].join('\n');
+
+  await sender.send({
+    from: displayFrom,
+    to,
+    subject,
+    content: [
+      { type: 'text/plain', value: text },
+      { type: 'text/html', value: html },
+    ],
+  });
+}
