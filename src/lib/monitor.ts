@@ -1,10 +1,16 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { getTableInfo, hasColumn } from '@/lib/distribution';
+import { getTableInfo } from '@/lib/distribution';
 
 export type TelegramSettings = {
   telegramApiId: string | null;
   telegramApiHash: string | null;
   telegramBotToken: string | null;
+};
+
+type ColumnMap = {
+  apiId: string | null;
+  apiHash: string | null;
+  botToken: string | null;
 };
 
 const toStringOrNull = (value: unknown): string | null => {
@@ -19,12 +25,37 @@ const normalizeInput = (value: string | null | undefined): string | null => {
   return trimmed.length ? trimmed : null;
 };
 
-export async function fetchTelegramSettings(DB: D1Database, userId: string): Promise<TelegramSettings> {
+const resolveColumn = (columns: Set<string>, names: string[]): string | null => {
+  if (!columns.size) return null;
+  for (const name of names) {
+    const lower = name.toLowerCase();
+    for (const column of columns) {
+      if (column === name || column.toLowerCase() === lower) {
+        return column;
+      }
+    }
+  }
+  return null;
+};
+
+const buildColumnMap = async (DB: D1Database): Promise<ColumnMap> => {
   const usersInfo = await getTableInfo(DB, 'users');
+  return {
+    apiId: resolveColumn(usersInfo.columns, ['telegram_api_id', 'TELEGRAM_API_ID']),
+    apiHash: resolveColumn(usersInfo.columns, ['telegram_api_hash', 'TELEGRAM_API_HASH']),
+    botToken: resolveColumn(usersInfo.columns, ['telegram_bot_token', 'TELEGRAM_BOT_TOKEN']),
+  };
+};
+
+const aliasColumn = (column: string, alias: string) =>
+  column.toLowerCase() === alias.toLowerCase() ? column : `${column} AS ${alias}`;
+
+export async function fetchTelegramSettings(DB: D1Database, userId: string): Promise<TelegramSettings> {
   const columns = ['id'];
-  if (hasColumn(usersInfo, 'telegram_api_id')) columns.push('telegram_api_id');
-  if (hasColumn(usersInfo, 'telegram_api_hash')) columns.push('telegram_api_hash');
-  if (hasColumn(usersInfo, 'telegram_bot_token')) columns.push('telegram_bot_token');
+  const columnMap = await buildColumnMap(DB);
+  if (columnMap.apiId) columns.push(aliasColumn(columnMap.apiId, 'telegram_api_id'));
+  if (columnMap.apiHash) columns.push(aliasColumn(columnMap.apiHash, 'telegram_api_hash'));
+  if (columnMap.botToken) columns.push(aliasColumn(columnMap.botToken, 'telegram_bot_token'));
 
   const row = await DB.prepare(`SELECT ${columns.join(', ')} FROM users WHERE id=? LIMIT 1`)
     .bind(userId)
@@ -46,20 +77,20 @@ export async function updateTelegramSettings(
   userId: string,
   payload: TelegramSettings
 ): Promise<TelegramSettings> {
-  const usersInfo = await getTableInfo(DB, 'users');
+  const columnMap = await buildColumnMap(DB);
   const updates: string[] = [];
   const bindings: (string | null)[] = [];
 
-  if (hasColumn(usersInfo, 'telegram_api_id')) {
-    updates.push('telegram_api_id=?');
+  if (columnMap.apiId) {
+    updates.push(`${columnMap.apiId}=?`);
     bindings.push(normalizeInput(payload.telegramApiId));
   }
-  if (hasColumn(usersInfo, 'telegram_api_hash')) {
-    updates.push('telegram_api_hash=?');
+  if (columnMap.apiHash) {
+    updates.push(`${columnMap.apiHash}=?`);
     bindings.push(normalizeInput(payload.telegramApiHash));
   }
-  if (hasColumn(usersInfo, 'telegram_bot_token')) {
-    updates.push('telegram_bot_token=?');
+  if (columnMap.botToken) {
+    updates.push(`${columnMap.botToken}=?`);
     bindings.push(normalizeInput(payload.telegramBotToken));
   }
 
@@ -71,4 +102,3 @@ export async function updateTelegramSettings(
 
   return fetchTelegramSettings(DB, userId);
 }
-
