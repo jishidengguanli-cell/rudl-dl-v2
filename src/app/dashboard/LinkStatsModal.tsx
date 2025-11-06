@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DashboardLink } from '@/lib/dashboard';
 import { useI18n } from '@/i18n/provider';
 
@@ -82,9 +82,52 @@ function LineChart({
   frequency: Frequency;
   ariaLabel: string;
 }) {
-  const width = 720;
-  const height = 260;
-  const padding = 40;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState(() => ({
+    width: 960,
+    height: 360,
+  }));
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const applySize = (rawWidth: number) => {
+      const safeWidth = Math.max(320, rawWidth);
+      const nextHeight = Math.max(320, Math.min(640, safeWidth * 0.45));
+      setDimensions((prev) => {
+        if (
+          Math.abs(prev.width - safeWidth) < 1 &&
+          Math.abs(prev.height - nextHeight) < 1
+        ) {
+          return prev;
+        }
+        return {
+          width: safeWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    applySize(element.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        applySize(entry.contentRect.width);
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const { width, height } = dimensions;
+  const padding = Math.max(48, Math.min(96, Math.round(width * 0.08)));
+  const innerWidth = Math.max(0, width - padding * 2);
+  const innerHeight = Math.max(0, height - padding * 2);
 
   const maxValue = Math.max(
     1,
@@ -92,15 +135,15 @@ function LineChart({
   );
 
   const xForIndex = (index: number) => {
-    if (data.length <= 1) return padding;
+    if (data.length <= 1 || innerWidth <= 0) return padding;
     const ratio = index / (data.length - 1);
-    return padding + ratio * (width - padding * 2);
+    return padding + ratio * innerWidth;
   };
 
   const yForValue = (value: number) => {
-    if (maxValue === 0) return height - padding;
+    if (maxValue === 0 || innerHeight <= 0) return height - padding;
     const ratio = value / maxValue;
-    return height - padding - ratio * (height - padding * 2);
+    return height - padding - ratio * innerHeight;
   };
 
   const formatter = useMemo(
@@ -110,9 +153,9 @@ function LineChart({
 
   const tickIndices = useMemo(() => {
     if (data.length === 0) return [];
-    if (data.length <= 4) return data.map((_, index) => index);
-    const step = Math.max(1, Math.floor(data.length / 4));
-    const indices = [];
+    if (data.length <= 6) return data.map((_, index) => index);
+    const step = Math.max(1, Math.floor(data.length / 6));
+    const indices: number[] = [];
     for (let idx = 0; idx < data.length; idx += step) {
       indices.push(idx);
     }
@@ -123,105 +166,127 @@ function LineChart({
   }, [data]);
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={ariaLabel}
-      className="h-60 w-full"
-    >
-      <rect
-        x={padding}
-        y={padding}
-        width={width - padding * 2}
-        height={height - padding * 2}
-        fill="none"
-        stroke="#e5e7eb"
-        strokeWidth={1}
-      />
-      {series.map((item) => {
-        const path = data
-          .map((point, index) => {
-            const x = xForIndex(index);
-            const y = yForValue(point[item.key]);
-            return `${index === 0 ? 'M' : 'L'}${x},${y}`;
-          })
-          .join(' ');
-        return (
-          <g key={item.key}>
-            <path d={path} fill="none" stroke={item.color} strokeWidth={2} />
-            {data.map((point, index) => {
-              const value = point[item.key];
+    <div ref={containerRef} className="w-full">
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={ariaLabel}
+        className="block w-full"
+      >
+        <title>{ariaLabel}</title>
+        <rect
+          x={padding}
+          y={padding}
+          width={innerWidth}
+          height={innerHeight}
+          fill="#f8fafc"
+          stroke="#dbeafe"
+          strokeWidth={1}
+          rx={14}
+        />
+
+        {series.map((serie) => {
+          const path = data
+            .map((point, index) => {
               const x = xForIndex(index);
-              const y = yForValue(value);
-              return (
-                <circle
-                  key={`${item.key}-${index}`}
-                  cx={x}
-                  cy={y}
-                  r={value > 0 ? 2.5 : 1.5}
-                  fill={item.color}
-                  opacity={value > 0 ? 0.9 : 0.4}
-                />
-              );
-            })}
-          </g>
-        );
-      })}
+              const y = yForValue(point[serie.key]);
+              return `${index === 0 ? 'M' : 'L'}${x},${y}`;
+            })
+            .join(' ');
 
-      <line
-        x1={padding}
-        x2={width - padding}
-        y1={height - padding}
-        y2={height - padding}
-        stroke="#9ca3af"
-        strokeWidth={1}
-      />
-      {tickIndices.map((index) => {
-        const bucket = data[index];
-        const label = formatter.format(new Date(bucket.bucket));
-        const x = xForIndex(index);
-        return (
-          <g key={`tick-${index}`} transform={`translate(${x},${height - padding})`}>
-            <line y2={6} stroke="#9ca3af" strokeWidth={1} />
-            <text
-              y={20}
-              fill="#4b5563"
-              fontSize={10}
-              textAnchor={index === 0 ? 'start' : index === data.length - 1 ? 'end' : 'middle'}
-            >
-              {label}
-            </text>
-          </g>
-        );
-      })}
+          return (
+            <g key={serie.key}>
+              <path
+                d={path}
+                fill="none"
+                stroke={serie.color}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {data.map((point, index) => {
+                const value = point[serie.key];
+                const x = xForIndex(index);
+                const y = yForValue(value);
+                return (
+                  <circle
+                    key={`${serie.key}-${point.bucket}`}
+                    cx={x}
+                    cy={y}
+                    r={value > 0 ? 3 : 2}
+                    fill={serie.color}
+                    opacity={value > 0 ? 0.9 : 0.5}
+                  />
+                );
+              })}
+            </g>
+          );
+        })}
 
-      <line
-        x1={padding}
-        x2={padding}
-        y1={padding}
-        y2={height - padding}
-        stroke="#9ca3af"
-        strokeWidth={1}
-      />
-      {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-        const value = Math.round(maxValue * ratio);
-        const y = yForValue(value);
-        return (
-          <g key={`grid-${ratio}`} transform={`translate(0,${y})`}>
-            <line
-              x1={padding}
-              x2={width - padding}
-              stroke="#e5e7eb"
-              strokeWidth={0.5}
-              strokeDasharray="4 4"
-            />
-            <text x={padding - 8} fill="#4b5563" fontSize={10} textAnchor="end" dominantBaseline="middle">
-              {value.toLocaleString()}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+        <line
+          x1={padding}
+          x2={padding}
+          y1={padding}
+          y2={height - padding}
+          stroke="#94a3b8"
+          strokeWidth={1.25}
+        />
+        <line
+          x1={padding}
+          x2={width - padding}
+          y1={height - padding}
+          y2={height - padding}
+          stroke="#94a3b8"
+          strokeWidth={1.25}
+        />
+
+        {tickIndices.map((index) => {
+          const point = data[index];
+          const x = xForIndex(index);
+          const label = formatter.format(new Date(point.bucket));
+          return (
+            <g key={`tick-${point.bucket}`} transform={`translate(${x},${height - padding})`}>
+              <line y2={8} stroke="#94a3b8" strokeWidth={1} />
+              <text
+                y={26}
+                fill="#475569"
+                fontSize={12}
+                textAnchor={index === 0 ? 'start' : index === data.length - 1 ? 'end' : 'middle'}
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
+
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const value = Math.round(maxValue * ratio);
+          const y = yForValue(value);
+          return (
+            <g key={`grid-${ratio}`} transform={`translate(0,${y})`}>
+              <line
+                x1={padding}
+                x2={width - padding}
+                stroke="#e2e8f0"
+                strokeWidth={1}
+                strokeDasharray="6 6"
+              />
+              <text
+                x={padding - 10}
+                fill="#475569"
+                fontSize={12}
+                textAnchor="end"
+                dominantBaseline="middle"
+              >
+                {value.toLocaleString(locale)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -387,7 +452,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
       aria-modal="true"
       aria-label={t('dashboard.linkInfo.title')}
     >
-      <div className="relative flex w-full max-w-5xl flex-col gap-6 rounded-xl bg-white p-6 shadow-2xl max-h-full overflow-y-auto">
+      <div className="relative flex w-full max-w-7xl flex-col gap-6 rounded-xl bg-white p-6 shadow-2xl max-h-full overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">{t('dashboard.linkInfo.title')}</h2>
