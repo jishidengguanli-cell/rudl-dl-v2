@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DashboardLink } from '@/lib/dashboard';
 import { useI18n } from '@/i18n/provider';
 
-type Frequency = 'year' | 'month' | 'day' | 'hour' | 'minute';
+type Frequency = 'year' | 'month' | 'day' | 'hour';
 
 type StatsPoint = {
   bucket: string;
@@ -26,8 +26,8 @@ type StatsResponse =
   | { ok: true; points: StatsPoint[]; summary: StatsSummary }
   | { ok: false; error: string };
 
-const FREQUENCY_OPTIONS: Frequency[] = ['day', 'hour', 'minute', 'month', 'year'];
-const DISABLED_FREQUENCIES = new Set<Frequency>(['hour', 'minute']);
+const FREQUENCY_OPTIONS: Frequency[] = ['day', 'hour', 'month', 'year'];
+const DISABLED_FREQUENCIES = new Set<Frequency>(['hour']);
 
 const CHART_COLORS: Record<'apk' | 'ipa' | 'total', string> = {
   apk: '#0ea5e9',
@@ -54,13 +54,6 @@ const formatterOptions: Record<Frequency, Intl.DateTimeFormatOptions> = {
   month: { year: 'numeric', month: 'short' },
   day: { year: 'numeric', month: 'short', day: 'numeric' },
   hour: { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit' },
-  minute: {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  },
 };
 
 type LineChartSeries = {
@@ -301,7 +294,6 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
   const [fromValue, setFromValue] = useState('');
   const [toValue, setToValue] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('day');
-  const [minuteInterval, setMinuteInterval] = useState(15);
   const [selectedPlatforms, setSelectedPlatforms] = useState<Array<'apk' | 'ipa' | 'total'>>([
     'apk',
     'ipa',
@@ -350,9 +342,6 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
         to: toDate.toISOString(),
         frequency,
       });
-      if (frequency === 'minute') {
-        params.set('minuteInterval', String(Math.max(1, Math.min(240, minuteInterval))));
-      }
       const res = await fetch(`/api/distributions/${encodeURIComponent(link.id)}/stats?${params.toString()}`, {
         cache: 'no-store',
       });
@@ -373,7 +362,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [fromValue, toValue, frequency, minuteInterval, link.id]);
+  }, [fromValue, toValue, frequency, link.id]);
 
   useEffect(() => {
     if (open) {
@@ -388,12 +377,9 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
         month: t('dashboard.linkInfo.frequency.month'),
         day: t('dashboard.linkInfo.frequency.day'),
         hour: t('dashboard.linkInfo.frequency.hour'),
-        minute: t('dashboard.linkInfo.frequency.minute'),
       }) as Record<Frequency, string>,
     [t],
   );
-
-  const isMinuteFrequency = frequency === 'minute';
 
   const activeSeries: LineChartSeries[] = useMemo(
     () =>
@@ -508,53 +494,29 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
 
           <div className="flex flex-col gap-3">
             <div>
-      <label className="block text-sm font-medium text-gray-700" htmlFor="stats-frequency">
-        {t('dashboard.linkInfo.frequency')}
-      </label>
-      <select
-        id="stats-frequency"
-        className="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-        value={frequency}
-        onChange={(event) => {
-          const next = event.target.value as Frequency;
-          if (DISABLED_FREQUENCIES.has(next)) return;
-          setFrequency(next);
-        }}
-      >
-        {FREQUENCY_OPTIONS.map((option) => {
-          const disabled = DISABLED_FREQUENCIES.has(option);
-          const title =
-            option === 'minute'
-              ? t('dashboard.linkInfo.minuteDisabled')
-              : disabled
-              ? t('dashboard.linkInfo.minuteDisabled')
-              : undefined;
-          return (
-            <option key={option} value={option} disabled={disabled} title={title}>
-              {frequencyLabels[option]}
-            </option>
-          );
-        })}
-      </select>
+              <label className="block text-sm font-medium text-gray-700" htmlFor="stats-frequency">
+                {t('dashboard.linkInfo.frequency')}
+              </label>
+              <select
+                id="stats-frequency"
+                className="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                value={frequency}
+                onChange={(event) => {
+                  const next = event.target.value as Frequency;
+                  if (DISABLED_FREQUENCIES.has(next)) return;
+                  setFrequency(next);
+                }}
+              >
+                {FREQUENCY_OPTIONS.map((option) => {
+                  const disabled = DISABLED_FREQUENCIES.has(option);
+                  return (
+                    <option key={option} value={option} disabled={disabled}>
+                      {frequencyLabels[option]}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
-
-            {frequency === 'minute' ? (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-gray-500" htmlFor="stats-minute-step">
-                  {t('dashboard.linkInfo.minuteInterval')}
-                </label>
-                <input
-                  id="stats-minute-step"
-                  type="number"
-                  min={1}
-                  max={240}
-                  value={minuteInterval}
-                  onChange={(event) => setMinuteInterval(Number(event.target.value) || 1)}
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  disabled
-                />
-              </div>
-            ) : null}
 
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-gray-700">{t('dashboard.linkInfo.platforms')}</span>
@@ -593,14 +555,10 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
               type="button"
               onClick={fetchStats}
               className="inline-flex items-center justify-center rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={loading || isMinuteFrequency}
-              title={isMinuteFrequency ? t('dashboard.linkInfo.minuteDisabled') : undefined}
+              disabled={loading}
             >
               {loading ? t('status.loading') : t('dashboard.linkInfo.apply')}
             </button>
-            {isMinuteFrequency ? (
-              <p className="text-xs text-gray-500">{t('dashboard.linkInfo.minuteDisabled')}</p>
-            ) : null}
           </div>
         </div>
 
@@ -648,7 +606,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
             ) : null}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="max-h-64 overflow-y-auto overflow-x-auto pr-1">
             <table className="min-w-full table-fixed text-left text-xs text-gray-600">
               <thead>
                 <tr className="border-b border-gray-200">
@@ -661,7 +619,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {stats.slice(-10).map((point) => {
+                {stats.map((point) => {
                   const formatted = formatter.format(new Date(point.bucket));
                   return (
                     <tr key={point.bucket} className="border-b border-gray-100 last:border-0">
@@ -676,7 +634,7 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
                 })}
               </tbody>
             </table>
-            {stats.length > 10 ? (
+            {stats.length ? (
               <p className="mt-2 text-right text-xs text-gray-500">
                 {t('dashboard.linkInfo.table.selected').replace('{count}', stats.length.toString())}
               </p>

@@ -11,7 +11,7 @@ type Env = {
   ['rudl-app']?: D1Database;
 };
 
-type Frequency = 'year' | 'month' | 'day' | 'hour' | 'minute';
+type Frequency = 'year' | 'month' | 'day' | 'hour';
 
 type StatsPoint = { bucket: string; apk: number; ipa: number; total: number };
 
@@ -28,16 +28,11 @@ const parseUid = (req: Request): string | null => {
   return entry.slice(4);
 };
 
-const clampInterval = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return 1;
-  return Math.min(240, Math.max(1, Math.floor(value)));
-};
-
 const startOfDayUTC = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
 const formatDayKey = (date: Date) => startOfDayUTC(date).toISOString().slice(0, 10);
 
-const alignTimestamp = (ms: number, frequency: Frequency, minuteInterval: number) => {
+const alignTimestamp = (ms: number, frequency: Frequency) => {
   const date = new Date(ms);
   switch (frequency) {
     case 'year': {
@@ -58,13 +53,6 @@ const alignTimestamp = (ms: number, frequency: Frequency, minuteInterval: number
       date.setUTCMinutes(0, 0, 0);
       break;
     }
-    case 'minute': {
-      const step = clampInterval(minuteInterval);
-      const minutes = date.getUTCMinutes();
-      const floored = Math.floor(minutes / step) * step;
-      date.setUTCMinutes(floored, 0, 0);
-      break;
-    }
     default: {
       date.setUTCHours(0, 0, 0, 0);
     }
@@ -72,7 +60,7 @@ const alignTimestamp = (ms: number, frequency: Frequency, minuteInterval: number
   return date.getTime();
 };
 
-const incrementTimestamp = (ms: number, frequency: Frequency, minuteInterval: number) => {
+const incrementTimestamp = (ms: number, frequency: Frequency) => {
   const date = new Date(ms);
   switch (frequency) {
     case 'year': {
@@ -89,11 +77,6 @@ const incrementTimestamp = (ms: number, frequency: Frequency, minuteInterval: nu
     }
     case 'hour': {
       date.setUTCHours(date.getUTCHours() + 1);
-      break;
-    }
-    case 'minute': {
-      const step = clampInterval(minuteInterval);
-      date.setUTCMinutes(date.getUTCMinutes() + step);
       break;
     }
     default: {
@@ -134,10 +117,9 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
 
   const url = new URL(req.url);
   const frequencyParam = (url.searchParams.get('frequency') as Frequency | null) ?? 'day';
-  const frequency: Frequency = ['year', 'month', 'day', 'hour', 'minute'].includes(frequencyParam)
+  const frequency: Frequency = ['year', 'month', 'day', 'hour'].includes(frequencyParam)
     ? frequencyParam
     : 'day';
-  const minuteInterval = clampInterval(Number(url.searchParams.get('minuteInterval') ?? '15'));
 
   const toParam = url.searchParams.get('to');
   const fromParam = url.searchParams.get('from');
@@ -159,14 +141,14 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
   const alignedFromDay = startOfDayUTC(fromDate);
   const alignedToDay = startOfDayUTC(toDate);
 
-  const alignedStart = alignTimestamp(alignedFromDay.getTime(), frequency, minuteInterval);
-  const alignedEnd = alignTimestamp(alignedToDay.getTime(), frequency, minuteInterval);
+  const alignedStart = alignTimestamp(alignedFromDay.getTime(), frequency);
+  const alignedEnd = alignTimestamp(alignedToDay.getTime(), frequency);
 
   const bucketTimes: number[] = [];
   let cursor = alignedStart;
   while (cursor <= alignedEnd) {
     bucketTimes.push(cursor);
-    cursor = incrementTimestamp(cursor, frequency, minuteInterval);
+    cursor = incrementTimestamp(cursor, frequency);
     if (bucketTimes.length > MAX_BUCKETS) {
       return jsonError('RANGE_TOO_LARGE', 400);
     }
@@ -201,7 +183,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
   for (const row of rows) {
     const dateValue = row.date ? new Date(`${row.date}T00:00:00Z`).getTime() : NaN;
     if (!Number.isFinite(dateValue)) continue;
-    const bucketKey = alignTimestamp(dateValue, frequency, minuteInterval);
+    const bucketKey = alignTimestamp(dateValue, frequency);
     const entry = bucketMap.get(bucketKey) ?? { apk: 0, ipa: 0 };
     entry.apk += toNumber(row.apk_dl);
     entry.ipa += toNumber(row.ipa_dl);
