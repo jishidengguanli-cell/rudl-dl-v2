@@ -56,7 +56,10 @@ async function getTableInfo(
 
   const cached = tableInfoCache[table];
   if (cached) return cached;
-  const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
+  const results = await runWithD1Retry(
+    () => DB.prepare(`PRAGMA table_info(${table})`).all<{ name?: string; type?: string }>(),
+    `distributions:pragma-table-info:${table}`
+  );
   const columns = new Set<string>();
   const types: Record<string, string> = {};
   const rows = (results.results as Array<{ name?: string; type?: string }> | undefined) ?? [];
