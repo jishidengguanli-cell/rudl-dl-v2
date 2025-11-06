@@ -3,6 +3,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { generateLinkCode } from '@/lib/code';
 import { deleteDownloadStatsForLink, ensureDownloadStatsTable } from '@/lib/downloads';
 import { normalizeLanguageCode } from '@/lib/language';
+import { runWithD1Retry } from '@/lib/d1';
 
 export const runtime = 'edge';
 
@@ -344,15 +345,19 @@ export async function POST(req: Request) {
       );
     }
 
-    await DB.batch(statements);
+    await runWithD1Retry(() => DB.batch(statements), 'distributions:create-batch');
     await ensureDownloadStatsTable(DB, linkId);
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
-    await DB.batch([
-      DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
-      DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
-    ]).catch(() => null);
+    await runWithD1Retry(
+      () =>
+        DB.batch([
+          DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
+          DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
+        ]),
+      'distributions:create-cleanup'
+    ).catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
     await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
     const message = error instanceof Error ? error.message : String(error);
