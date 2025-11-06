@@ -97,6 +97,10 @@ function sanitizeTitleFromKey(key: string): string | null {
   return fileName.replace(/^\d+-/, '').replace(/\.[^.]+$/, '') || null;
 }
 
+const executeStatement = async (statement: D1PreparedStatement, context: string) => {
+  await runWithD1Retry(() => statement.run(), context);
+};
+
 export async function POST(req: Request) {
   const uid = parseUid(req);
   if (!uid) {
@@ -262,8 +266,8 @@ export async function POST(req: Request) {
       linkColumnPairs.push(['is_active', isActiveValue]);
     }
 
-    const fileStatements: D1PreparedStatement[] = [];
     const fileIds: string[] = [];
+    const fileStatements: Array<{ statement: D1PreparedStatement; context: string }> = [];
     for (const upload of uploads) {
       const fileId = crypto.randomUUID();
       fileIds.push(fileId);
@@ -310,7 +314,8 @@ export async function POST(req: Request) {
 
       const filePlaceholders = fileColumns.map(() => '?').join(', ');
       const fileQuery = `INSERT INTO files (${fileColumns.join(', ')}) VALUES (${filePlaceholders})`;
-      fileStatements.push(DB.prepare(fileQuery).bind(...fileValues));
+      const statement = DB.prepare(fileQuery).bind(...fileValues);
+      fileStatements.push({ statement, context: `distributions:insert-file:${upload.platform}` });
     }
 
     const firstFileId = fileIds[0] ?? null;
@@ -333,30 +338,36 @@ export async function POST(req: Request) {
     const linkQuery = `INSERT INTO links (${linkColumns.join(', ')}) VALUES (${linkPlaceholders})`;
 
     const linkStatement = DB.prepare(linkQuery).bind(...linkValues);
+    await executeStatement(linkStatement, 'distributions:insert-link');
 
-    const statements: D1PreparedStatement[] = [linkStatement, ...fileStatements];
+    for (const { statement, context } of fileStatements) {
+      await executeStatement(statement, context);
+    }
 
     if (hasColumn(linksInfo, 'is_active')) {
       const activeValue = isTextColumn(linksInfo, 'is_active')
-        ? isActiveInput ? '1' : '0'
-        : isActiveInput ? 1 : 0;
-      statements.push(
-        DB.prepare('UPDATE links SET is_active=? WHERE id=?').bind(activeValue, linkId)
+        ? isActiveInput
+          ? '1'
+          : '0'
+        : isActiveInput
+        ? 1
+        : 0;
+      await executeStatement(
+        DB.prepare('UPDATE links SET is_active=? WHERE id=?').bind(activeValue, linkId),
+        'distributions:update-active'
       );
     }
-
-    await runWithD1Retry(() => DB.batch(statements), 'distributions:create-batch');
     await ensureDownloadStatsTable(DB, linkId);
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
-    await runWithD1Retry(
-      () =>
-        DB.batch([
-          DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
-          DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
-        ]),
-      'distributions:create-cleanup'
+    await executeStatement(
+      DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
+      'distributions:create-cleanup-files'
+    ).catch(() => null);
+    await executeStatement(
+      DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
+      'distributions:create-cleanup-link'
     ).catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
     await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
