@@ -310,7 +310,6 @@ export default function LinkStatsModal({ open, link, onClose }: Props) {
     setFromValue(toLocalInputValue(weekAgo));
     setToValue(toLocalInputValue(now));
     setFrequency('day');
-    setMinuteInterval(15);
     setSelectedPlatforms(['apk', 'ipa', 'total']);
     setStats([]);
     setSummary(null);
