@@ -234,7 +234,7 @@ export async function POST(req: Request) {
   }
 
   const safeName = sanitizeFileName(fileName, `${platform}.bin`);
-  const key = `links/${uid}/${linkId}/${platform}/${Date.now()}-${safeName}`;
+  const key = `${uid}/links/${linkId}/${platform}/${safeName}`;
 
   const exists = await R2.head(key);
   if (exists) {

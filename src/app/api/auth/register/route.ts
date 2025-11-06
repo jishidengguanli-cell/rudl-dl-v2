@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { R2Bucket } from '@cloudflare/workers-types';
 import { encodePasswordRecord, hashPassword, randomSaltHex } from '@/lib/pw';
 import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 
@@ -8,12 +9,27 @@ export const runtime = 'edge';
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
+  R2_BUCKET?: R2Bucket;
 };
+
+async function ensureUserBucketFolder(bucket: R2Bucket | undefined, userId: string) {
+  if (!bucket) return;
+  const key = `${userId}/.init`;
+  try {
+    await bucket.put(key, new Uint8Array(), {
+      httpMetadata: { contentType: 'application/octet-stream' },
+      customMetadata: { owner: userId, scope: 'user-root' },
+    });
+  } catch {
+    // non-blocking
+  }
+}
 
 export async function POST(req: Request) {
   const { env } = getRequestContext();
   const bindings = env as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
+  const R2 = bindings.R2_BUCKET;
   if (!DB) {
     return NextResponse.json({ ok: false, error: 'D1 binding DB is missing' }, { status: 500 });
   }
@@ -56,6 +72,8 @@ export async function POST(req: Request) {
           .catch(() => undefined);
       }
     }
+
+    await ensureUserBucketFolder(R2, id);
 
     return NextResponse.json({ ok: true, user_id: id });
   } catch (error: unknown) {
