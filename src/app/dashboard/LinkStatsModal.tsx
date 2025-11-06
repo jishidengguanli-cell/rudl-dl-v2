@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DashboardLink } from '@/lib/dashboard';
 import { useI18n } from '@/i18n/provider';
 
@@ -75,52 +75,12 @@ function LineChart({
   frequency: Frequency;
   ariaLabel: string;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [dimensions, setDimensions] = useState(() => ({
-    width: 960,
-    height: 360,
-  }));
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-
-    const applySize = (rawWidth: number) => {
-      const safeWidth = Math.max(320, rawWidth);
-      const nextHeight = Math.max(320, Math.min(640, safeWidth * 0.45));
-      setDimensions((prev) => {
-        if (
-          Math.abs(prev.width - safeWidth) < 1 &&
-          Math.abs(prev.height - nextHeight) < 1
-        ) {
-          return prev;
-        }
-        return {
-          width: safeWidth,
-          height: nextHeight,
-        };
-      });
-    };
-
-    applySize(element.getBoundingClientRect().width);
-
-    if (typeof ResizeObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        applySize(entry.contentRect.width);
-      }
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  const { width, height } = dimensions;
-  const padding = Math.max(48, Math.min(96, Math.round(width * 0.08)));
-  const innerWidth = Math.max(0, width - padding * 2);
-  const innerHeight = Math.max(0, height - padding * 2);
+  const viewWidth = 960;
+  const viewHeight = 360;
+  const paddingX = 72;
+  const paddingY = 56;
+  const innerWidth = viewWidth - paddingX * 2;
+  const innerHeight = viewHeight - paddingY * 2;
 
   const maxValue = Math.max(
     1,
@@ -128,15 +88,15 @@ function LineChart({
   );
 
   const xForIndex = (index: number) => {
-    if (data.length <= 1 || innerWidth <= 0) return padding;
+    if (data.length <= 1 || innerWidth <= 0) return paddingX;
     const ratio = index / (data.length - 1);
-    return padding + ratio * innerWidth;
+    return paddingX + ratio * innerWidth;
   };
 
   const yForValue = (value: number) => {
-    if (maxValue === 0 || innerHeight <= 0) return height - padding;
+    if (maxValue === 0 || innerHeight <= 0) return viewHeight - paddingY;
     const ratio = value / maxValue;
-    return height - padding - ratio * innerHeight;
+    return viewHeight - paddingY - ratio * innerHeight;
   };
 
   const formatter = useMemo(
@@ -159,19 +119,18 @@ function LineChart({
   }, [data]);
 
   return (
-    <div ref={containerRef} className="w-full">
+    <div className="w-full">
       <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
         role="img"
         aria-label={ariaLabel}
         className="block w-full"
+        height={viewHeight}
       >
         <title>{ariaLabel}</title>
         <rect
-          x={padding}
-          y={padding}
+          x={paddingX}
+          y={paddingY}
           width={innerWidth}
           height={innerHeight}
           fill="#f8fafc"
@@ -219,18 +178,18 @@ function LineChart({
         })}
 
         <line
-          x1={padding}
-          x2={padding}
-          y1={padding}
-          y2={height - padding}
+          x1={paddingX}
+          x2={paddingX}
+          y1={paddingY}
+          y2={viewHeight - paddingY}
           stroke="#94a3b8"
           strokeWidth={1.25}
         />
         <line
-          x1={padding}
-          x2={width - padding}
-          y1={height - padding}
-          y2={height - padding}
+          x1={paddingX}
+          x2={viewWidth - paddingX}
+          y1={viewHeight - paddingY}
+          y2={viewHeight - paddingY}
           stroke="#94a3b8"
           strokeWidth={1.25}
         />
@@ -240,7 +199,7 @@ function LineChart({
           const x = xForIndex(index);
           const label = formatter.format(new Date(point.bucket));
           return (
-            <g key={`tick-${point.bucket}`} transform={`translate(${x},${height - padding})`}>
+            <g key={`tick-${point.bucket}`} transform={`translate(${x},${viewHeight - paddingY})`}>
               <line y2={8} stroke="#94a3b8" strokeWidth={1} />
               <text
                 y={26}
@@ -260,14 +219,14 @@ function LineChart({
           return (
             <g key={`grid-${ratio}`} transform={`translate(0,${y})`}>
               <line
-                x1={padding}
-                x2={width - padding}
+                x1={paddingX}
+                x2={viewWidth - paddingX}
                 stroke="#e2e8f0"
                 strokeWidth={1}
                 strokeDasharray="6 6"
               />
               <text
-                x={padding - 10}
+                x={paddingX - 10}
                 fill="#475569"
                 fontSize={12}
                 textAnchor="end"
