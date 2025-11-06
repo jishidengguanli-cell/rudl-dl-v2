@@ -116,12 +116,16 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
     );
   };
 
-  const renderValue = (value: string | null) =>
-    value && value.trim().length ? (
-      <span className="font-mono text-sm text-gray-900 break-all">{value}</span>
-    ) : (
-      <span className="text-sm text-gray-400">{t('monitor.privacy.emptyValue')}</span>
+  const renderValue = (value: string | null) => {
+    if (!value || !value.trim().length) {
+      return <span className="text-sm text-gray-400">{t('monitor.privacy.emptyValue')}</span>;
+    }
+    return (
+      <span className="font-mono text-sm text-gray-900 break-all" aria-label={t('monitor.privacy.maskedValueLabel')}>
+        {'**********'}
+      </span>
     );
+  };
 
   return (
     <div className="mt-6 space-y-6">
@@ -223,4 +227,3 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
     </div>
   );
 }
-

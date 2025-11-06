@@ -159,6 +159,7 @@
   "monitor.privacy.status.saved": "?? l?u d? li?u ri?ng t?.",
   "monitor.privacy.status.error": "Kh?ng th? l?u d? li?u.",
   "monitor.privacy.emptyValue": "Ch?a thi?t l?p",
+  "monitor.privacy.maskedValueLabel": "Hidden value",
   "monitor.privacy.telegramMain.title": "T?i kho?n Telegram ch?nh",
   "monitor.privacy.telegramMain.description": "Nh?p API ID v? API hash l?y t? https://my.telegram.org.",
   "monitor.privacy.telegramMain.apiId": "TELEGRAM API ID",

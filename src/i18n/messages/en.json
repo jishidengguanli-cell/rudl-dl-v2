@@ -159,6 +159,7 @@
   "monitor.privacy.status.saved": "Privacy data saved.",
   "monitor.privacy.status.error": "Unable to save privacy data.",
   "monitor.privacy.emptyValue": "Not set",
+  "monitor.privacy.maskedValueLabel": "Value hidden for privacy",
   "monitor.privacy.telegramMain.title": "Telegram main account",
   "monitor.privacy.telegramMain.description": "Use your Telegram API ID and API hash from https://my.telegram.org.",
   "monitor.privacy.telegramMain.apiId": "TELEGRAM API ID",
