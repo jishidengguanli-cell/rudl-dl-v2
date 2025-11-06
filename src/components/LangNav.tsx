@@ -111,6 +111,11 @@ export default function LangNav() {
           {t('nav.dashboard')}
         </Link>
         {session ? (
+          <Link className="underline" href={resolveHref('/monitor')}>
+            {t('nav.monitor')}
+          </Link>
+        ) : null}
+        {session ? (
           <Link className="underline" href={resolveHref('/member')}>
             {t('nav.member')}
           </Link>
