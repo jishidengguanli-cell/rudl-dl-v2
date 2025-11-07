@@ -256,16 +256,16 @@ export async function DELETE(request: Request, context: { params: Promise<RouteP
       r2Keys.push(...keys);
     }
 
-    await DB.exec('BEGIN');
+    await DB.prepare('BEGIN').run();
     try {
       for (const linkId of linkIds) {
         await DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId).run();
         await DB.prepare('DELETE FROM links WHERE id=?').bind(linkId).run();
       }
       await DB.prepare('DELETE FROM users WHERE id=?').bind(memberId).run();
-      await DB.exec('COMMIT');
+      await DB.prepare('COMMIT').run();
     } catch (error) {
-      await DB.exec('ROLLBACK');
+      await DB.prepare('ROLLBACK').run();
       throw error;
     }
 

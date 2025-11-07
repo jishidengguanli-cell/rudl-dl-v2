@@ -328,7 +328,7 @@ const ensureOrdersTable = async (DB: D1Database) => {
     .first<{ name: string }>();
 
   if (!tableExists) {
-    await DB.exec(
+    await DB.prepare(
       `CREATE TABLE ${ORDERS_TABLE} (
         merchant_trade_no TEXT PRIMARY KEY,
         account_id TEXT NOT NULL,
@@ -353,10 +353,12 @@ const ensureOrdersTable = async (DB: D1Database) => {
         raw_notify TEXT,
         raw_payment_info TEXT
       );`
-    );
+    ).run();
   }
 
-  await DB.exec(`CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id);`);
+  await DB.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_${ORDERS_TABLE}_account ON ${ORDERS_TABLE} (account_id);`
+  ).run();
   await detectOrdersTableColumns(DB);
   ordersTableEnsured = true;
 };
