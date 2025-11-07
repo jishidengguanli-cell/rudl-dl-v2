@@ -216,12 +216,11 @@ export async function sendVerificationEmail({
   };
 
   try {
-    const credentials = btoa(`api:${apiKey}`);
     const response = await fetch(`${apiBase}/send`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Basic ${credentials}`,
+        'X-Api-Key': apiKey,
       },
       body: JSON.stringify(payload),
     });
