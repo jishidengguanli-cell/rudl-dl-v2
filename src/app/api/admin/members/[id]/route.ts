@@ -256,18 +256,13 @@ export async function DELETE(request: Request, context: { params: Promise<RouteP
       r2Keys.push(...keys);
     }
 
-    await DB.prepare('BEGIN').run();
-    try {
-      for (const linkId of linkIds) {
-        await DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId).run();
-        await DB.prepare('DELETE FROM links WHERE id=?').bind(linkId).run();
-      }
-      await DB.prepare('DELETE FROM users WHERE id=?').bind(memberId).run();
-      await DB.prepare('COMMIT').run();
-    } catch (error) {
-      await DB.prepare('ROLLBACK').run();
-      throw error;
+    const deleteStatements: D1PreparedStatement[] = [];
+    for (const linkId of linkIds) {
+      deleteStatements.push(DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId));
+      deleteStatements.push(DB.prepare('DELETE FROM links WHERE id=?').bind(linkId));
     }
+    deleteStatements.push(DB.prepare('DELETE FROM users WHERE id=?').bind(memberId));
+    await DB.batch(deleteStatements);
 
     await Promise.all(
       linkIds.map(async (linkId) => {
