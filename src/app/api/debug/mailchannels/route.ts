@@ -22,21 +22,16 @@ export async function GET() {
   const processApiBase = process.env.MAILCHANNELS_API_BASE ?? '';
 
   const resolvedKey = bindingKey || processKey;
-  const keySource = bindingKey ? 'bindings' : processKey ? 'process.env' : null;
 
   const payload = {
     ok: Boolean(resolvedKey),
-    keySource,
     viaBindings: Boolean(bindingKey),
     viaProcessEnv: Boolean(processKey),
     hasFromAddress: Boolean(bindingFrom || processFrom),
-    apiBase: bindingApiBase || processApiBase || 'https://api.mailchannels.net/tx/v1',
-    bindingKeysPresent: Object.keys(bindings).filter((key) =>
-      key.toUpperCase().includes('MAILCHANNEL')
-    ),
-    processKeysPresent: Object.keys(process.env ?? {}).filter((key) =>
-      key.toUpperCase().includes('MAILCHANNEL')
-    ),
+    apiBase:
+      bindingApiBase ||
+      processApiBase ||
+      'https://api.mailchannels.net/tx/v1',
   };
 
   if (!payload.ok) {
@@ -44,14 +39,12 @@ export async function GET() {
       {
         ...payload,
         message:
-          'MAILCHANNELS_API_KEY is missing. Check that the variable is defined in Cloudflare Pages/Workers production environment, or provide a Pages Function binding.',
+          'MAILCHANNELS_API_KEY is missing from both bindings and process.env.',
       },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({
-    ...payload,
-    message: `MAILCHANNELS_API_KEY detected via ${keySource}.`,
-  });
+  return NextResponse.json(payload);
 }
+
