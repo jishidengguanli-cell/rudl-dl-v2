@@ -15,7 +15,7 @@ let tokensTableEnsured = false;
 
 const ensureTokensTable = async (DB: D1Database) => {
   if (tokensTableEnsured) return;
-  await DB.exec(
+  await DB.prepare(
     `CREATE TABLE IF NOT EXISTS ${TOKENS_TABLE} (
       user_id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL,
@@ -23,11 +23,11 @@ const ensureTokensTable = async (DB: D1Database) => {
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`
-  );
-  await DB.exec(
+  ).run();
+  await DB.prepare(
     `CREATE INDEX IF NOT EXISTS idx_${TOKENS_TABLE}_token_hash
       ON ${TOKENS_TABLE} (token_hash)`
-  );
+  ).run();
   tokensTableEnsured = true;
 };
 
