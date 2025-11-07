@@ -27,13 +27,15 @@ export async function POST(req: Request) {
       .bind(email)
       .first<{ id: string; pw_hash: string }>();
 
-    if (!user) return NextResponse.json({ ok: false, error: 'INVALID_CREDENTIALS' }, { status: 401 });
+    const invalidMessage = '帳號或密碼不存在';
+
+    if (!user) return NextResponse.json({ ok: false, error: invalidMessage }, { status: 401 });
 
     const parsed = decodePasswordRecord(user.pw_hash);
-    if (!parsed?.saltHex) return NextResponse.json({ ok: false, error: 'INVALID_CREDENTIALS' }, { status: 401 });
+    if (!parsed?.saltHex) return NextResponse.json({ ok: false, error: invalidMessage }, { status: 401 });
 
     const derived = await hashPassword(password, parsed.saltHex);
-    if (derived !== parsed.hashHex) return NextResponse.json({ ok: false, error: 'INVALID_CREDENTIALS' }, { status: 401 });
+    if (derived !== parsed.hashHex) return NextResponse.json({ ok: false, error: invalidMessage }, { status: 401 });
 
     const res = NextResponse.json({ ok: true, user_id: user.id });
     res.cookies.set('uid', user.id, {
