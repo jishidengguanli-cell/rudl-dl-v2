@@ -65,6 +65,8 @@ export default function EmailVerificationClient({
     return 'info';
   });
   const [loading, setLoading] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'pending'>('idle');
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   const handleSend = async () => {
     if (!email) {
@@ -116,6 +118,40 @@ export default function EmailVerificationClient({
     }
   };
 
+  const handleTest = async () => {
+    setTestStatus('pending');
+    setTestResult(null);
+    try {
+      const response = await fetch('/api/debug/mailchannels', { cache: 'no-store' });
+      const data = (await response.json().catch(() => ({}))) as
+        | {
+            ok?: boolean;
+            viaBindings?: boolean;
+            viaProcessEnv?: boolean;
+            hasFromAddress?: boolean;
+            apiBase?: string;
+            message?: string;
+          }
+        | undefined;
+      if (!response.ok || !data) {
+        throw new Error(data?.message ?? 'Unknown response');
+      }
+      if (!data.ok) {
+        throw new Error(data.message ?? 'MAILCHANNELS_API_KEY missing');
+      }
+      setTestResult(
+        `MailChannels key detected (bindings: ${Boolean(data.viaBindings)}, process.env: ${Boolean(
+          data.viaProcessEnv
+        )}, from address: ${Boolean(data.hasFromAddress)}, apiBase: ${data.apiBase ?? 'n/a'})`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTestResult(`Test failed: ${message}`);
+    } finally {
+      setTestStatus('idle');
+    }
+  };
+
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
       <div>
@@ -154,7 +190,7 @@ export default function EmailVerificationClient({
         </div>
       </dl>
 
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={handleSend}
@@ -163,7 +199,20 @@ export default function EmailVerificationClient({
         >
           {loading ? texts.buttonSending : texts.buttonStart}
         </button>
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testStatus === 'pending'}
+          className="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {testStatus === 'pending' ? 'Testing…' : 'Test API key'}
+        </button>
       </div>
+      {testResult ? (
+        <p className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+          {testResult}
+        </p>
+      ) : null}
     </section>
   );
 }
