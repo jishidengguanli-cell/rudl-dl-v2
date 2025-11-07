@@ -237,15 +237,15 @@ export default function DashboardClient({
     setD1TestResult(null);
     try {
       const response = await fetch('/api/debug/d1-test', { cache: 'no-store' });
-      const data = (await response.json()) as { ok: boolean; error?: string; data?: unknown; timestamp?: number };
+      const data = (await response.json()) as { ok: boolean; error?: string; logs?: Array<unknown> };
       if (!response.ok || !data?.ok) {
         throw new Error(data?.error ?? 'Test failed');
       }
-      const summary = JSON.stringify(data.data ?? []);
-      setD1TestResult(`✅ ${new Date(data.timestamp ?? Date.now()).toLocaleTimeString()} ${summary}`);
+      const summary = JSON.stringify(data.logs ?? [], null, 2);
+      setD1TestResult(`✅ ${new Date().toLocaleTimeString()}\n${summary}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setD1TestResult(`❌ ${message}`);
+      setD1TestResult(`❌ ${new Date().toLocaleTimeString()} ${message}`);
     } finally {
       setD1TestStatus('idle');
     }
@@ -290,7 +290,9 @@ export default function DashboardClient({
           ) : null}
         </div>
         {allowManage && d1TestResult ? (
-          <p className="mt-2 overflow-hidden text-ellipsis break-all text-xs text-gray-500">{d1TestResult}</p>
+          <pre className="mt-2 max-h-40 overflow-auto rounded border bg-gray-50 p-2 text-xs text-gray-700 whitespace-pre-wrap">
+            {d1TestResult}
+          </pre>
         ) : null}
       </div>
 
