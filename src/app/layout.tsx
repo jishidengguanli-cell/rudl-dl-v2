@@ -5,7 +5,15 @@ import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
 
-export const metadata = { title: 'DataruApp V2', description: 'Next + Cloudflare Pages' };
+export const metadata = {
+  title: 'DataruApp V2',
+  description: 'Next + Cloudflare Pages',
+  icons: {
+    icon: '/images/icon.png',
+    shortcut: '/images/icon.png',
+    apple: '/images/icon.png',
+  },
+};
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();

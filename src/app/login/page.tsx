@@ -2,6 +2,7 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
@@ -90,8 +91,24 @@ export default function LoginPage() {
   }, [localePrefix, nextPath]);
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-6 text-white shadow-lg shadow-black/40 space-y-4">
-      <h2 className="text-lg font-medium text-white">{t('auth.login.title') ?? 'Login'}</h2>
+    <div className="mx-auto w-full max-w-md space-y-4 rounded-2xl border border-neutral-700 bg-neutral-900/80 p-6 text-white shadow-2xl shadow-black/50 backdrop-blur">
+      <div className="flex items-center gap-3 border-b border-neutral-700 pb-4">
+        <Image
+          src="/images/icon.png"
+          alt="DataruApp icon"
+          width={48}
+          height={48}
+          className="h-12 w-12"
+          priority
+        />
+        <div>
+          <p className="text-sm uppercase tracking-wider text-neutral-400">{t('app.name')}</p>
+          <h2 className="text-2xl font-semibold text-white">{t('auth.login.title') ?? 'Login'}</h2>
+        </div>
+      </div>
+      <p className="text-sm text-neutral-300">
+        安全傳遞與檔案控管，請登入您的帳號以繼續。
+      </p>
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm">
           <div className="mb-1">{t('auth.email') ?? 'Email'}</div>
@@ -113,7 +130,10 @@ export default function LoginPage() {
             required
           />
         </label>
-        <button className="w-full rounded bg-white px-3 py-1 font-medium text-black transition hover:bg-neutral-200" type="submit">
+        <button
+          className="w-full rounded bg-white px-3 py-1.5 font-medium text-black transition hover:bg-neutral-200"
+          type="submit"
+        >
           {t('auth.login.submit') ?? 'Sign in'}
         </button>
       </form>

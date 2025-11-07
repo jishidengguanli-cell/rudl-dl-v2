@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
@@ -96,13 +97,25 @@ export default function LangNav() {
   };
 
   return (
-    <header className="mb-6 flex items-center justify-between">
-      <h1 className="text-xl font-semibold flex items-center gap-2">
-        <span>{t('app.name')}</span>
-        {accountLabel ? (
-          <span className="text-sm text-gray-500 whitespace-nowrap">({accountLabel})</span>
-        ) : null}
-      </h1>
+    <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <Link href={localePrefix || '/'} className="flex items-center gap-3 text-xl font-semibold text-gray-900">
+        <Image
+          src="/images/logo.png"
+          alt="DataruApp logo"
+          width={140}
+          height={36}
+          className="h-9 w-auto"
+          priority
+        />
+        <div className="text-left">
+          <div>{t('app.name')}</div>
+          {accountLabel ? (
+            <div className="text-xs font-normal text-gray-500">{accountLabel}</div>
+          ) : (
+            <div className="text-xs font-normal text-gray-500">Secure download platform</div>
+          )}
+        </div>
+      </Link>
       <nav className="flex items-center gap-4 text-sm">
         <Link className="underline" href={resolveHref('/')}>
           {t('nav.home')}
