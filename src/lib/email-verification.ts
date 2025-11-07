@@ -129,26 +129,35 @@ export async function sendVerificationEmail({
   subject = 'Verify your email address',
   appName = 'DataruApp',
 }: VerificationEmailParams): Promise<void> {
+  const resolvedEnv: Required<EmailEnv> = {
+    MAILCHANNELS_API_KEY: env.MAILCHANNELS_API_KEY ?? process.env.MAILCHANNELS_API_KEY ?? '',
+    MAILCHANNELS_API_BASE: env.MAILCHANNELS_API_BASE ?? process.env.MAILCHANNELS_API_BASE ?? '',
+    EMAIL_FROM: env.EMAIL_FROM ?? process.env.EMAIL_FROM ?? '',
+    EMAIL_FROM_NAME: env.EMAIL_FROM_NAME ?? process.env.EMAIL_FROM_NAME ?? '',
+    APP_BASE_URL: env.APP_BASE_URL ?? process.env.APP_BASE_URL ?? '',
+    APP_NAME: env.APP_NAME ?? process.env.APP_NAME ?? appName,
+  };
+
   console.log('[email] sendVerificationEmail invoked', {
     to,
     verificationUrl,
-    hasApiKey: Boolean(env.MAILCHANNELS_API_KEY),
-    hasFrom: Boolean(env.EMAIL_FROM),
-    apiBase: env.MAILCHANNELS_API_BASE ?? 'https://api.mailchannels.net/tx/v1',
+    hasApiKey: Boolean(resolvedEnv.MAILCHANNELS_API_KEY),
+    hasFrom: Boolean(resolvedEnv.EMAIL_FROM),
+    apiBase: resolvedEnv.MAILCHANNELS_API_BASE || 'https://api.mailchannels.net/tx/v1',
   });
 
-  const fromAddress = env.EMAIL_FROM;
+  const fromAddress = resolvedEnv.EMAIL_FROM;
   if (!fromAddress) {
     throw new Error('EMAIL_FROM must be configured to send verification emails.');
   }
 
-  const fromName = env.EMAIL_FROM_NAME ?? appName;
-  const apiKey = env.MAILCHANNELS_API_KEY;
+  const fromName = resolvedEnv.EMAIL_FROM_NAME || appName;
+  const apiKey = resolvedEnv.MAILCHANNELS_API_KEY;
   if (!apiKey) {
     throw new Error('MAILCHANNELS_API_KEY must be configured to send verification emails.');
   }
 
-  const apiBase = (env.MAILCHANNELS_API_BASE ?? 'https://api.mailchannels.net/tx/v1').replace(
+  const apiBase = (resolvedEnv.MAILCHANNELS_API_BASE || 'https://api.mailchannels.net/tx/v1').replace(
     /\/+$/,
     ''
   );
