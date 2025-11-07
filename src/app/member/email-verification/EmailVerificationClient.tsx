@@ -126,24 +126,22 @@ export default function EmailVerificationClient({
       const data = (await response.json().catch(() => ({}))) as
         | {
             ok?: boolean;
-            viaBindings?: boolean;
-            viaProcessEnv?: boolean;
-            hasFromAddress?: boolean;
-            apiBase?: string;
-            message?: string;
+            logs?: Array<{ step: string; detail?: unknown }>;
+            error?: string;
           }
         | undefined;
-      if (!response.ok || !data) {
-        throw new Error(data?.message ?? 'Unknown response');
+      if (!data) {
+        throw new Error('Unknown response');
       }
-      if (!data.ok) {
-        throw new Error(data.message ?? 'MAILCHANNELS_API_KEY missing');
-      }
-      setTestResult(
-        `MailChannels key detected (bindings: ${Boolean(data.viaBindings)}, process.env: ${Boolean(
-          data.viaProcessEnv
-        )}, from address: ${Boolean(data.hasFromAddress)}, apiBase: ${data.apiBase ?? 'n/a'})`
+      const logLines = (data.logs ?? []).map(
+        (entry) => `${entry.step}: ${JSON.stringify(entry.detail, null, 2)}`
       );
+      if (!response.ok || data.ok === false) {
+        const errorLine = data.error ? `Test failed: ${data.error}` : 'Test failed';
+        setTestResult([errorLine, ...logLines].filter(Boolean).join('\n\n'));
+        return;
+      }
+      setTestResult(['✅ MailChannels test request succeeded.', ...logLines].join('\n\n'));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setTestResult(`Test failed: ${message}`);
@@ -209,10 +207,11 @@ export default function EmailVerificationClient({
         </button>
       </div>
       {testResult ? (
-        <p className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+        <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap">
           {testResult}
-        </p>
+        </pre>
       ) : null}
     </section>
   );
 }
+
