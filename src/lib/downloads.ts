@@ -24,13 +24,14 @@ const tableExists = async (DB: D1Database, tableName: string) => {
 };
 
 const ensureStatsTable = async (DB: D1Database, tableName: string) => {
-  await DB.exec(
+  const statement = DB.prepare(
     `CREATE TABLE IF NOT EXISTS "${tableName}" (
       date TEXT PRIMARY KEY,
       apk_dl INTEGER DEFAULT 0,
       ipa_dl INTEGER DEFAULT 0
     )`
   );
+  await statement.run();
 };
 
 const toNumber = (value: unknown): number => {
@@ -49,7 +50,7 @@ export async function deleteDownloadStatsForLink(DB: D1Database, linkId: string)
   if (!(await tableExists(DB, tableName))) {
     return;
   }
-  await DB.exec(`DROP TABLE IF EXISTS "${tableName}"`);
+  await DB.prepare(`DROP TABLE IF EXISTS "${tableName}"`).run();
 }
 
 export async function recordDownload(
