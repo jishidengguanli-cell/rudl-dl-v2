@@ -3,7 +3,6 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { generateLinkCode } from '@/lib/code';
 import { deleteDownloadStatsForLink, ensureDownloadStatsTable } from '@/lib/downloads';
 import { normalizeLanguageCode } from '@/lib/language';
-import { runWithD1Retry } from '@/lib/d1';
 
 export const runtime = 'edge';
 
@@ -56,10 +55,7 @@ async function getTableInfo(
 
   const cached = tableInfoCache[table];
   if (cached) return cached;
-  const results = await runWithD1Retry(
-    () => DB.prepare(`PRAGMA table_info(${table})`).all<{ name?: string; type?: string }>(),
-    `distributions:pragma-table-info:${table}`
-  );
+  const results = await DB.prepare(`PRAGMA table_info(${table})`).all();
   const columns = new Set<string>();
   const types: Record<string, string> = {};
   const rows = (results.results as Array<{ name?: string; type?: string }> | undefined) ?? [];
@@ -99,10 +95,6 @@ function sanitizeTitleFromKey(key: string): string | null {
   const fileName = parts[parts.length - 1] ?? '';
   return fileName.replace(/^\d+-/, '').replace(/\.[^.]+$/, '') || null;
 }
-
-const executeStatement = async (statement: D1PreparedStatement, context: string) => {
-  await runWithD1Retry(() => statement.run(), context);
-};
 
 export async function POST(req: Request) {
   const uid = parseUid(req);
@@ -270,7 +262,7 @@ export async function POST(req: Request) {
     }
 
     const fileIds: string[] = [];
-    const fileStatements: Array<{ statement: D1PreparedStatement; context: string }> = [];
+    const fileStatements: D1PreparedStatement[] = [];
     for (const upload of uploads) {
       const fileId = crypto.randomUUID();
       fileIds.push(fileId);
@@ -317,8 +309,7 @@ export async function POST(req: Request) {
 
       const filePlaceholders = fileColumns.map(() => '?').join(', ');
       const fileQuery = `INSERT INTO files (${fileColumns.join(', ')}) VALUES (${filePlaceholders})`;
-      const statement = DB.prepare(fileQuery).bind(...fileValues);
-      fileStatements.push({ statement, context: `distributions:insert-file:${upload.platform}` });
+      fileStatements.push(DB.prepare(fileQuery).bind(...fileValues));
     }
 
     const firstFileId = fileIds[0] ?? null;
@@ -341,10 +332,10 @@ export async function POST(req: Request) {
     const linkQuery = `INSERT INTO links (${linkColumns.join(', ')}) VALUES (${linkPlaceholders})`;
 
     const linkStatement = DB.prepare(linkQuery).bind(...linkValues);
-    await executeStatement(linkStatement, 'distributions:insert-link');
+    await linkStatement.run();
 
-    for (const { statement, context } of fileStatements) {
-      await executeStatement(statement, context);
+    if (fileStatements.length) {
+      await Promise.all(fileStatements.map((statement) => statement.run()));
     }
 
     if (hasColumn(linksInfo, 'is_active')) {
@@ -355,23 +346,22 @@ export async function POST(req: Request) {
         : isActiveInput
         ? 1
         : 0;
-      await executeStatement(
-        DB.prepare('UPDATE links SET is_active=? WHERE id=?').bind(activeValue, linkId),
-        'distributions:update-active'
-      );
+      await DB.prepare('UPDATE links SET is_active=? WHERE id=?')
+        .bind(activeValue, linkId)
+        .run();
     }
     await ensureDownloadStatsTable(DB, linkId);
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
-    await executeStatement(
-      DB.prepare('DELETE FROM files WHERE link_id=?').bind(linkId),
-      'distributions:create-cleanup-files'
-    ).catch(() => null);
-    await executeStatement(
-      DB.prepare('DELETE FROM links WHERE id=?').bind(linkId),
-      'distributions:create-cleanup-link'
-    ).catch(() => null);
+    await DB.prepare('DELETE FROM files WHERE link_id=?')
+      .bind(linkId)
+      .run()
+      .catch(() => null);
+    await DB.prepare('DELETE FROM links WHERE id=?')
+      .bind(linkId)
+      .run()
+      .catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
     await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
     const message = error instanceof Error ? error.message : String(error);
