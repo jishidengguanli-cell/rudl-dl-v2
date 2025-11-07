@@ -131,6 +131,9 @@ export default function EmailVerificationClient({
             hasFromAddress?: boolean;
             apiBase?: string;
             message?: string;
+            bindingKeysPresent?: string[];
+            processKeysPresent?: string[];
+            keySource?: string | null;
           }
         | undefined;
       if (!response.ok || !data) {
@@ -139,11 +142,17 @@ export default function EmailVerificationClient({
       if (!data.ok) {
         throw new Error(data.message ?? 'MAILCHANNELS_API_KEY missing');
       }
-      setTestResult(
-        `MailChannels key detected (bindings: ${Boolean(data.viaBindings)}, process.env: ${Boolean(
-          data.viaProcessEnv
-        )}, from address: ${Boolean(data.hasFromAddress)}, apiBase: ${data.apiBase ?? 'n/a'})`
-      );
+      const lines = [
+        data.message ?? 'MAILCHANNELS_API_KEY detected.',
+        `keySource: ${data.keySource ?? 'unknown'}`,
+        `viaBindings: ${Boolean(data.viaBindings)}`,
+        `viaProcessEnv: ${Boolean(data.viaProcessEnv)}`,
+        `hasFromAddress: ${Boolean(data.hasFromAddress)}`,
+        `apiBase: ${data.apiBase ?? 'n/a'}`,
+        `bindingKeys: ${(data.bindingKeysPresent ?? []).join(', ') || 'none'}`,
+        `processKeys: ${(data.processKeysPresent ?? []).join(', ') || 'none'}`,
+      ];
+      setTestResult(lines.join('\n'));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setTestResult(`Test failed: ${message}`);
