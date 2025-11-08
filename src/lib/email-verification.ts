@@ -163,35 +163,34 @@ export async function sendVerificationEmail({
   );
 
   const textBody = [
-    appName,
+    `${appName} email verification`,
     '',
-    '您好：',
+    'Hello,',
     '',
-    '請點擊以下連結完成電子郵件驗證：',
+    'Please verify your email address by visiting the link below:',
     verificationUrl,
     '',
-    '此連結將在 60 分鐘後失效，如果無法點擊，請複製連結到瀏覽器開啟。',
+    'This link expires in 60 minutes. If you did not request this email, you can safely ignore it.',
     '',
-    `— ${appName} 團隊`,
+    `-- ${appName} Team`,
   ].join('\n');
 
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6;">
       <h2>${appName}</h2>
-      <p>您好：</p>
-      <p>請點擊下方按鈕完成電子郵件驗證：</p>
+      <p>Hello,</p>
+      <p>Please verify your email address by clicking the button below.</p>
       <p style="text-align:center; margin: 24px 0;">
         <a href="${verificationUrl}" style="background-color:#2563eb;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-          驗證電子郵件
+          Verify email address
         </a>
       </p>
-      <p>若按鈕無法點擊，請將以下連結貼到瀏覽器開啟：</p>
+      <p>If the button does not work, copy and paste this URL into your browser:</p>
       <p><a href="${verificationUrl}">${verificationUrl}</a></p>
-      <p>此連結將在 60 分鐘後失效。</p>
-      <p>— ${appName} 團隊</p>
+      <p style="color:#6b7280;font-size:12px;">This link expires in 60 minutes. If you did not request this email, you can ignore it.</p>
+      <p>-- ${appName} Team</p>
     </div>
   `.trim();
-
   const payload = {
     personalizations: [
       {
@@ -254,3 +253,5 @@ export async function sendVerificationEmail({
     throw new Error(`Failed to dispatch verification email: ${reason}`);
   }
 }
+
+
