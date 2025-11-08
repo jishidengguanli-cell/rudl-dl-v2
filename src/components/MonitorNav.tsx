@@ -11,6 +11,7 @@ const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/';
 const NAV_ITEMS = [
   { href: '/monitor', labelKey: 'monitor.nav.overview' },
   { href: '/monitor/privacy', labelKey: 'monitor.nav.privacy' },
+  { href: '/monitor/tool', labelKey: 'monitor.nav.tools' },
 ];
 
 export default function MonitorNav() {
@@ -48,4 +49,3 @@ export default function MonitorNav() {
     </nav>
   );
 }
-
