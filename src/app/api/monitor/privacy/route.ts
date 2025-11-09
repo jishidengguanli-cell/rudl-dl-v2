@@ -15,8 +15,6 @@ const parseNullableString = (value: unknown): string | null => {
 };
 
 const normalizePayload = (payload: TelegramSettings): TelegramSettings => ({
-  telegramApiId: payload.telegramApiId ?? null,
-  telegramApiHash: payload.telegramApiHash ?? null,
   telegramBotToken: payload.telegramBotToken ?? null,
 });
 
@@ -69,14 +67,10 @@ export async function POST(request: Request) {
   const body = (await request
     .json()
     .catch(() => ({}))) as Partial<{
-    telegramApiId: unknown;
-    telegramApiHash: unknown;
     telegramBotToken: unknown;
   }>;
 
   const payload: TelegramSettings = {
-    telegramApiId: parseNullableString(body.telegramApiId),
-    telegramApiHash: parseNullableString(body.telegramApiHash),
     telegramBotToken: parseNullableString(body.telegramBotToken),
   };
 

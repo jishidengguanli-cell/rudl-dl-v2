@@ -2,14 +2,10 @@ import type { D1Database } from '@cloudflare/workers-types';
 import { getTableInfo } from '@/lib/distribution';
 
 export type TelegramSettings = {
-  telegramApiId: string | null;
-  telegramApiHash: string | null;
   telegramBotToken: string | null;
 };
 
 type ColumnMap = {
-  apiId: string | null;
-  apiHash: string | null;
   botToken: string | null;
 };
 
@@ -41,8 +37,6 @@ const resolveColumn = (columns: Set<string>, names: string[]): string | null => 
 const buildColumnMap = async (DB: D1Database): Promise<ColumnMap> => {
   const usersInfo = await getTableInfo(DB, 'users');
   return {
-    apiId: resolveColumn(usersInfo.columns, ['telegram_api_id', 'TELEGRAM_API_ID']),
-    apiHash: resolveColumn(usersInfo.columns, ['telegram_api_hash', 'TELEGRAM_API_HASH']),
     botToken: resolveColumn(usersInfo.columns, ['telegram_bot_token', 'TELEGRAM_BOT_TOKEN']),
   };
 };
@@ -50,8 +44,6 @@ const buildColumnMap = async (DB: D1Database): Promise<ColumnMap> => {
 export async function fetchTelegramSettings(DB: D1Database, userId: string): Promise<TelegramSettings> {
   const columns = ['id'];
   const columnMap = await buildColumnMap(DB);
-  if (columnMap.apiId) columns.push(columnMap.apiId);
-  if (columnMap.apiHash) columns.push(columnMap.apiHash);
   if (columnMap.botToken) columns.push(columnMap.botToken);
 
   const row = await DB.prepare(`SELECT ${columns.join(', ')} FROM users WHERE id=? LIMIT 1`)
@@ -59,12 +51,10 @@ export async function fetchTelegramSettings(DB: D1Database, userId: string): Pro
     .first<Record<string, unknown>>();
 
   if (!row) {
-    return { telegramApiId: null, telegramApiHash: null, telegramBotToken: null };
+    return { telegramBotToken: null };
   }
 
   return {
-    telegramApiId: columnMap.apiId ? toStringOrNull(row[columnMap.apiId]) : null,
-    telegramApiHash: columnMap.apiHash ? toStringOrNull(row[columnMap.apiHash]) : null,
     telegramBotToken: columnMap.botToken ? toStringOrNull(row[columnMap.botToken]) : null,
   };
 }
@@ -78,14 +68,6 @@ export async function updateTelegramSettings(
   const updates: string[] = [];
   const bindings: (string | null)[] = [];
 
-  if (columnMap.apiId) {
-    updates.push(`${columnMap.apiId}=?`);
-    bindings.push(normalizeInput(payload.telegramApiId));
-  }
-  if (columnMap.apiHash) {
-    updates.push(`${columnMap.apiHash}=?`);
-    bindings.push(normalizeInput(payload.telegramApiHash));
-  }
   if (columnMap.botToken) {
     updates.push(`${columnMap.botToken}=?`);
     bindings.push(normalizeInput(payload.telegramBotToken));

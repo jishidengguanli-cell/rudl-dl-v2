@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useI18n } from '@/i18n/provider';
 
 export type TelegramSettings = {
-  telegramApiId: string | null;
-  telegramApiHash: string | null;
   telegramBotToken: string | null;
 };
 
@@ -18,40 +16,35 @@ type StatusState =
   | { type: 'error'; message: string }
   | null;
 
-type Section = 'main' | 'bot' | null;
-
 const sanitize = (value: string | null) => value?.trim() ?? '';
 
 export default function MonitorPrivacyClient({ initialData }: Props) {
   const { t } = useI18n();
   const [values, setValues] = useState<TelegramSettings>(initialData);
   const [draft, setDraft] = useState<TelegramSettings>(initialData);
-  const [editing, setEditing] = useState<Section>(null);
+  const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState<StatusState>(null);
   const [saving, setSaving] = useState(false);
 
-  const startEditing = (next: Section) => {
-    setEditing(next);
+  const startEditing = () => {
+    setEditing(true);
     setDraft(values);
     setStatus(null);
   };
 
   const cancelEditing = () => {
-    setEditing(null);
+    setEditing(false);
     setDraft(values);
   };
 
-  const handleInputChange = (field: keyof TelegramSettings, rawValue: string) => {
-    const nextValue = rawValue;
-    setDraft((prev) => ({ ...prev, [field]: nextValue }));
+  const handleInputChange = (rawValue: string) => {
+    setDraft({ telegramBotToken: rawValue });
   };
 
   const submitDraft = async () => {
     setSaving(true);
     setStatus(null);
     const payload: TelegramSettings = {
-      telegramApiId: sanitize(draft.telegramApiId ?? null) || null,
-      telegramApiHash: sanitize(draft.telegramApiHash ?? null) || null,
       telegramBotToken: sanitize(draft.telegramBotToken ?? null) || null,
     };
 
@@ -72,7 +65,7 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
       }
       setValues(data.data);
       setDraft(data.data);
-      setEditing(null);
+      setEditing(false);
       setStatus({ type: 'success', message: t('monitor.privacy.status.saved') });
     } catch (error) {
       const message = error instanceof Error ? error.message : t('monitor.privacy.status.error');
@@ -82,8 +75,8 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
     }
   };
 
-  const sectionAction = (section: Section) => {
-    if (editing === section) {
+  const renderActions = () => {
+    if (editing) {
       return (
         <div className="flex items-center gap-3">
           <button
@@ -109,7 +102,7 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
       <button
         type="button"
         className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-blue-400 hover:text-blue-600"
-        onClick={() => startEditing(section)}
+        onClick={startEditing}
       >
         {t('monitor.privacy.actions.edit')}
       </button>
@@ -128,58 +121,7 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
   };
 
   return (
-    <div className="mt-6 space-y-6">
-      <div className="rounded-lg border border-gray-200 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-gray-900">
-              {t('monitor.privacy.telegramMain.title')}
-            </h3>
-            <p className="text-sm text-gray-600">
-              {t('monitor.privacy.telegramMain.description')}
-            </p>
-          </div>
-          {sectionAction('main')}
-        </div>
-        <dl className="mt-4 space-y-4">
-          <div>
-            <dt className="text-sm font-medium text-gray-500">
-              {t('monitor.privacy.telegramMain.apiId')}
-            </dt>
-            <dd className="mt-1">
-              {editing === 'main' ? (
-                <input
-                  type="text"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  value={draft.telegramApiId ?? ''}
-                  onChange={(event) => handleInputChange('telegramApiId', event.target.value)}
-                  placeholder={t('monitor.privacy.telegramMain.apiIdPlaceholder')}
-                />
-              ) : (
-                renderValue(values.telegramApiId)
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">
-              {t('monitor.privacy.telegramMain.apiHash')}
-            </dt>
-            <dd className="mt-1">
-              {editing === 'main' ? (
-                <input
-                  type="text"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  value={draft.telegramApiHash ?? ''}
-                  onChange={(event) => handleInputChange('telegramApiHash', event.target.value)}
-                  placeholder={t('monitor.privacy.telegramMain.apiHashPlaceholder')}
-                />
-              ) : (
-                renderValue(values.telegramApiHash)
-              )}
-            </dd>
-          </div>
-        </dl>
-      </div>
+    <div className="mt-6">
       <div className="rounded-lg border border-gray-200 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -190,7 +132,7 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
               {t('monitor.privacy.telegramBot.description')}
             </p>
           </div>
-          {sectionAction('bot')}
+          {renderActions()}
         </div>
         <dl className="mt-4 space-y-4">
           <div>
@@ -198,12 +140,12 @@ export default function MonitorPrivacyClient({ initialData }: Props) {
               {t('monitor.privacy.telegramBot.token')}
             </dt>
             <dd className="mt-1">
-              {editing === 'bot' ? (
+              {editing ? (
                 <textarea
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   rows={2}
                   value={draft.telegramBotToken ?? ''}
-                  onChange={(event) => handleInputChange('telegramBotToken', event.target.value)}
+                  onChange={(event) => handleInputChange(event.target.value)}
                   placeholder={t('monitor.privacy.telegramBot.tokenPlaceholder')}
                 />
               ) : (
