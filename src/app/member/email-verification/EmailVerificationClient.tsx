@@ -65,8 +65,6 @@ export default function EmailVerificationClient({
     return 'info';
   });
   const [loading, setLoading] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'pending'>('idle');
-  const [testResult, setTestResult] = useState<string | null>(null);
 
   const handleSend = async () => {
     if (!email) {
@@ -118,38 +116,6 @@ export default function EmailVerificationClient({
     }
   };
 
-  const handleTest = async () => {
-    setTestStatus('pending');
-    setTestResult(null);
-    try {
-      const response = await fetch('/api/debug/mailchannels', { cache: 'no-store' });
-      const data = (await response.json().catch(() => ({}))) as
-        | {
-            ok?: boolean;
-            logs?: Array<{ step: string; detail?: unknown }>;
-            error?: string;
-          }
-        | undefined;
-      if (!data) {
-        throw new Error('Unknown response');
-      }
-      const logLines = (data.logs ?? []).map(
-        (entry) => `${entry.step}: ${JSON.stringify(entry.detail, null, 2)}`
-      );
-      if (!response.ok || data.ok === false) {
-        const errorLine = data.error ? `Test failed: ${data.error}` : 'Test failed';
-        setTestResult([errorLine, ...logLines].filter(Boolean).join('\n\n'));
-        return;
-      }
-      setTestResult(['✅ MailChannels test request succeeded.', ...logLines].join('\n\n'));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setTestResult(`Test failed: ${message}`);
-    } finally {
-      setTestStatus('idle');
-    }
-  };
-
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
       <div>
@@ -197,21 +163,7 @@ export default function EmailVerificationClient({
         >
           {loading ? texts.buttonSending : texts.buttonStart}
         </button>
-        <button
-          type="button"
-          onClick={handleTest}
-          disabled={testStatus === 'pending'}
-          className="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {testStatus === 'pending' ? 'Testing…' : 'Test API key'}
-        </button>
       </div>
-      {testResult ? (
-        <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap">
-          {testResult}
-        </pre>
-      ) : null}
     </section>
   );
 }
-

@@ -81,8 +81,6 @@ export default function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [statsLink, setStatsLink] = useState<DashboardLink | null>(null);
-  const [d1TestStatus, setD1TestStatus] = useState<'idle' | 'pending'>('idle');
-  const [d1TestResult, setD1TestResult] = useState<string | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -231,26 +229,6 @@ export default function DashboardClient({
     setTimeout(() => setToast(null), 5000);
   };
 
-  const runD1Test = async () => {
-    if (d1TestStatus === 'pending') return;
-    setD1TestStatus('pending');
-    setD1TestResult(null);
-    try {
-      const response = await fetch('/api/debug/d1-test', { cache: 'no-store' });
-      const data = (await response.json()) as { ok: boolean; error?: string; logs?: Array<unknown> };
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.error ?? 'Test failed');
-      }
-      const summary = JSON.stringify(data.logs ?? [], null, 2);
-      setD1TestResult(`✅ ${new Date().toLocaleTimeString()}\n${summary}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setD1TestResult(`❌ ${new Date().toLocaleTimeString()} ${message}`);
-    } finally {
-      setD1TestStatus('idle');
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -278,22 +256,9 @@ export default function DashboardClient({
               >
                 {t('dashboard.addDistribution')}
               </button>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
-                onClick={runD1Test}
-                disabled={d1TestStatus === 'pending'}
-              >
-                {d1TestStatus === 'pending' ? 'Testing D1...' : 'Test D1'}
-              </button>
             </div>
           ) : null}
         </div>
-        {allowManage && d1TestResult ? (
-          <pre className="mt-2 max-h-40 overflow-auto rounded border bg-gray-50 p-2 text-xs text-gray-700 whitespace-pre-wrap">
-            {d1TestResult}
-          </pre>
-        ) : null}
       </div>
 
       <div className="rounded-lg border bg-white p-4 shadow-sm">
