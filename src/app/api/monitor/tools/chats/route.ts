@@ -128,24 +128,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'MISSING_TOKEN' }, { status: 400 });
     }
 
-    const telegramResponse = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        limit: 100,
-        timeout: 0,
-        allowed_updates: [
-          'message',
-          'channel_post',
-          'my_chat_member',
-          'chat_member',
-          'edited_message',
-          'edited_channel_post',
-          'callback_query',
-          'chat_join_request',
-        ],
-      }),
+    const allowedUpdates = JSON.stringify([
+      'message',
+      'channel_post',
+      'my_chat_member',
+      'chat_member',
+      'edited_message',
+      'edited_channel_post',
+      'callback_query',
+      'chat_join_request',
+    ]);
+
+    const params = new URLSearchParams({
+      limit: '100',
+      timeout: '0',
+      allowed_updates: allowedUpdates,
     });
+
+    const telegramResponse = await fetch(
+      `https://api.telegram.org/bot${token}/getUpdates?${params.toString()}`,
+      {
+        method: 'GET',
+      }
+    );
 
     if (!telegramResponse.ok) {
       const snippet = await telegramResponse
