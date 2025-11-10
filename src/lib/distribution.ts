@@ -239,3 +239,36 @@ export async function fetchDistributionById(
 ): Promise<DistributionLink | null> {
   return fetchDistributionByField(DB, 'id', id);
 }
+
+export type DistributionLinkSummary = {
+  id: string;
+  code: string;
+  title: string | null;
+  createdAt: number;
+};
+
+export async function fetchDistributionSummariesByOwner(
+  DB: D1Database,
+  ownerId: string
+): Promise<DistributionLinkSummary[]> {
+  if (!ownerId?.trim()) return [];
+  const linksInfo = await getTableInfo(DB, 'links');
+  if (!hasColumn(linksInfo, 'owner_id')) return [];
+  const columns = ['id', 'code', 'title', 'created_at'].filter((column) =>
+    hasColumn(linksInfo, column)
+  );
+  if (!columns.includes('id') || !columns.includes('code')) return [];
+
+  const statement = `SELECT ${columns.join(', ')} FROM links WHERE owner_id=? ORDER BY created_at DESC`;
+  const result = await DB.prepare(statement).bind(ownerId).all();
+  const rows = (result?.results as LinkRow[] | undefined) ?? [];
+
+  return rows
+    .map((row) => ({
+      id: toStringOrNull(row.id) ?? '',
+      code: toStringOrNull(row.code) ?? '',
+      title: toStringOrNull(row.title),
+      createdAt: toEpochSeconds(row.created_at),
+    }))
+    .filter((entry) => entry.id && entry.code);
+}
