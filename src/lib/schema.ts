@@ -16,28 +16,6 @@ const ensureFlags = () => {
   return flagsStore;
 };
 
-const tableExists = async (DB: D1Database, name: string) => {
-  const result = await runWithD1Retry(
-    () =>
-      DB.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`)
-        .bind(name)
-        .all<{ name: string }>(),
-    `schema:check-table-${name}`
-  );
-  return Boolean(result?.results?.length);
-};
-
-const indexExists = async (DB: D1Database, name: string) => {
-  const result = await runWithD1Retry(
-    () =>
-      DB.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name=? LIMIT 1`)
-        .bind(name)
-        .all<{ name: string }>(),
-    `schema:check-index-${name}`
-  );
-  return Boolean(result?.results?.length);
-};
-
 export async function hasUsersBalanceColumn(DB?: D1Database): Promise<boolean> {
   if (!DB) return false;
   const flags = ensureFlags();

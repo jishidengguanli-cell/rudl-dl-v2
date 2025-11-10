@@ -65,8 +65,8 @@ const downloadMetrics: DownloadMetric[] = ['total', 'apk', 'ipa'];
 
 export default function MonitorSettingsClient({ links }: Props) {
   const { t } = useI18n();
-  const buildDefaultForm = useCallback<FormState>(
-    () => ({
+  const buildDefaultForm = useCallback(
+    (): FormState => ({
       type: null,
       pointsThreshold: '',
       downloadLinkId: '',
@@ -77,7 +77,7 @@ export default function MonitorSettingsClient({ links }: Props) {
       messageEdited: false,
       targetChatId: '',
     }),
-    [links]
+    []
   );
 
   const [monitors, setMonitors] = useState<SavedMonitor[]>([]);
