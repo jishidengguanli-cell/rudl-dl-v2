@@ -138,7 +138,7 @@ export default function MonitorSettingsClient({ links }: Props) {
     setForm((prev) => ({ ...prev, message: value, messageEdited: true }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const errors: string[] = [];
     if (!form.type) {
       errors.push('type');
@@ -178,7 +178,8 @@ export default function MonitorSettingsClient({ links }: Props) {
 
     const payload: Record<string, unknown> = {
       type: form.type,
-      threshold: form.type === 'points' ? Number(form.pointsThreshold) : Number(form.downloadThreshold),
+      threshold:
+        form.type === 'points' ? Number(form.pointsThreshold) : Number(form.downloadThreshold),
       message: form.message.trim(),
       targetChatId: form.targetChatId.trim(),
     };
@@ -202,7 +203,9 @@ export default function MonitorSettingsClient({ links }: Props) {
       if (!response.ok || !data?.ok) {
         setStatusMessage({
           type: 'error',
-          text: data?.error ? `${t('monitor.settings.toast.error')} (${data.error})` : t('monitor.settings.toast.error'),
+          text: data?.error
+            ? `${t('monitor.settings.toast.error')} (${data.error})`
+            : t('monitor.settings.toast.error'),
         });
         return;
       }
