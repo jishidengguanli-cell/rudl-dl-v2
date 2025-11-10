@@ -121,12 +121,22 @@ export async function ensureMonitorTable(DB: D1Database, userId: string): Promis
   return name;
 }
 
-type MonitorRecordInsert = {
+export type MonitorRecordInsert = {
   monOption: 'pb' | 'dc';
   monDetail: Record<string, unknown>;
   notiMethod: 'tg';
   notiDetail: { content: string; target: string };
   isActive?: number;
+};
+
+const normalizeRowId = (value: string | number | null | undefined): number | null => {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(numeric) ? numeric : null;
 };
 
 export async function insertMonitorRecord(
@@ -148,6 +158,48 @@ export async function insertMonitorRecord(
     )
     .run();
   return typeof result.meta?.last_row_id === 'number' ? result.meta.last_row_id : null;
+}
+
+export async function updateMonitorRecord(
+  DB: D1Database,
+  userId: string,
+  rowId: string | number,
+  record: MonitorRecordInsert
+): Promise<boolean> {
+  const normalizedRowId = normalizeRowId(rowId);
+  if (normalizedRowId === null) return false;
+  const name = await ensureMonitorTable(DB, userId);
+  const quoted = quoteIdentifier(name);
+  const result = await DB.prepare(
+    `UPDATE ${quoted}
+     SET mon_option=?, mon_detail=?, noti_method=?, noti_detail=?, is_active=?
+     WHERE rowid=?`
+  )
+    .bind(
+      record.monOption,
+      JSON.stringify(record.monDetail),
+      record.notiMethod,
+      JSON.stringify(record.notiDetail),
+      typeof record.isActive === 'number' ? record.isActive : 1,
+      normalizedRowId
+    )
+    .run();
+  return typeof result.meta?.changes === 'number' && result.meta.changes > 0;
+}
+
+export async function deleteMonitorRecord(
+  DB: D1Database,
+  userId: string,
+  rowId: string | number
+): Promise<boolean> {
+  const normalizedRowId = normalizeRowId(rowId);
+  if (normalizedRowId === null) return false;
+  const name = await ensureMonitorTable(DB, userId);
+  const quoted = quoteIdentifier(name);
+  const result = await DB.prepare(`DELETE FROM ${quoted} WHERE rowid=?`)
+    .bind(normalizedRowId)
+    .run();
+  return typeof result.meta?.changes === 'number' && result.meta.changes > 0;
 }
 
 type RawMonitorRow = {

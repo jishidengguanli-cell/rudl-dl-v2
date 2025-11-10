@@ -83,6 +83,12 @@ export default function MonitorSettingsClient({ links }: Props) {
     null
   );
   const [saving, setSaving] = useState(false);
+  const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
+  const [deletingMonitorId, setDeletingMonitorId] = useState<string | null>(null);
+  const [listStatus, setListStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null
+  );
+  const isEditing = Boolean(editingMonitorId);
 
   const loadMonitors = useCallback(async () => {
     setLoadingMonitors(true);
@@ -156,18 +162,58 @@ export default function MonitorSettingsClient({ links }: Props) {
     t,
   ]);
 
+  const buildFormFromMonitor = useCallback(
+    (monitor: SavedMonitor): FormState => {
+      const base = buildDefaultForm();
+      if (monitor.type === 'points') {
+        return {
+          ...base,
+          type: 'points',
+          pointsThreshold: monitor.threshold.toString(),
+          message: monitor.message,
+          messageEdited: true,
+          targetChatId: monitor.target,
+        };
+      }
+      const matchedLink = links.find((link) => link.code === monitor.linkCode);
+      return {
+        ...base,
+        type: 'downloads',
+        downloadLinkId: matchedLink?.id ?? '',
+        downloadMetric: monitor.metric,
+        downloadThreshold: monitor.threshold.toString(),
+        message: monitor.message,
+        messageEdited: true,
+        targetChatId: monitor.target,
+      };
+    },
+    [buildDefaultForm, links]
+  );
+
   const resetForm = useCallback(() => {
     setForm(buildDefaultForm());
     setStatusMessage(null);
   }, [buildDefaultForm]);
 
-  const openModal = () => {
+  const openCreateModal = () => {
+    setEditingMonitorId(null);
     resetForm();
     setModalOpen(true);
   };
 
+  const openEditModal = useCallback(
+    (monitor: SavedMonitor) => {
+      setStatusMessage(null);
+      setForm(buildFormFromMonitor(monitor));
+      setEditingMonitorId(monitor.id);
+      setModalOpen(true);
+    },
+    [buildFormFromMonitor]
+  );
+
   const closeModal = () => {
     setModalOpen(false);
+    setEditingMonitorId(null);
     resetForm();
   };
 
@@ -225,11 +271,14 @@ export default function MonitorSettingsClient({ links }: Props) {
       payload.linkId = form.downloadLinkId;
       payload.metric = form.downloadMetric;
     }
+    if (isEditing && editingMonitorId) {
+      payload.id = editingMonitorId;
+    }
 
     try {
       setSaving(true);
       const response = await fetch('/api/monitor/settings', {
-        method: 'POST',
+        method: isEditing ? 'PATCH' : 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -247,12 +296,18 @@ export default function MonitorSettingsClient({ links }: Props) {
         return;
       }
 
+      const successText = isEditing
+        ? t('monitor.settings.toast.updated')
+        : t('monitor.settings.toast.saved');
       setStatusMessage({
         type: 'success',
-        text: t('monitor.settings.toast.saved'),
+        text: successText,
       });
-      setModalOpen(false);
-      resetForm();
+      setListStatus({
+        type: 'success',
+        text: successText,
+      });
+      closeModal();
       void loadMonitors();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -265,6 +320,54 @@ export default function MonitorSettingsClient({ links }: Props) {
     }
   };
 
+  const handleDelete = useCallback(
+    async (monitor: SavedMonitor) => {
+      if (!window.confirm(t('monitor.settings.confirmDelete'))) {
+        return;
+      }
+      setDeletingMonitorId(monitor.id);
+      try {
+        const response = await fetch('/api/monitor/settings', {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: monitor.id }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | { ok?: boolean; error?: string }
+          | null;
+        if (!response.ok || !data?.ok) {
+          setListStatus({
+            type: 'error',
+            text: data?.error
+              ? `${t('monitor.settings.toast.error')} (${data.error})`
+              : t('monitor.settings.toast.error'),
+          });
+          return;
+        }
+        setListStatus({
+          type: 'success',
+          text: t('monitor.settings.toast.deleted'),
+        });
+        void loadMonitors();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setListStatus({
+          type: 'error',
+          text: `${t('monitor.settings.toast.error')} (${message})`,
+        });
+      } finally {
+        setDeletingMonitorId(null);
+      }
+    },
+    [loadMonitors, t]
+  );
+
+  const primaryActionLabel = isEditing
+    ? t('monitor.settings.actions.update')
+    : t('monitor.settings.actions.save');
+  const savingActionLabel =
+    t('monitor.settings.actions.saving') ?? primaryActionLabel;
+
   const renderModal = () => {
     if (!modalOpen) return null;
     return (
@@ -272,7 +375,11 @@ export default function MonitorSettingsClient({ links }: Props) {
         <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{t('monitor.settings.modal.title')}</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {isEditing
+                  ? t('monitor.settings.modal.editTitle')
+                  : t('monitor.settings.modal.title')}
+              </h3>
               <p className="text-sm text-gray-600">{t('monitor.settings.typeLabel')}</p>
             </div>
             <button
@@ -467,9 +574,7 @@ export default function MonitorSettingsClient({ links }: Props) {
                   disabled={saving}
                   className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {saving
-                    ? t('monitor.settings.actions.saving') ?? t('monitor.settings.actions.save')
-                    : t('monitor.settings.actions.save')}
+                  {saving ? savingActionLabel : primaryActionLabel}
                 </button>
               </div>
 
@@ -533,13 +638,32 @@ export default function MonitorSettingsClient({ links }: Props) {
                     {channel}
                   </p>
                 </div>
+                <div className="flex flex-shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(monitor)}
+                    className="rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900"
+                  >
+                    {t('monitor.settings.actions.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(monitor)}
+                    disabled={deletingMonitorId === monitor.id}
+                    className="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingMonitorId === monitor.id
+                      ? t('monitor.settings.actions.deleting')
+                      : t('monitor.settings.actions.delete')}
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
     );
-  }, [loadingMonitors, metricLabel, monitors, t]);
+  }, [deletingMonitorId, handleDelete, loadingMonitors, metricLabel, monitors, openEditModal, t]);
 
   return (
     <div className="mt-6">
@@ -549,12 +673,22 @@ export default function MonitorSettingsClient({ links }: Props) {
         </div>
         <button
           type="button"
-          onClick={openModal}
+          onClick={openCreateModal}
           className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500"
         >
           {t('monitor.settings.addButton')}
         </button>
       </div>
+
+      {listStatus && (
+        <p
+          className={`mt-4 text-sm ${
+            listStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+          }`}
+        >
+          {listStatus.text}
+        </p>
+      )}
 
       {loadError && (
         <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
