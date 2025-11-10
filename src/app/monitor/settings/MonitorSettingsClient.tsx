@@ -32,6 +32,7 @@ type SavedMonitor =
       threshold: number;
       message: string;
       target: string;
+      isActive?: boolean;
     }
   | {
       id: string;
@@ -41,6 +42,7 @@ type SavedMonitor =
       threshold: number;
       message: string;
       target: string;
+      isActive?: boolean;
     };
 
 type Props = {
@@ -73,12 +75,47 @@ export default function MonitorSettingsClient({ links }: Props) {
   );
 
   const [monitors, setMonitors] = useState<SavedMonitor[]>([]);
+  const [loadingMonitors, setLoadingMonitors] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => buildDefaultForm());
   const [modalOpen, setModalOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
   const [saving, setSaving] = useState(false);
+
+  const loadMonitors = useCallback(async () => {
+    setLoadingMonitors(true);
+    setLoadError(null);
+    try {
+      const response = await fetch('/api/monitor/settings', {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; monitors?: SavedMonitor[] }
+        | null;
+
+      if (response.ok && data?.ok && Array.isArray(data.monitors)) {
+        setMonitors(data.monitors);
+        return true;
+      }
+
+      const errorMessage = data?.error ?? 'UNKNOWN_ERROR';
+      setLoadError(errorMessage);
+      return false;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLoadError(message);
+      return false;
+    } finally {
+      setLoadingMonitors(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMonitors();
+  }, [loadMonitors]);
 
   const metricLabel = useCallback(
     (metric: DownloadMetric) => t(metricKeys[metric] ?? metric),
@@ -210,16 +247,13 @@ export default function MonitorSettingsClient({ links }: Props) {
         return;
       }
 
-      if (data.monitor) {
-        setMonitors((prev) => [data.monitor as SavedMonitor, ...prev]);
-      }
-
       setStatusMessage({
         type: 'success',
         text: t('monitor.settings.toast.saved'),
       });
       setModalOpen(false);
       resetForm();
+      void loadMonitors();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatusMessage({
@@ -456,6 +490,14 @@ export default function MonitorSettingsClient({ links }: Props) {
   };
 
   const monitorCards = useMemo(() => {
+    if (loadingMonitors) {
+      return (
+        <div className="mt-6 rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+          {t('monitor.settings.loading')}
+        </div>
+      );
+    }
+
     if (monitors.length === 0) {
       return (
         <div className="mt-6 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
@@ -497,7 +539,7 @@ export default function MonitorSettingsClient({ links }: Props) {
         })}
       </div>
     );
-  }, [metricLabel, monitors, t]);
+  }, [loadingMonitors, metricLabel, monitors, t]);
 
   return (
     <div className="mt-6">
@@ -514,6 +556,11 @@ export default function MonitorSettingsClient({ links }: Props) {
         </button>
       </div>
 
+      {loadError && (
+        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {t('monitor.settings.loadError').replace('{error}', loadError)}
+        </div>
+      )}
       {monitorCards}
       {renderModal()}
     </div>

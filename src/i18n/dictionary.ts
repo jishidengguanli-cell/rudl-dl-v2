@@ -228,6 +228,8 @@ const en: Dict = {
   'monitor.settings.subtitle': 'Create Telegram alerts for balance or download activity.',
   'monitor.settings.addButton': 'Add monitor',
   'monitor.settings.listTitle': 'Configured monitors',
+  'monitor.settings.loading': 'Loading monitors...',
+  'monitor.settings.loadError': 'Unable to load monitors: {error}',
   'monitor.settings.empty': 'No monitors configured yet.',
   'monitor.settings.modal.title': 'Create monitoring rule',
   'monitor.settings.modal.close': 'Close dialog',

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { insertMonitorRecord } from '@/lib/monitor';
+import {
+  insertMonitorRecord,
+  listMonitorSummaries,
+  parseDownloadMetric,
+  type MonitorSummary,
+} from '@/lib/monitor';
 
 export const runtime = 'edge';
 
@@ -17,26 +22,6 @@ type BasePayload = {
   linkId?: unknown;
   metric?: unknown;
 };
-
-type DownloadMetric = 'total' | 'apk' | 'ipa';
-
-type MonitorSummary =
-  | {
-      id: string;
-      type: 'points';
-      threshold: number;
-      target: string;
-      message: string;
-    }
-  | {
-      id: string;
-      type: 'downloads';
-      threshold: number;
-      metric: DownloadMetric;
-      linkCode: string;
-      target: string;
-      message: string;
-    };
 
 const parseUid = (req: Request): string | null => {
   const cookieHeader = req.headers.get('cookie') ?? '';
@@ -70,18 +55,32 @@ const parseNonEmptyString = (value: unknown): string | null => {
   return trimmed ? trimmed : null;
 };
 
-const allowedMetrics: Record<string, DownloadMetric> = {
-  total: 'total',
-  apk: 'apk',
-  ipa: 'ipa',
-};
-
 async function resolveLinkCode(DB: D1Database, userId: string, linkId: string): Promise<string | null> {
   const row = await DB.prepare('SELECT code FROM links WHERE id=? AND owner_id=? LIMIT 1')
     .bind(linkId, userId)
     .first<{ code: string }>()
     .catch(() => null);
   return row?.code ?? null;
+}
+
+export async function GET(req: Request) {
+  const uid = parseUid(req);
+  if (!uid) {
+    return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 });
+  }
+
+  const DB = resolveDB();
+  if (!DB) {
+    return NextResponse.json({ ok: false, error: 'D1 binding DB is missing' }, { status: 500 });
+  }
+
+  try {
+    const monitors = await listMonitorSummaries(DB, uid);
+    return NextResponse.json({ ok: true, monitors });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -115,21 +114,22 @@ export async function POST(req: Request) {
         isActive: 1,
       });
 
-      const summary: MonitorSummary = {
-        id: insertId ? String(insertId) : crypto.randomUUID(),
-        type: 'points',
-        threshold,
-        target: targetChatId,
-        message,
-      };
-
-      return NextResponse.json({ ok: true, monitor: summary });
+      return NextResponse.json({
+        ok: true,
+        monitor: {
+          id: insertId ? String(insertId) : crypto.randomUUID(),
+          type: 'points',
+          threshold,
+          target: targetChatId,
+          message,
+          isActive: true,
+        } satisfies MonitorSummary,
+      });
     }
 
     if (type === 'downloads') {
       const linkId = parseNonEmptyString(body.linkId);
-      const metricRaw = typeof body.metric === 'string' ? body.metric : '';
-      const metric = allowedMetrics[metricRaw];
+      const metric = parseDownloadMetric(typeof body.metric === 'string' ? body.metric : null);
       if (!linkId || !metric) {
         return NextResponse.json({ ok: false, error: 'INVALID_DOWNLOAD_MONITOR' }, { status: 400 });
       }
@@ -146,17 +146,19 @@ export async function POST(req: Request) {
         isActive: 1,
       });
 
-      const summary: MonitorSummary = {
-        id: insertId ? String(insertId) : crypto.randomUUID(),
-        type: 'downloads',
-        threshold,
-        metric,
-        linkCode,
-        target: targetChatId,
-        message,
-      };
-
-      return NextResponse.json({ ok: true, monitor: summary });
+      return NextResponse.json({
+        ok: true,
+        monitor: {
+          id: insertId ? String(insertId) : crypto.randomUUID(),
+          type: 'downloads',
+          threshold,
+          metric,
+          linkCode,
+          target: targetChatId,
+          message,
+          isActive: true,
+        } satisfies MonitorSummary,
+      });
     }
 
     return NextResponse.json({ ok: false, error: 'UNSUPPORTED_MONITOR_TYPE' }, { status: 400 });

@@ -9,6 +9,19 @@ type ColumnMap = {
   botToken: string | null;
 };
 
+export type DownloadMetric = 'total' | 'apk' | 'ipa';
+
+const downloadMetricMap: Record<string, DownloadMetric> = {
+  total: 'total',
+  apk: 'apk',
+  ipa: 'ipa',
+};
+
+export const parseDownloadMetric = (value: string | null | undefined): DownloadMetric | null => {
+  if (!value) return null;
+  return downloadMetricMap[value.toLowerCase()] ?? null;
+};
+
 const toStringOrNull = (value: unknown): string | null => {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'bigint') return String(value);
@@ -134,4 +147,93 @@ export async function insertMonitorRecord(
     )
     .run();
   return typeof result.meta?.last_row_id === 'number' ? result.meta.last_row_id : null;
+}
+
+type RawMonitorRow = {
+  rowid: number | string;
+  mon_option: string;
+  mon_detail: string | null;
+  noti_detail: string | null;
+  is_active: number | null;
+};
+
+export type MonitorSummary =
+  | {
+      id: string;
+      type: 'points';
+      threshold: number;
+      target: string;
+      message: string;
+      isActive: boolean;
+    }
+  | {
+      id: string;
+      type: 'downloads';
+      threshold: number;
+      metric: DownloadMetric;
+      linkCode: string;
+      target: string;
+      message: string;
+      isActive: boolean;
+    };
+
+const parseJSON = <T>(value: string | null): T | null => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
+export async function listMonitorSummaries(
+  DB: D1Database,
+  userId: string
+): Promise<MonitorSummary[]> {
+  const name = await ensureMonitorTable(DB, userId);
+  const quoted = quoteIdentifier(name);
+  const result = await DB.prepare(
+    `SELECT rowid, mon_option, mon_detail, noti_method, noti_detail, is_active FROM ${quoted} ORDER BY rowid DESC`
+  )
+    .all<RawMonitorRow>()
+    .catch(() => null);
+  const rows = result?.results ?? [];
+  const summaries: MonitorSummary[] = [];
+
+  for (const row of rows) {
+    const detail = parseJSON<Record<string, unknown>>(row.mon_detail);
+    const noti = parseJSON<{ content?: string; target?: string }>(row.noti_detail);
+    if (!detail || !noti?.content || !noti?.target) continue;
+
+    if (row.mon_option === 'pb' && typeof detail.point === 'number') {
+      summaries.push({
+        id: String(row.rowid),
+        type: 'points',
+        threshold: detail.point,
+        target: noti.target,
+        message: noti.content,
+        isActive: Boolean(row.is_active),
+      });
+      continue;
+    }
+
+    if (row.mon_option === 'dc') {
+      const metric = parseDownloadMetric(
+        typeof detail.metric === 'string' ? detail.metric : null
+      );
+      if (!metric || typeof detail.link !== 'string' || typeof detail.num !== 'number') continue;
+      summaries.push({
+        id: String(row.rowid),
+        type: 'downloads',
+        threshold: detail.num,
+        metric,
+        linkCode: detail.link,
+        target: noti.target,
+        message: noti.content,
+        isActive: Boolean(row.is_active),
+      });
+    }
+  }
+
+  return summaries;
 }
