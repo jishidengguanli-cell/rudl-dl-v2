@@ -42,6 +42,9 @@ export default async function AdminProtectedLayout({ children, params }: LayoutP
   const ctx = getRequestContext();
   const bindings = (ctx.env ?? {}) as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
+  if (!DB) {
+    throw new Error('D1 binding DB is missing');
+  }
   const request = (ctx as { request?: Request }).request;
   const requestUrl = request ? new URL(request.url) : null;
   const currentPath = requestUrl ? `${requestUrl.pathname}${requestUrl.search}` : basePath;
