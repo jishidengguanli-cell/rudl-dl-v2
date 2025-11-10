@@ -102,9 +102,9 @@ export default function LangNav() {
         <Image
           src="/images/logo.png"
           alt="DataruApp logo"
-          width={140}
-          height={36}
-          className="h-9 w-auto"
+          width={256}
+          height={256}
+          className="h-10 w-auto sm:h-12"
           priority
         />
         <div className="text-left">

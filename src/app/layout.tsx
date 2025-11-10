@@ -1,17 +1,21 @@
 import './globals.css';
+import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import AppShell from '@/components/AppShell';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 
 export const runtime = 'edge';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'DataruApp V2',
   description: 'Next + Cloudflare Pages',
   icons: {
-    icon: '/images/icon.png',
-    shortcut: '/images/icon.png',
-    apple: '/images/icon.png',
+    icon: [
+      { url: '/favicon.ico', rel: 'icon', type: 'image/x-icon' },
+      { url: '/images/icon.png', type: 'image/png', sizes: '192x192' },
+    ],
+    shortcut: ['/images/icon.png'],
+    apple: [{ url: '/images/icon.png', sizes: '180x180', type: 'image/png' }],
   },
 };
 
