@@ -1,9 +1,17 @@
 import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { D1Database } from '@cloudflare/workers-types';
 import MemberNav from '@/components/MemberNav';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 import { getTranslator } from '@/i18n/helpers';
+import { requireVerifiedUser } from '@/lib/require-verified-user';
+
+type Env = {
+  DB?: D1Database;
+  ['rudl-app']?: D1Database;
+};
 
 export const runtime = 'edge';
 
@@ -21,11 +29,33 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     ? localeCookie
     : DEFAULT_LOCALE;
   const localePrefix = `/${locale}`;
+  const loginParams = new URLSearchParams({ next: `${localePrefix}/member`, reason: 'auth' });
+  const loginRedirect = `${localePrefix}/login?${loginParams.toString()}`;
 
   if (!uid) {
-    const params = new URLSearchParams({ next: `${localePrefix}/member`, reason: 'auth' });
-    redirect(`${localePrefix}/login?${params.toString()}`);
+    redirect(loginRedirect);
   }
+
+  const ctx = getRequestContext();
+  const { env } = ctx;
+  const bindings = env as Env;
+  const DB = bindings.DB ?? bindings['rudl-app'];
+  if (!DB) {
+    throw new Error('D1 binding DB is missing');
+  }
+  const request = (ctx as { request?: Request }).request;
+  const requestUrl = request ? new URL(request.url) : null;
+  const currentPath = requestUrl
+    ? `${requestUrl.pathname}${requestUrl.search}`
+    : `${localePrefix}/member`;
+
+  await requireVerifiedUser({
+    DB,
+    uid,
+    locale,
+    currentPath,
+    loginRedirect,
+  });
 
   const t = getTranslator(locale);
 
@@ -40,4 +70,3 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     </div>
   );
 }
-

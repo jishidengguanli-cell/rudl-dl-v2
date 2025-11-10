@@ -7,7 +7,8 @@ import { isLanguageCode } from '@/lib/language';
 import type { Locale } from '@/i18n/dictionary';
 import LangNav from '@/components/LangNav';
 
-const AUTH_SEGMENTS = new Set(['login', 'register']);
+// Routes in this set use the minimal auth layout (no primary nav/footer).
+const AUTH_SEGMENTS = new Set(['login', 'register', 'email-verification']);
 
 function useIsAuthRoute() {
   const pathname = usePathname() ?? '';

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
 import { fetchAdminUser } from '@/lib/admin';
+import { requireVerifiedUser } from '@/lib/require-verified-user';
 
 export const runtime = 'edge';
 
@@ -42,10 +43,24 @@ export default async function AdminProtectedLayout({ children, params }: LayoutP
   const bindings = (ctx.env ?? {}) as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
   const request = (ctx as { request?: Request }).request;
-  const currentPath = request ? new URL(request.url).pathname : basePath;
-  const uid = cookieStore.get('uid')?.value;
+  const requestUrl = request ? new URL(request.url) : null;
+  const currentPath = requestUrl ? `${requestUrl.pathname}${requestUrl.search}` : basePath;
+  const rawUid = cookieStore.get('uid')?.value ?? null;
 
   const loginUrl = `/${locale}/admin/login?next=${encodeURIComponent(currentPath)}`;
+  if (!rawUid) {
+    redirect(loginUrl);
+  }
+  const uid = rawUid;
+
+  await requireVerifiedUser({
+    DB,
+    uid,
+    locale,
+    currentPath,
+    loginRedirect: loginUrl,
+  });
+
   const adminUser = await fetchAdminUser(DB, uid);
   if (!adminUser) {
     redirect(loginUrl);

@@ -12,9 +12,20 @@ type EmailEnv = {
 const TOKENS_TABLE = 'email_verification_tokens';
 
 export const EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60; // 1 hour
-export const EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS = 60 * 10; // 10 minutes
+export const EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS = 60; // 1 minute
 
 let tokensTableEnsured = false;
+
+const ensureTokensColumn = async (DB: D1Database, column: string, definition: string) => {
+  try {
+    await DB.prepare(`ALTER TABLE ${TOKENS_TABLE} ADD COLUMN ${column} ${definition}`).run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/duplicate column name/i.test(message)) {
+      throw error;
+    }
+  }
+};
 
 const ensureTokensTable = async (DB: D1Database) => {
   if (tokensTableEnsured) return;
@@ -24,6 +35,7 @@ const ensureTokensTable = async (DB: D1Database) => {
       token_hash TEXT NOT NULL,
       expires_at INTEGER NOT NULL,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      next_allowed_at INTEGER,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`
   ).run();
@@ -31,6 +43,7 @@ const ensureTokensTable = async (DB: D1Database) => {
     `CREATE INDEX IF NOT EXISTS idx_${TOKENS_TABLE}_token_hash
       ON ${TOKENS_TABLE} (token_hash)`
   ).run();
+  await ensureTokensColumn(DB, 'next_allowed_at', 'INTEGER');
   tokensTableEnsured = true;
 };
 
@@ -48,6 +61,7 @@ export type VerificationToken = {
   token: string;
   expiresAt: number;
   createdAt: number;
+  nextAllowedAt: number;
 };
 
 export async function createEmailVerificationToken(
@@ -60,19 +74,22 @@ export async function createEmailVerificationToken(
   const tokenHash = await hashToken(token);
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(60, ttlSeconds);
+  const cooldownSeconds = Math.max(10, EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS);
+  const nextAllowedAt = now + cooldownSeconds;
 
   await DB.prepare(
-    `INSERT INTO ${TOKENS_TABLE} (user_id, token_hash, expires_at, created_at)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO ${TOKENS_TABLE} (user_id, token_hash, expires_at, created_at, next_allowed_at)
+     VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
        token_hash=excluded.token_hash,
        expires_at=excluded.expires_at,
-       created_at=excluded.created_at`
+       created_at=excluded.created_at,
+       next_allowed_at=excluded.next_allowed_at`
   )
-    .bind(userId, tokenHash, expiresAt, now)
+    .bind(userId, tokenHash, expiresAt, now, nextAllowedAt)
     .run();
 
-  return { token, expiresAt, createdAt: now };
+  return { token, expiresAt, createdAt: now, nextAllowedAt };
 }
 
 type ConsumeResult =
@@ -143,18 +160,22 @@ export async function getVerificationCooldown(
   await ensureTokensTable(DB);
   const now = Math.floor(Date.now() / 1000);
   const existing = await DB.prepare(
-    `SELECT created_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`
+    `SELECT created_at, next_allowed_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`
   )
     .bind(userId)
-    .first<{ created_at: number | string | null } | null>()
+    .first<{ created_at: number | string | null; next_allowed_at?: number | string | null } | null>()
     .catch(() => null);
 
   const createdAt = toNumeric(existing?.created_at) ?? null;
-  if (!createdAt) {
+  const storedNextAllowed = toNumeric(existing?.next_allowed_at) ?? null;
+  const nextAllowedAt =
+    storedNextAllowed ??
+    (createdAt ? createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS : null);
+
+  if (!nextAllowedAt) {
     return { allowed: true, retryAfterSeconds: 0, nextAllowedAt: now };
   }
 
-  const nextAllowedAt = createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS;
   if (nextAllowedAt <= now) {
     return { allowed: true, retryAfterSeconds: 0, nextAllowedAt };
   }
@@ -188,9 +209,9 @@ export async function getVerificationSummary(
       .bind(userId)
       .first<{ email?: unknown; is_email_verified?: unknown } | null>()
       .catch(() => null),
-    DB.prepare(`SELECT created_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`)
+    DB.prepare(`SELECT created_at, next_allowed_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`)
       .bind(userId)
-      .first<{ created_at?: unknown } | null>()
+      .first<{ created_at?: unknown; next_allowed_at?: unknown } | null>()
       .catch(() => null),
   ]);
 
@@ -199,12 +220,14 @@ export async function getVerificationSummary(
   }
 
   const createdAt = toNumeric(cooldown?.created_at) ?? null;
+  const storedNextAllowed = toNumeric(cooldown?.next_allowed_at) ?? null;
+  const nextAllowedAt =
+    storedNextAllowed ??
+    (createdAt ? createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS : null);
   return {
     email: typeof user?.email === 'string' ? user.email : null,
     isVerified: toBoolean(user?.is_email_verified),
-    nextAllowedAt: createdAt
-      ? createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS
-      : null,
+    nextAllowedAt,
   };
 }
 

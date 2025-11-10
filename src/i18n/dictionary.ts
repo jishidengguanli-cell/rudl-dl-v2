@@ -118,6 +118,7 @@ const en: Dict = {
   'emailVerification.message.expired': 'Verification link expired. Please request a new email.',
   'emailVerification.message.invalid': 'Verification link is invalid. Please request a new email.',
   'emailVerification.message.error': 'We could not verify your email. Please try again.',
+  'emailVerification.message.required': 'Please verify your email before continuing.',
   'emailVerification.unauthenticated': 'Please sign in to view your verification status.',
   'emailVerification.notFound': 'We could not find your account. Please sign in again.',
   'recharge.account': 'Account ID',
@@ -815,6 +816,7 @@ const zhTW = makeLocaleDict('zh-TW', {
   'emailVerification.message.expired': '\u9a57\u8b49\u9023\u7d50\u5df2\u904e\u671f\uff0c\u8acb\u91cd\u65b0\u7d22\u53d6\u3002',
   'emailVerification.message.invalid': '\u9a57\u8b49\u9023\u7d50\u7121\u6548\uff0c\u8acb\u91cd\u65b0\u7d22\u53d6\u3002',
   'emailVerification.message.error': '\u9a57\u8b49\u5931\u6557\uff0c\u8acb\u518d\u8a66\u4e00\u6b21\u3002',
+  'emailVerification.message.required': '\u8acb\u5148\u9a57\u8b49\u4fe1\u7bb1\u5f8c\u518d\u7e7c\u7e8c\u3002',
   'emailVerification.unauthenticated': '\u8acb\u5148\u767b\u5165\u5f8c\u518d\u67e5\u770b\u4fe1\u7bb1\u9a57\u8b49\u72c0\u614b\u3002',
   'emailVerification.notFound': '\u627e\u4e0d\u5230\u60a8\u7684\u5e33\u865f\u8cc7\u8a0a\uff0c\u8acb\u91cd\u65b0\u767b\u5165\u3002',
 });
@@ -1174,6 +1176,7 @@ const zhCN = makeLocaleDict('zh-CN', {
   'emailVerification.message.expired': '\u9a8c\u8bc1\u94fe\u63a5\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u7d22\u53d6\u3002',
   'emailVerification.message.invalid': '\u9a8c\u8bc1\u94fe\u63a5\u65e0\u6548\uff0c\u8bf7\u91cd\u65b0\u7d22\u53d6\u3002',
   'emailVerification.message.error': '\u9a8c\u8bc1\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002',
+  'emailVerification.message.required': '\u8bf7\u5148\u5b8c\u6210\u90ae\u7bb1\u9a8c\u8bc1\u540e\u518d\u7ee7\u7eed\u3002',
   'emailVerification.unauthenticated': '\u8bf7\u5148\u767b\u5f55\u540e\u518d\u67e5\u770b\u90ae\u7bb1\u9a8c\u8bc1\u72b6\u6001\u3002',
   'emailVerification.notFound': '\u627e\u4e0d\u5230\u60a8\u7684\u8d26\u53f7\u4fe1\u606f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002',
 
@@ -1537,6 +1540,7 @@ const ru = makeLocaleDict('ru', {
   'emailVerification.message.expired': '\u0421\u0441\u044b\u043b\u043a\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0430. \u0417\u0430\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u043d\u043e\u0432\u043e\u0435 \u043f\u0438\u0441\u044c\u043c\u043e.',
   'emailVerification.message.invalid': '\u0421\u0441\u044b\u043b\u043a\u0430 \u043d\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u044c\u043d\u0430. \u0417\u0430\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u043d\u043e\u0432\u043e\u0435 \u043f\u0438\u0441\u044c\u043c\u043e.',
   'emailVerification.message.error': '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c email. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043d\u043e\u0432\u0430.',
+  'emailVerification.message.required': '\u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 email \u043f\u0440\u0435\u0436\u0434\u0435 \u0447\u0435\u043c \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c.',
   'emailVerification.unauthenticated': '\u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0432 \u0441\u0438\u0441\u0442\u0435\u043c\u0443, \u0447\u0442\u043e\u0431\u044b \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0441\u0442\u0430\u0442\u0443\u0441 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f.',
   'emailVerification.notFound': '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043d\u0430\u0439\u0442\u0438 \u0432\u0430\u0448 \u0430\u043a\u043a\u0430\u0443\u043d\u0442. \u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0437\u0430\u043d\u043e\u0432\u043e.',
 
@@ -1897,6 +1901,7 @@ const vi = makeLocaleDict('vi', {
   'emailVerification.message.expired': 'Li\xean k\u1ebft \u0111\xe3 h\u1ebft h\u1ea1n, h\xe3y y\xeau c\u1ea7u email m\u1edbi.',
   'emailVerification.message.invalid': 'Li\xean k\u1ebft kh\xf4ng h\u1ee3p l\u1ec7, h\xe3y y\xeau c\u1ea7u email m\u1edbi.',
   'emailVerification.message.error': 'Kh\xf4ng th\u1ec3 x\xe1c minh email, vui l\xf2ng th\u1eed l\u1ea1i.',
+  'emailVerification.message.required': 'Vui l\u00f2ng x\u00e1c minh email tr\u01b0\u1edbc khi ti\u1ebfp t\u1ee5c.',
   'emailVerification.unauthenticated': 'Vui l\xf2ng \u0111\u0103ng nh\u1eadp \u0111\u1ec3 xem tr\u1ea1ng th\xe1i x\xe1c minh.',
   'emailVerification.notFound': 'Kh\xf4ng t\xecm th\u1ea5y t\xe0i kho\u1ea3n c\u1ee7a b\u1ea1n, h\xe3y \u0111\u0103ng nh\u1eadp l\u1ea1i.',
 

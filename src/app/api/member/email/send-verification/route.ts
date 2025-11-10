@@ -4,7 +4,6 @@ import {
   createEmailVerificationToken,
   sendVerificationEmail,
   EMAIL_VERIFICATION_TTL_SECONDS,
-  EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
   getVerificationCooldown,
 } from '@/lib/email-verification';
 
@@ -85,7 +84,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { token, expiresAt, createdAt } = await createEmailVerificationToken(DB, uid);
+    const { token, expiresAt, nextAllowedAt } = await createEmailVerificationToken(DB, uid);
 
     const url = new URL(req.url);
     const baseUrl = (bindings.APP_BASE_URL ?? `${url.protocol}//${url.host}`).replace(/\/+$/, '');
@@ -103,7 +102,7 @@ export async function POST(req: Request) {
       ok: true,
       expiresAt,
       ttl: EMAIL_VERIFICATION_TTL_SECONDS,
-      nextAllowedAt: createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
+      nextAllowedAt,
       serverTime,
     });
   } catch (error: unknown) {

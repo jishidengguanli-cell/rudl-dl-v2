@@ -7,7 +7,6 @@ import {
   createEmailVerificationToken,
   sendVerificationEmail,
   EMAIL_VERIFICATION_TTL_SECONDS,
-  EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
 } from '@/lib/email-verification';
 
 export const runtime = 'edge';
@@ -101,7 +100,7 @@ export async function POST(req: Request) {
 
     shouldRollback = true;
 
-    const { token, expiresAt, createdAt } = await createEmailVerificationToken(DB, id);
+    const { token, expiresAt, nextAllowedAt } = await createEmailVerificationToken(DB, id);
     const url = new URL(req.url);
     const baseUrl = (bindings.APP_BASE_URL ?? `${url.protocol}//${url.host}`).replace(/\/+$/, '');
     const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
@@ -123,7 +122,7 @@ export async function POST(req: Request) {
       verification: {
         expiresAt,
         ttl: EMAIL_VERIFICATION_TTL_SECONDS,
-        nextAllowedAt: createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
+        nextAllowedAt,
       },
     });
     response.cookies.set('uid', id, {

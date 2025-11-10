@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type StatusKey = 'success' | 'expired' | 'invalid' | 'error';
+type StatusKey = 'success' | 'expired' | 'invalid' | 'error' | 'required';
 type Variant = 'success' | 'info' | 'warning' | 'error';
 
 type TextBundle = {
@@ -37,7 +37,7 @@ type Props = {
   isVerified: boolean;
   initialStatus: StatusKey | null;
   initialCountdown: number;
-  dashboardHref: string;
+  redirectHref: string;
   texts: TextBundle;
   autoRedirectSeconds: number;
 };
@@ -57,8 +57,7 @@ const variantClassName = (variant: Variant) => {
 
 const statusToVariant = (status: StatusKey): Variant => {
   if (status === 'success') return 'success';
-  if (status === 'expired') return 'warning';
-  if (status === 'invalid') return 'error';
+  if (status === 'expired' || status === 'required') return 'warning';
   return 'error';
 };
 
@@ -74,7 +73,7 @@ export default function EmailVerificationClient({
   isVerified,
   initialStatus,
   initialCountdown,
-  dashboardHref,
+  redirectHref,
   texts,
   autoRedirectSeconds,
 }: Props) {
@@ -107,14 +106,14 @@ export default function EmailVerificationClient({
   useEffect(() => {
     if (!verified || redirectCountdown === null) return;
     if (redirectCountdown <= 0) {
-      window.location.href = dashboardHref;
+      window.location.href = redirectHref;
       return;
     }
     const timer = window.setTimeout(() => {
       setRedirectCountdown((prev) => (prev === null ? null : prev - 1));
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [verified, redirectCountdown, dashboardHref]);
+  }, [verified, redirectCountdown, redirectHref]);
 
   const onResend = async () => {
     if (!email) {
@@ -266,8 +265,8 @@ export default function EmailVerificationClient({
           )}
           <button
             type="button"
-            onClick={() => {
-              window.location.href = dashboardHref;
+          onClick={() => {
+              window.location.href = redirectHref;
             }}
             className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-emerald-500"
           >

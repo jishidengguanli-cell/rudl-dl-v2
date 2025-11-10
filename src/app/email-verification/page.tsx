@@ -30,13 +30,42 @@ const resolveLocale = (langCookie: string | undefined, localeCookie: string | un
 
 const normalizeStatus = (
   value: string | null | undefined
-): 'success' | 'expired' | 'invalid' | 'error' | null => {
+): 'success' | 'expired' | 'invalid' | 'error' | 'required' | null => {
   if (!value) return null;
   const key = value.toLowerCase();
-  if (key === 'success' || key === 'expired' || key === 'invalid' || key === 'error') {
+  if (
+    key === 'success' ||
+    key === 'expired' ||
+    key === 'invalid' ||
+    key === 'error' ||
+    key === 'required'
+  ) {
     return key;
   }
   return null;
+};
+
+const sanitizeNextPath = (
+  value: string | string[] | undefined,
+  localePrefix: string
+): string | null => {
+  if (!value) return null;
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate) return null;
+  const trimmed = candidate.trim();
+  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//')) {
+    return null;
+  }
+  const [pathname] = trimmed.split('?');
+  const normalizedPath = (pathname ?? trimmed).toLowerCase();
+  const localeVerification = `${localePrefix}/email-verification`.toLowerCase();
+  if (
+    normalizedPath === '/email-verification' ||
+    normalizedPath === localeVerification
+  ) {
+    return null;
+  }
+  return trimmed;
 };
 
 export default async function EmailVerificationPage({ searchParams }: PageProps) {
@@ -84,6 +113,8 @@ export default async function EmailVerificationPage({ searchParams }: PageProps)
   const rawStatus = resolvedSearchParams?.status;
   const statusValue = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus ?? null;
   const initialStatus = normalizeStatus(statusValue);
+  const redirectHref =
+    sanitizeNextPath(resolvedSearchParams?.next, localePrefix) ?? `${localePrefix}/dashboard`;
 
   const serverTime = Math.floor(Date.now() / 1000);
   const nextAllowedAt = summary.nextAllowedAt ?? null;
@@ -122,6 +153,7 @@ export default async function EmailVerificationPage({ searchParams }: PageProps)
       expired: t('emailVerification.message.expired'),
       invalid: t('emailVerification.message.invalid'),
       error: t('emailVerification.message.error'),
+      required: t('emailVerification.message.required'),
     },
   };
 
@@ -132,7 +164,7 @@ export default async function EmailVerificationPage({ searchParams }: PageProps)
         isVerified={summary.isVerified || initialStatus === 'success'}
         initialStatus={initialStatus}
         initialCountdown={initialCountdown}
-        dashboardHref={`${localePrefix}/dashboard`}
+        redirectHref={redirectHref}
         texts={texts}
         autoRedirectSeconds={5}
       />
