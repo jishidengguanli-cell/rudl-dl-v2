@@ -1,6 +1,5 @@
 export interface Env {
   DB: D1Database;
-  TELEGRAM_BOT_TOKEN: string;
 }
 
 type MonitorKind = 'pb' | 'dc';
@@ -55,17 +54,13 @@ async function fetchDownloadCount(
   return null;
 }
 
-async function sendTelegram(env: Env, detail: NotiDetail) {
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    console.warn('[monitor] TELEGRAM_BOT_TOKEN missing, skip notification');
-    return;
-  }
+async function sendTelegram(token: string, detail: NotiDetail) {
   const body = {
     chat_id: detail.target,
     text: detail.content,
     parse_mode: 'Markdown',
   };
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -77,6 +72,24 @@ async function sendTelegram(env: Env, detail: NotiDetail) {
   } else {
     console.log('[monitor] telegram sent', detail.target);
   }
+}
+
+const telegramTokenCache = new Map<string, string | null>();
+
+async function fetchTelegramToken(DB: D1Database, userId: string): Promise<string | null> {
+  if (telegramTokenCache.has(userId)) {
+    return telegramTokenCache.get(userId) ?? null;
+  }
+  const row = await DB.prepare('SELECT telegram_bot_token FROM users WHERE id=? LIMIT 1')
+    .bind(userId)
+    .first<{ telegram_bot_token?: string | null }>()
+    .catch(() => null);
+  const token =
+    typeof row?.telegram_bot_token === 'string' && row.telegram_bot_token.trim()
+      ? row.telegram_bot_token.trim()
+      : null;
+  telegramTokenCache.set(userId, token);
+  return token;
 }
 
 function parseJSON<T>(raw: string | null): T | null {
@@ -100,10 +113,16 @@ async function processMonitor(env: Env, table: string, row: MonitorRow) {
   const userId = table.slice(TABLE_PREFIX.length);
   if (!userId) return;
 
+  const token = await fetchTelegramToken(env.DB, userId);
+  if (!token) {
+    console.warn('[monitor] user token missing, skip', userId);
+    return;
+  }
+
   if (row.mon_option === 'pb' && 'point' in detail) {
     const balance = await fetchPointBalance(env.DB, userId);
     if (balance !== null && balance <= detail.point) {
-      await sendTelegram(env, noti);
+      await sendTelegram(token, noti);
     }
     return;
   }
@@ -111,7 +130,7 @@ async function processMonitor(env: Env, table: string, row: MonitorRow) {
   if (row.mon_option === 'dc' && 'link' in detail) {
     const count = await fetchDownloadCount(env.DB, detail.link, detail.metric);
     if (count !== null && count >= detail.num) {
-      await sendTelegram(env, noti);
+      await sendTelegram(token, noti);
     } else {
       console.info('[monitor] download metric not implemented, skipped', detail.link);
     }
