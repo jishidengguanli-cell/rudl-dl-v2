@@ -26,6 +26,11 @@ const TABLE_PREFIX = 'monitor_';
 
 const sanitizeIdentifier = (value: string) => value.replace(/[^a-zA-Z0-9_]/g, '_');
 
+const toNumber = (value: unknown): number => {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 async function listMonitorTables(DB: D1Database): Promise<string[]> {
   const result = await DB.prepare(
     `SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?`
@@ -46,12 +51,31 @@ async function fetchPointBalance(DB: D1Database, userId: string): Promise<number
 }
 
 async function fetchDownloadCount(
-  _DB: D1Database,
-  _code: string,
-  _metric: string
+  DB: D1Database,
+  code: string,
+  metric: string
 ): Promise<number | null> {
-  // TODO: Connect to real download statistics once available.
-  return null;
+  if (!code?.trim()) return null;
+  const row = await DB.prepare(
+    'SELECT total_total_dl, total_apk_dl, total_ipa_dl FROM links WHERE code=? LIMIT 1'
+  )
+    .bind(code.trim())
+    .first<{
+      total_total_dl?: number | string | null;
+      total_apk_dl?: number | string | null;
+      total_ipa_dl?: number | string | null;
+    }>()
+    .catch(() => null);
+  if (!row) return null;
+  const totals = {
+    total: toNumber(row.total_total_dl),
+    apk: toNumber(row.total_apk_dl),
+    ipa: toNumber(row.total_ipa_dl),
+  };
+  const normalized = (metric ?? '').toLowerCase();
+  if (normalized === 'apk') return totals.apk;
+  if (normalized === 'ipa') return totals.ipa;
+  return totals.total;
 }
 
 async function sendTelegram(token: string, detail: NotiDetail) {
@@ -131,8 +155,6 @@ async function processMonitor(env: Env, table: string, row: MonitorRow) {
     const count = await fetchDownloadCount(env.DB, detail.link, detail.metric);
     if (count !== null && count >= detail.num) {
       await sendTelegram(token, noti);
-    } else {
-      console.info('[monitor] download metric not implemented, skipped', detail.link);
     }
   }
 }

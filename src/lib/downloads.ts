@@ -39,6 +39,15 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
+export type DownloadTotals = {
+  todayApk: number;
+  todayIpa: number;
+  todayTotal: number;
+  totalApk: number;
+  totalIpa: number;
+  totalTotal: number;
+};
+
 export async function ensureDownloadStatsTable(DB: D1Database, linkId?: string) {
   if (!linkId) return;
   const tableName = getStatsTableName(linkId);
@@ -58,7 +67,7 @@ export async function recordDownload(
   linkId: string,
   platform: 'apk' | 'ipa',
   now: Date = new Date()
-) {
+): Promise<DownloadTotals> {
   const tableName = getStatsTableName(linkId);
   await ensureStatsTable(DB, tableName);
 
@@ -111,6 +120,15 @@ export async function recordDownload(
       linkId
     )
     .run();
+
+  return {
+    todayApk,
+    todayIpa,
+    todayTotal: todayApk + todayIpa,
+    totalApk,
+    totalIpa,
+    totalTotal: totalApk + totalIpa,
+  };
 }
 
 export type DownloadStatsRow = {

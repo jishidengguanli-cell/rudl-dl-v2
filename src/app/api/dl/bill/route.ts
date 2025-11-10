@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
+import { triggerPointMonitors } from '@/lib/monitor';
 
 export const runtime = 'edge';
 
@@ -94,6 +95,16 @@ export async function POST(req: Request) {
     );
 
     await DB.batch(statements);
+
+    try {
+      await triggerPointMonitors(DB, {
+        ownerId: account_id,
+        previousBalance: bal,
+        currentBalance: bal - cost,
+      });
+    } catch (error) {
+      console.error('[monitor] point trigger failed', error);
+    }
 
     return NextResponse.json({ ok: true, cost });
   } catch (e: unknown) {

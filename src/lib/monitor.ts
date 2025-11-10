@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { getTableInfo } from '@/lib/distribution';
+import type { DownloadTotals } from '@/lib/downloads';
 
 export type TelegramSettings = {
   telegramBotToken: string | null;
@@ -236,4 +237,122 @@ export async function listMonitorSummaries(
   }
 
   return summaries;
+}
+
+type NotificationPayload = { target: string; message: string };
+
+const postTelegramMessage = async (token: string, payload: NotificationPayload) => {
+  if (!payload.target || !payload.message) return;
+  const body = {
+    chat_id: payload.target,
+    text: payload.message,
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true,
+  };
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response
+      .clone()
+      .text()
+      .catch(() => '');
+    console.error('[monitor] telegram send failed', response.status, text.slice(0, 200));
+  }
+};
+
+const sendMonitorNotifications = async (
+  DB: D1Database,
+  ownerId: string,
+  payloads: NotificationPayload[]
+) => {
+  if (!payloads.length) return;
+  const settings = await fetchTelegramSettings(DB, ownerId);
+  const token = settings.telegramBotToken?.trim();
+  if (!token) {
+    console.warn('[monitor] telegram token missing for owner', ownerId);
+    return;
+  }
+  await Promise.all(
+    payloads.map((payload) =>
+      postTelegramMessage(token, payload).catch((error) => {
+        console.error('[monitor] telegram send error', error);
+      })
+    )
+  );
+};
+
+type DownloadMonitorParams = {
+  ownerId: string | null | undefined;
+  linkCode: string | null | undefined;
+  platform: 'apk' | 'ipa';
+  totals: DownloadTotals | null;
+};
+
+export async function triggerDownloadMonitors(DB: D1Database, params: DownloadMonitorParams) {
+  const ownerId = params.ownerId?.trim();
+  const linkCode = params.linkCode?.trim();
+  if (!ownerId || !linkCode || !params.totals) return;
+
+  const monitors = await listMonitorSummaries(DB, ownerId);
+  const candidates = monitors.filter(
+    (monitor): monitor is Extract<MonitorSummary, { type: 'downloads' }> =>
+      monitor.type === 'downloads' && monitor.isActive && monitor.linkCode === linkCode
+  );
+  if (!candidates.length) return;
+
+  const totalsByMetric: Record<DownloadMetric, number> = {
+    total: params.totals.totalTotal,
+    apk: params.totals.totalApk,
+    ipa: params.totals.totalIpa,
+  };
+  const increments: Record<DownloadMetric, number> = {
+    total: 1,
+    apk: params.platform === 'apk' ? 1 : 0,
+    ipa: params.platform === 'ipa' ? 1 : 0,
+  };
+
+  const notifications: NotificationPayload[] = [];
+  for (const monitor of candidates) {
+    const delta = increments[monitor.metric] ?? 0;
+    if (!delta) continue;
+    const current = totalsByMetric[monitor.metric];
+    const previous = current - delta;
+    if (previous < monitor.threshold && current >= monitor.threshold) {
+      notifications.push({ target: monitor.target, message: monitor.message });
+    }
+  }
+
+  await sendMonitorNotifications(DB, ownerId, notifications);
+}
+
+type PointMonitorParams = {
+  ownerId: string | null | undefined;
+  previousBalance: number | null | undefined;
+  currentBalance: number | null | undefined;
+};
+
+export async function triggerPointMonitors(DB: D1Database, params: PointMonitorParams) {
+  const ownerId = params.ownerId?.trim();
+  const previous = Number(params.previousBalance ?? NaN);
+  const current = Number(params.currentBalance ?? NaN);
+  if (!ownerId || Number.isNaN(previous) || Number.isNaN(current)) return;
+
+  const monitors = await listMonitorSummaries(DB, ownerId);
+  const candidates = monitors.filter(
+    (monitor): monitor is Extract<MonitorSummary, { type: 'points' }> =>
+      monitor.type === 'points' && monitor.isActive
+  );
+  if (!candidates.length) return;
+
+  const notifications: NotificationPayload[] = [];
+  for (const monitor of candidates) {
+    if (previous > monitor.threshold && current <= monitor.threshold) {
+      notifications.push({ target: monitor.target, message: monitor.message });
+    }
+  }
+
+  await sendMonitorNotifications(DB, ownerId, notifications);
 }

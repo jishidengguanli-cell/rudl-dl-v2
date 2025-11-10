@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
-import { recordDownload } from '@/lib/downloads';
+import { recordDownload, type DownloadTotals } from '@/lib/downloads';
+import { triggerDownloadMonitors } from '@/lib/monitor';
 
 export const runtime = 'edge';
 
@@ -82,13 +83,27 @@ export async function GET(
     effectivePlatform = platform;
   }
 
-    try {
-    await recordDownload(DB, link.id, effectivePlatform);
+  let downloadTotals: DownloadTotals | null = null;
+  try {
+    downloadTotals = await recordDownload(DB, link.id, effectivePlatform);
   } catch {
     // ignore download counter failures
   }
 
-const destination =
+  if (downloadTotals && link.ownerId) {
+    try {
+      await triggerDownloadMonitors(DB, {
+        ownerId: link.ownerId,
+        linkCode: link.code,
+        platform: effectivePlatform,
+        totals: downloadTotals,
+      });
+    } catch {
+      // suppress monitor errors to avoid blocking download
+    }
+  }
+
+  const destination =
     effectivePlatform === 'apk'
       ? `${CDN_BASE}${encodeRfc3986Path(selected.r2Key.replace(/^\/+/, ''))}`
       : `itms-services://?action=download-manifest&url=${encodeURIComponent(
