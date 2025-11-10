@@ -81,3 +81,57 @@ export async function updateTelegramSettings(
 
   return fetchTelegramSettings(DB, userId);
 }
+
+const monitorTableCache = new Set<string>();
+
+const sanitizeMonitorSuffix = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+const monitorTableName = (userId: string) => `monitor_${sanitizeMonitorSuffix(userId)}`;
+
+const quoteIdentifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
+
+export async function ensureMonitorTable(DB: D1Database, userId: string): Promise<string> {
+  const name = monitorTableName(userId);
+  if (monitorTableCache.has(name)) return name;
+  const quoted = quoteIdentifier(name);
+  await DB.prepare(
+    `CREATE TABLE IF NOT EXISTS ${quoted} (
+      mon_option TEXT NOT NULL,
+      mon_detail TEXT NOT NULL,
+      noti_method TEXT NOT NULL,
+      noti_detail TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1
+    )`
+  ).run();
+  monitorTableCache.add(name);
+  return name;
+}
+
+type MonitorRecordInsert = {
+  monOption: 'pb' | 'dc';
+  monDetail: Record<string, unknown>;
+  notiMethod: 'tg';
+  notiDetail: { content: string; target: string };
+  isActive?: number;
+};
+
+export async function insertMonitorRecord(
+  DB: D1Database,
+  userId: string,
+  record: MonitorRecordInsert
+): Promise<number | null> {
+  const name = await ensureMonitorTable(DB, userId);
+  const quoted = quoteIdentifier(name);
+  const result = await DB.prepare(
+    `INSERT INTO ${quoted} (mon_option, mon_detail, noti_method, noti_detail, is_active) VALUES (?, ?, ?, ?, ?)`
+  )
+    .bind(
+      record.monOption,
+      JSON.stringify(record.monDetail),
+      record.notiMethod,
+      JSON.stringify(record.notiDetail),
+      typeof record.isActive === 'number' ? record.isActive : 1
+    )
+    .run();
+  return typeof result.meta?.last_row_id === 'number' ? result.meta.last_row_id : null;
+}

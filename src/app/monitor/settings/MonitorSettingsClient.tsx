@@ -36,7 +36,6 @@ type SavedMonitor =
   | {
       id: string;
       type: 'downloads';
-      linkId: string;
       linkCode: string;
       metric: DownloadMetric;
       threshold: number;
@@ -46,13 +45,6 @@ type SavedMonitor =
 
 type Props = {
   links: MonitorLink[];
-};
-
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return Math.random().toString(36).slice(2);
 };
 
 const metricKeys: Record<DownloadMetric, string> = {
@@ -86,6 +78,7 @@ export default function MonitorSettingsClient({ links }: Props) {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+  const [saving, setSaving] = useState(false);
 
   const metricLabel = useCallback(
     (metric: DownloadMetric) => t(metricKeys[metric] ?? metric),
@@ -138,6 +131,7 @@ export default function MonitorSettingsClient({ links }: Props) {
 
   const closeModal = () => {
     setModalOpen(false);
+    resetForm();
   };
 
   const handleMessageChange = (value: string) => {
@@ -182,35 +176,56 @@ export default function MonitorSettingsClient({ links }: Props) {
       return;
     }
 
-    if (form.type === 'points') {
-      const entry: SavedMonitor = {
-        id: generateId(),
-        type: 'points',
-        threshold: Number(form.pointsThreshold),
-        message: form.message.trim(),
-        target: form.targetChatId.trim(),
-      };
-      setMonitors((prev) => [entry, ...prev]);
-    } else {
-      const selectedLink = links.find((link) => link.id === form.downloadLinkId);
-      const entry: SavedMonitor = {
-        id: generateId(),
-        type: 'downloads',
-        linkId: form.downloadLinkId,
-        linkCode: selectedLink?.code ?? '----',
-        metric: form.downloadMetric,
-        threshold: Number(form.downloadThreshold),
-        message: form.message.trim(),
-        target: form.targetChatId.trim(),
-      };
-      setMonitors((prev) => [entry, ...prev]);
+    const payload: Record<string, unknown> = {
+      type: form.type,
+      threshold: form.type === 'points' ? Number(form.pointsThreshold) : Number(form.downloadThreshold),
+      message: form.message.trim(),
+      targetChatId: form.targetChatId.trim(),
+    };
+
+    if (form.type === 'downloads') {
+      payload.linkId = form.downloadLinkId;
+      payload.metric = form.downloadMetric;
     }
 
-    setStatusMessage({
-      type: 'success',
-      text: t('monitor.settings.toast.saved'),
-    });
-    setModalOpen(false);
+    try {
+      setSaving(true);
+      const response = await fetch('/api/monitor/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; monitor?: SavedMonitor }
+        | null;
+
+      if (!response.ok || !data?.ok) {
+        setStatusMessage({
+          type: 'error',
+          text: data?.error ? `${t('monitor.settings.toast.error')} (${data.error})` : t('monitor.settings.toast.error'),
+        });
+        return;
+      }
+
+      if (data.monitor) {
+        setMonitors((prev) => [data.monitor as SavedMonitor, ...prev]);
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: t('monitor.settings.toast.saved'),
+      });
+      setModalOpen(false);
+      resetForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatusMessage({
+        type: 'error',
+        text: `${t('monitor.settings.toast.error')} (${message})`,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderModal = () => {
@@ -412,9 +427,12 @@ export default function MonitorSettingsClient({ links }: Props) {
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500"
+                  disabled={saving}
+                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {t('monitor.settings.actions.save')}
+                  {saving
+                    ? t('monitor.settings.actions.saving') ?? t('monitor.settings.actions.save')
+                    : t('monitor.settings.actions.save')}
                 </button>
               </div>
 
