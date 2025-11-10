@@ -1,0 +1,16 @@
+{
+  "name": "monitor-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "publish": "wrangler publish",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241105.0",
+    "typescript": "^5.6.3",
+    "wrangler": "3.87.0"
+  }
+}
