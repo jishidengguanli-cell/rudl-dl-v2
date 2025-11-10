@@ -100,8 +100,8 @@ export default function LangNav() {
     <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <Link href={localePrefix || '/'} className="flex items-center gap-3 text-xl font-semibold text-gray-900">
         <Image
-          src="/images/logo.png"
-          alt="DataruApp logo"
+          src="/images/icon.png"
+          alt="DataruApp icon"
           width={256}
           height={256}
           className="h-10 w-auto sm:h-12"
