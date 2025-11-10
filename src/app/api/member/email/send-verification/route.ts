@@ -4,6 +4,8 @@ import {
   createEmailVerificationToken,
   sendVerificationEmail,
   EMAIL_VERIFICATION_TTL_SECONDS,
+  EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
+  getVerificationCooldown,
 } from '@/lib/email-verification';
 
 export const runtime = 'edge';
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
   if (!uid) {
     return NextResponse.json({ ok: false, error: 'UNAUTHENTICATED' }, { status: 401 });
   }
+  const serverTime = Math.floor(Date.now() / 1000);
 
   const { env } = getRequestContext();
   const bindings = env as Env;
@@ -65,10 +68,24 @@ export async function POST(req: Request) {
     }
 
     if (toBoolean(user?.is_email_verified)) {
-      return NextResponse.json({ ok: true, alreadyVerified: true });
+      return NextResponse.json({ ok: true, alreadyVerified: true, serverTime });
     }
 
-    const { token, expiresAt } = await createEmailVerificationToken(DB, uid);
+    const cooldown = await getVerificationCooldown(DB, uid);
+    if (!cooldown.allowed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'TOO_MANY_REQUESTS',
+          retryAfter: cooldown.retryAfterSeconds,
+          nextAllowedAt: cooldown.nextAllowedAt,
+          serverTime,
+        },
+        { status: 429 }
+      );
+    }
+
+    const { token, expiresAt, createdAt } = await createEmailVerificationToken(DB, uid);
 
     const url = new URL(req.url);
     const baseUrl = (bindings.APP_BASE_URL ?? `${url.protocol}//${url.host}`).replace(/\/+$/, '');
@@ -86,6 +103,8 @@ export async function POST(req: Request) {
       ok: true,
       expiresAt,
       ttl: EMAIL_VERIFICATION_TTL_SECONDS,
+      nextAllowedAt: createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS,
+      serverTime,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

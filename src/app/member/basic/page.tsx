@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { DEFAULT_LOCALE, dictionaries, type Locale } from '@/i18n/dictionary';
@@ -48,7 +47,6 @@ export default async function MemberBasicPage() {
   const localeCookie = cookieStore.get('locale')?.value;
   const locale = resolveLocale(langCookie, localeCookie);
   const t = getTranslator(locale);
-  const localePrefix = `/${locale}`;
 
   if (!uid) {
     return (
@@ -103,32 +101,6 @@ export default async function MemberBasicPage() {
           <dt className="text-sm font-medium text-gray-500">{t('member.basic.createdAt')}</dt>
           <dd className="mt-1 text-base text-gray-900">
             {formatDateTime(member.createdAt, locale)}
-          </dd>
-        </div>
-        <div className="sm:col-span-2">
-          <dt className="text-sm font-medium text-gray-500">
-            {t('member.basic.emailVerification')}
-          </dt>
-          <dd className="mt-1 flex flex-wrap items-center gap-3 text-base text-gray-900">
-            <span
-              className={
-                member.isEmailVerified
-                  ? 'font-semibold text-emerald-600'
-                  : 'font-medium text-amber-600'
-              }
-            >
-              {member.isEmailVerified
-                ? t('member.basic.emailVerification.verified')
-                : t('member.basic.emailVerification.pending')}
-            </span>
-            {!member.isEmailVerified && (
-              <Link
-                href={`${localePrefix}/member/email-verification`}
-                className="inline-flex items-center rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-indigo-600"
-              >
-                {t('member.basic.emailVerification.cta')}
-              </Link>
-            )}
           </dd>
         </div>
       </dl>

@@ -38,12 +38,17 @@ export default function RegisterPage() {
       setOut(t('auth.register.mismatch') ?? 'Passwords do not match');
       return;
     }
+    const normalizedEmail = email.trim();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setOut(t('auth.register.invalidEmail') ?? 'Invalid email address');
+      return;
+    }
     setOut('loading...');
     try {
       const r = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password: pw }),
+        body: JSON.stringify({ email: normalizedEmail, password: pw }),
       });
       const contentType = r.headers.get('content-type') ?? '';
       if (!contentType.includes('application/json')) {
@@ -61,9 +66,8 @@ export default function RegisterPage() {
         const payload = json as { ok: boolean; error?: unknown };
         if (payload.ok) {
           setOut(t('auth.register.success') ?? 'Registered');
-          const params = new URLSearchParams({ next: nextPath, reason: 'registered' });
           const base = localePrefix || '';
-          location.href = `${base}/login?${params.toString()}`;
+          location.href = `${base}/email-verification`;
           return;
         }
         const message = typeof payload.error === 'string' ? payload.error : 'Register failed';
@@ -130,3 +134,5 @@ export default function RegisterPage() {
     </div>
   );
 }
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;

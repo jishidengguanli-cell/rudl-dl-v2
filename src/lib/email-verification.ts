@@ -11,6 +11,9 @@ type EmailEnv = {
 
 const TOKENS_TABLE = 'email_verification_tokens';
 
+export const EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60; // 1 hour
+export const EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS = 60 * 10; // 10 minutes
+
 let tokensTableEnsured = false;
 
 const ensureTokensTable = async (DB: D1Database) => {
@@ -44,9 +47,8 @@ const hashToken = async (token: string) => {
 export type VerificationToken = {
   token: string;
   expiresAt: number;
+  createdAt: number;
 };
-
-export const EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60; // 1 hour
 
 export async function createEmailVerificationToken(
   DB: D1Database,
@@ -70,7 +72,7 @@ export async function createEmailVerificationToken(
     .bind(userId, tokenHash, expiresAt, now)
     .run();
 
-  return { token, expiresAt };
+  return { token, expiresAt, createdAt: now };
 }
 
 type ConsumeResult =
@@ -108,10 +110,102 @@ export async function consumeEmailVerificationToken(
   return { status: 'success', userId };
 }
 
+const toNumeric = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const toBoolean = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric !== 0;
+    return value.toLowerCase() === 'true';
+  }
+  return false;
+};
+
+export type VerificationCooldown = {
+  allowed: boolean;
+  retryAfterSeconds: number;
+  nextAllowedAt: number;
+};
+
+export async function getVerificationCooldown(
+  DB: D1Database,
+  userId: string
+): Promise<VerificationCooldown> {
+  await ensureTokensTable(DB);
+  const now = Math.floor(Date.now() / 1000);
+  const existing = await DB.prepare(
+    `SELECT created_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`
+  )
+    .bind(userId)
+    .first<{ created_at: number | string | null } | null>()
+    .catch(() => null);
+
+  const createdAt = toNumeric(existing?.created_at) ?? null;
+  if (!createdAt) {
+    return { allowed: true, retryAfterSeconds: 0, nextAllowedAt: now };
+  }
+
+  const nextAllowedAt = createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS;
+  if (nextAllowedAt <= now) {
+    return { allowed: true, retryAfterSeconds: 0, nextAllowedAt };
+  }
+
+  return {
+    allowed: false,
+    retryAfterSeconds: nextAllowedAt - now,
+    nextAllowedAt,
+  };
+}
+
 export async function markEmailVerified(DB: D1Database, userId: string): Promise<void> {
   await ensureTokensTable(DB);
   await DB.prepare(`UPDATE users SET is_email_verified=1 WHERE id=?`).bind(userId).run();
   await DB.prepare(`DELETE FROM ${TOKENS_TABLE} WHERE user_id=?`).bind(userId).run();
+}
+
+export type VerificationSummary = {
+  email: string | null;
+  isVerified: boolean;
+  nextAllowedAt: number | null;
+};
+
+export async function getVerificationSummary(
+  DB: D1Database,
+  userId: string
+): Promise<VerificationSummary | null> {
+  await ensureTokensTable(DB);
+  const [user, cooldown] = await Promise.all([
+    DB.prepare('SELECT email, is_email_verified FROM users WHERE id=? LIMIT 1')
+      .bind(userId)
+      .first<{ email?: unknown; is_email_verified?: unknown } | null>()
+      .catch(() => null),
+    DB.prepare(`SELECT created_at FROM ${TOKENS_TABLE} WHERE user_id=? LIMIT 1`)
+      .bind(userId)
+      .first<{ created_at?: unknown } | null>()
+      .catch(() => null),
+  ]);
+
+  if (!user) {
+    return null;
+  }
+
+  const createdAt = toNumeric(cooldown?.created_at) ?? null;
+  return {
+    email: typeof user?.email === 'string' ? user.email : null,
+    isVerified: toBoolean(user?.is_email_verified),
+    nextAllowedAt: createdAt
+      ? createdAt + EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS
+      : null,
+  };
 }
 
 export type VerificationEmailParams = {
