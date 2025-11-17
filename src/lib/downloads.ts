@@ -39,6 +39,83 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
+type LinkStatsColumnKey =
+  | 'todayApk'
+  | 'todayIpa'
+  | 'todayTotal'
+  | 'totalApk'
+  | 'totalIpa'
+  | 'totalTotal';
+
+type LinkStatsColumnMap = Partial<Record<LinkStatsColumnKey, string>>;
+
+const LINK_STATS_COLUMN_CANDIDATES: Record<LinkStatsColumnKey, readonly string[]> = {
+  todayApk: ['today_apk_dl', 'today_apk_d', 'today_apk'],
+  todayIpa: ['today_ipa_dl', 'today_ipa_d', 'today_ipa'],
+  todayTotal: ['today_total_dl', 'today_total_d', 'today_total'],
+  totalApk: ['total_apk_dl', 'total_apk_d', 'total_apk'],
+  totalIpa: ['total_ipa_dl', 'total_ipa_d', 'total_ipa'],
+  totalTotal: ['total_total_dl', 'total_total_d', 'total_total'],
+};
+
+let cachedLinkStatsColumns: Promise<LinkStatsColumnMap> | null = null;
+
+const getLinkStatsColumns = (DB: D1Database): Promise<LinkStatsColumnMap> => {
+  if (!cachedLinkStatsColumns) {
+    cachedLinkStatsColumns = (async () => {
+      try {
+        const response = await DB.prepare('PRAGMA table_info(links)').all<{ name?: string }>();
+        const rows = (response?.results as Array<{ name?: string }> | undefined) ?? [];
+        const knownColumns = new Set(rows.map((row) => row.name).filter((name): name is string => Boolean(name)));
+        const resolved: LinkStatsColumnMap = {};
+        (Object.keys(LINK_STATS_COLUMN_CANDIDATES) as LinkStatsColumnKey[]).forEach((key) => {
+          const match = LINK_STATS_COLUMN_CANDIDATES[key].find((candidate) => knownColumns.has(candidate));
+          if (match) resolved[key] = match;
+        });
+        return resolved;
+      } catch (error) {
+        console.warn('[downloads] unable to inspect links table columns', error);
+        return {};
+      }
+    })();
+  }
+  return cachedLinkStatsColumns;
+};
+
+const updateLinkDownloadColumns = async (
+  DB: D1Database,
+  linkId: string,
+  totals: DownloadTotals
+) => {
+  const columns = await getLinkStatsColumns(DB);
+  const assignments: string[] = [];
+  const values: number[] = [];
+
+  const pushColumn = (key: LinkStatsColumnKey, value: number) => {
+    const column = columns[key];
+    if (!column) return;
+    assignments.push(`${column}=?`);
+    values.push(value);
+  };
+
+  pushColumn('todayApk', totals.todayApk);
+  pushColumn('todayIpa', totals.todayIpa);
+  pushColumn('todayTotal', totals.todayTotal);
+  pushColumn('totalApk', totals.totalApk);
+  pushColumn('totalIpa', totals.totalIpa);
+  pushColumn('totalTotal', totals.totalTotal);
+
+  if (!assignments.length) return;
+
+  try {
+    await DB.prepare(`UPDATE links SET ${assignments.join(', ')} WHERE id=?`)
+      .bind(...values, linkId)
+      .run();
+  } catch (error) {
+    console.warn('[downloads] unable to update link download totals', error);
+  }
+};
+
 export type DownloadTotals = {
   todayApk: number;
   todayIpa: number;
@@ -104,24 +181,7 @@ export async function recordDownload(
   const totalApk = toNumber(totals.apkSum);
   const totalIpa = toNumber(totals.ipaSum);
 
-  await DB.prepare(
-    `UPDATE links
-     SET today_apk_dl=?, today_ipa_dl=?, today_total_dl=?,
-         total_apk_dl=?, total_ipa_dl=?, total_total_dl=?
-     WHERE id=?`
-  )
-    .bind(
-      todayApk,
-      todayIpa,
-      todayApk + todayIpa,
-      totalApk,
-      totalIpa,
-      totalApk + totalIpa,
-      linkId
-    )
-    .run();
-
-  return {
+  const totalsPayload: DownloadTotals = {
     todayApk,
     todayIpa,
     todayTotal: todayApk + todayIpa,
@@ -129,6 +189,10 @@ export async function recordDownload(
     totalIpa,
     totalTotal: totalApk + totalIpa,
   };
+
+  await updateLinkDownloadColumns(DB, linkId, totalsPayload);
+
+  return totalsPayload;
 }
 
 export type DownloadStatsRow = {
