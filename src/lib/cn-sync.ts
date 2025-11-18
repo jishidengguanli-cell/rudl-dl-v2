@@ -15,16 +15,20 @@ export async function publishLinkToCnServer(DB: D1Database, env: CnServerBinding
       const platform = (file.platform ?? '').toLowerCase();
       return Boolean(file.r2Key) && (platform === 'apk' || platform === 'ipa');
     })
-    .map((file) => ({
-      id: file.id,
-      platform: (file.platform ?? 'apk').toLowerCase() === 'ipa' ? 'ipa' : 'apk',
-      key: file.r2Key ?? '',
-      size: Number(file.size ?? 0),
-      title: file.title,
-      bundleId: file.bundleId,
-      version: file.version,
-      contentType: file.contentType,
-    }))
+    .map((file) => {
+      const normalizedPlatform: 'apk' | 'ipa' =
+        (file.platform ?? 'apk').toLowerCase() === 'ipa' ? 'ipa' : 'apk';
+      return {
+        id: file.id,
+        platform: normalizedPlatform,
+        key: file.r2Key ?? '',
+        size: Number(file.size ?? 0),
+        title: file.title ?? null,
+        bundleId: file.bundleId ?? null,
+        version: file.version ?? null,
+        contentType: file.contentType ?? null,
+      };
+    })
     .filter((file) => file.key);
 
   const payload: CnPublishLinkPayload = {
