@@ -1,4 +1,4 @@
-import { DEFAULT_CN_DOWNLOAD_BASE, getServerCnDownloadBase } from './cn-domain';
+import { getServerCnDownloadBase } from './cn-domain';
 export { getPublicCnDownloadDomain } from './cn-domain';
 
 export type CnServerBindings = {
@@ -77,7 +77,7 @@ const cnRequest = async (
   return response;
 };
 
-export const getCnDownloadBaseUrl = (bindings?: CnServerBindings): string => {
+export const getCnDownloadBaseUrl = (bindings?: Partial<CnServerBindings>): string => {
   return getServerCnDownloadBase(bindings?.CN_DOWNLOAD_BASE_URL);
 };
 
