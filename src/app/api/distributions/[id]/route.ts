@@ -9,6 +9,9 @@ import {
   type DistributionFile,
 } from '@/lib/distribution';
 import { normalizeLanguageCode } from '@/lib/language';
+import { cleanupCnUploads, deleteCnLink } from '@/lib/cn-server';
+import { publishLinkToCnServer } from '@/lib/cn-sync';
+import { normalizeNetworkArea, type NetworkArea } from '@/lib/network-area';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
 export const runtime = 'edge';
@@ -19,6 +22,9 @@ type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
   R2_BUCKET?: R2Bucket;
+  CN_SERVER_API_BASE?: string;
+  CN_SERVER_API_TOKEN?: string;
+  CN_DOWNLOAD_BASE_URL?: string;
 };
 
 type UploadInput = {
@@ -41,6 +47,7 @@ type UpdateBody = {
   lang: string;
   uploads: UploadInput[];
   isActive?: boolean;
+  networkArea?: NetworkArea | string;
 };
 
 type JsonOk = { ok: true; linkId?: string; code?: string };
@@ -80,8 +87,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const bindings = env as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
   const R2 = bindings.R2_BUCKET;
-  if (!DB || !R2) {
-    return jsonError('Missing DB or R2 binding', 500);
+  if (!DB) {
+    return jsonError('Missing DB binding', 500);
   }
 
   const existing = await fetchDistributionById(DB, linkId);
@@ -94,6 +101,10 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   }
 
   await ensureDownloadStatsTable(DB, linkId);
+  const useCnServer = existing.networkArea === 'CN';
+  if (!useCnServer && !R2) {
+    return jsonError('Missing R2 binding', 500);
+  }
 
   let payload: UpdateBody;
   try {
@@ -115,6 +126,13 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const autofill = Boolean(payload.autofill);
   const linkLang = normalizeLanguageCode(typeof payload.lang === 'string' ? payload.lang : '');
   const isActive = typeof payload.isActive === 'boolean' ? payload.isActive : existing.isActive;
+  const requestedNetworkArea = normalizeNetworkArea(
+    typeof payload.networkArea === 'string' ? payload.networkArea : existing.networkArea
+  );
+  if (requestedNetworkArea !== existing.networkArea) {
+    return jsonError('NETWORK_AREA_IMMUTABLE', 400);
+  }
+  const networkArea = existing.networkArea;
 
   const existingFiles = new Map<'apk' | 'ipa', DistributionFile>();
   for (const file of existing.files) {
@@ -160,6 +178,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       ['apk_version', apkVersion],
       ['ipa_version', ipaVersion],
       ['lang', linkLang],
+      ['network_area', networkArea],
     ];
 
     const platformsFinal = new Set<string>();
@@ -298,7 +317,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       await DB.batch(statements);
     }
 
-    if (r2KeysToDelete.length) {
+    if (!useCnServer && R2 && r2KeysToDelete.length) {
       await Promise.all(
         r2KeysToDelete.map(async (key) => {
           try {
@@ -310,18 +329,26 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       );
     }
 
+    if (useCnServer) {
+      await publishLinkToCnServer(DB, bindings, linkId);
+    }
+
     return NextResponse.json<JsonOk>({ ok: true, linkId, code: existing.code });
   } catch (error) {
     if (newUploadKeys.length) {
-      await Promise.all(
-        newUploadKeys.map(async (key) => {
-          try {
-            await R2.delete(key);
-          } catch {
-            // ignore
-          }
-        })
-      );
+      if (!useCnServer && R2) {
+        await Promise.all(
+          newUploadKeys.map(async (key) => {
+            try {
+              await R2.delete(key);
+            } catch {
+              // ignore
+            }
+          })
+        );
+      } else if (useCnServer) {
+        await cleanupCnUploads(bindings, newUploadKeys).catch(() => null);
+      }
     }
     const message = error instanceof Error ? error.message : String(error);
     return jsonError(message || 'UPDATE_FAILED', 500);
@@ -344,8 +371,8 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   const bindings = env as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
   const R2 = bindings.R2_BUCKET;
-  if (!DB || !R2) {
-    return jsonError('Missing DB or R2 binding', 500);
+  if (!DB) {
+    return jsonError('Missing DB binding', 500);
   }
 
   const existing = await fetchDistributionById(DB, linkId);
@@ -354,6 +381,11 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   }
   if (existing.ownerId !== uid) {
     return jsonError('FORBIDDEN', 403);
+  }
+
+  const useCnServer = existing.networkArea === 'CN';
+  if (!useCnServer && !R2) {
+    return jsonError('Missing R2 binding', 500);
   }
 
   const r2Keys = existing.files
@@ -367,7 +399,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
     ]);
     await deleteDownloadStatsForLink(DB, linkId);
 
-    if (r2Keys.length) {
+    if (!useCnServer && R2 && r2Keys.length) {
       await Promise.all(
         r2Keys.map(async (key) => {
           try {
@@ -377,6 +409,8 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
           }
         })
       );
+    } else if (useCnServer) {
+      await deleteCnLink(bindings, { linkId, code: existing.code, keys: r2Keys }).catch(() => null);
     }
 
     return NextResponse.json<JsonOk>({ ok: true, linkId, code: existing.code });

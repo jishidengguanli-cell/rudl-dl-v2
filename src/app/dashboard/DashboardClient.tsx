@@ -6,6 +6,8 @@ import { isLanguageCode } from '@/lib/language';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import type { Locale } from '@/i18n/dictionary';
+import { getPublicCnDownloadDomain } from '@/lib/cn-domain';
+import type { NetworkArea } from '@/lib/network-area';
 import AddDistributionModal from './AddDistributionModal';
 import LinkStatsModal from './LinkStatsModal';
 
@@ -37,7 +39,12 @@ const formatCount = (value: number | null | undefined) => {
   return String(safe);
 };
 
-const getShareUrl = (code: string, hydrated: boolean) => {
+const CN_DOWNLOAD_DOMAIN = getPublicCnDownloadDomain();
+
+const getShareUrl = (code: string, area: NetworkArea, hydrated: boolean) => {
+  if (area === 'CN') {
+    return `${CN_DOWNLOAD_DOMAIN}/d/${code}`;
+  }
   if (hydrated && typeof window !== 'undefined') {
     return `${window.location.origin}/d/${code}`;
   }
@@ -213,8 +220,8 @@ export default function DashboardClient({
     fallbackCopy(text);
   };
 
-  const handleCopyLink = async (code: string) => {
-    const url = getShareUrl(code, true);
+  const handleCopyLink = async (code: string, area: NetworkArea) => {
+    const url = getShareUrl(code, area, true);
     try {
       await copyLinkToClipboard(url);
       setToast(t('dashboard.toastLinkCopied'));
@@ -275,6 +282,7 @@ export default function DashboardClient({
                 <th className="py-2 pr-4">{t('table.title')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.files')}</th>
                 <th className="py-2 pr-4">{t('table.language')}</th>
+                <th className="py-2 pr-4">{t('dashboard.table.networkArea')}</th>
                 <th className="py-2 pr-4">{t('table.active')}</th>
                 <th className="py-2 pr-4">{t('table.downloads')}</th>
                 <th className="py-2 pr-4">{t('dashboard.table.createdAt')}</th>
@@ -284,7 +292,7 @@ export default function DashboardClient({
             </thead>
             <tbody>
               {data.links.map((link) => {
-                const shareUrl = getShareUrl(link.code, isHydrated);
+                const shareUrl = getShareUrl(link.code, link.networkArea, isHydrated);
                 return (
                   <tr key={link.id} className="border-b last:border-none">
                     <td className="py-2 pr-4 font-mono text-xs sm:text-sm whitespace-nowrap">{link.code}</td>
@@ -304,6 +312,15 @@ export default function DashboardClient({
                       )}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{t(`language.name.${link.language}`)}</td>
+                    <td className="py-2 pr-4">
+                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                        {t(
+                          link.networkArea === 'CN'
+                            ? 'networkArea.cn'
+                            : 'networkArea.global'
+                        )}
+                      </span>
+                    </td>
                     <td className="py-2 pr-4">
                       <span
                         className={`rounded px-2 py-0.5 text-xs font-semibold ${
@@ -380,7 +397,7 @@ export default function DashboardClient({
                         <button
                           type="button"
                           className="rounded border px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          onClick={() => handleCopyLink(link.code)}
+                          onClick={() => handleCopyLink(link.code, link.networkArea)}
                           disabled={loading}
                         >
                           {t('dashboard.copyLink')}
@@ -393,7 +410,7 @@ export default function DashboardClient({
 
               {!data.links.length && (
                 <tr>
-                  <td className="py-4 text-gray-500" colSpan={9}>
+                  <td className="py-4 text-gray-500" colSpan={10}>
                     {loading ? t('status.loading') : t('status.empty')}
                   </td>
                 </tr>

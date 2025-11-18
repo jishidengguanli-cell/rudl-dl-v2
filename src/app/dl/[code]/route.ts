@@ -3,6 +3,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
 import { recordDownload, type DownloadTotals } from '@/lib/downloads';
 import { triggerDownloadMonitors } from '@/lib/monitor';
+import { getCnDownloadBaseUrl } from '@/lib/cn-server';
 
 export const runtime = 'edge';
 
@@ -32,11 +33,16 @@ export async function GET(
   if (!link || !link.isActive) {
     return new Response('Not Found', { status: 404 });
   }
+  const url = new URL(request.url);
+  if (link.networkArea === 'CN') {
+    const cnBase = getCnDownloadBaseUrl(bindings);
+    const target = `${cnBase}/dl/${encodeURIComponent(link.code)}${url.search}`;
+    return Response.redirect(target, 302);
+  }
 
   const files = link.files.filter((file) => file.r2Key);
   if (!files.length) return new Response('File Missing', { status: 404 });
 
-  const url = new URL(request.url);
   const queryPlatform =
     url.searchParams.get('p') ??
     url.searchParams.get('platform') ??

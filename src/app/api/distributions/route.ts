@@ -3,6 +3,9 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { generateLinkCode } from '@/lib/code';
 import { deleteDownloadStatsForLink, ensureDownloadStatsTable } from '@/lib/downloads';
 import { normalizeLanguageCode } from '@/lib/language';
+import { cleanupCnUploads } from '@/lib/cn-server';
+import { publishLinkToCnServer } from '@/lib/cn-sync';
+import { normalizeNetworkArea, type NetworkArea } from '@/lib/network-area';
 
 export const runtime = 'edge';
 
@@ -10,6 +13,9 @@ type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
   R2_BUCKET?: R2Bucket;
+  CN_SERVER_API_BASE?: string;
+  CN_SERVER_API_TOKEN?: string;
+  CN_DOWNLOAD_BASE_URL?: string;
 };
 
 type UploadInput = {
@@ -33,6 +39,7 @@ type FinalizeBody = {
   lang: string;
   uploads: UploadInput[];
   isActive?: boolean;
+  networkArea?: NetworkArea | string;
 };
 
 const DEFAULT_TITLE = 'APP';
@@ -106,8 +113,8 @@ export async function POST(req: Request) {
   const bindings = env as Env;
   const DB = bindings.DB ?? bindings['rudl-app'];
   const R2 = bindings.R2_BUCKET;
-  if (!DB || !R2) {
-    return NextResponse.json({ ok: false, error: 'Missing DB or R2 binding' }, { status: 500 });
+  if (!DB) {
+    return NextResponse.json({ ok: false, error: 'Missing DB binding' }, { status: 500 });
   }
 
   let payload: FinalizeBody | undefined;
@@ -131,6 +138,7 @@ export async function POST(req: Request) {
     lang: langInputRaw,
     uploads: uploadsInput,
     isActive: isActiveRaw,
+    networkArea: networkAreaRaw,
   } = payload;
 
   if (!linkId || typeof linkId !== 'string') {
@@ -178,7 +186,14 @@ export async function POST(req: Request) {
   const ipaVersionInput = (ipaVersionInputRaw ?? '').trim();
   const linkLang = normalizeLanguageCode(typeof langInputRaw === 'string' ? langInputRaw : '');
   const isActiveInput = typeof isActiveRaw === 'boolean' ? isActiveRaw : true;
+  const networkArea = normalizeNetworkArea(
+    typeof networkAreaRaw === 'string' ? networkAreaRaw : null
+  );
   const platformString = uploads.map((upload) => upload.platform).join(',');
+  const useCnServer = networkArea === 'CN';
+  if (!useCnServer && !R2) {
+    return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
+  }
 
   const derivedTitle =
     (autofill && uploads.find((upload) => upload.title)?.title?.trim()) ||
@@ -199,7 +214,7 @@ export async function POST(req: Request) {
     ipaVersionInput ||
     '';
 
-  const r2KeysToDelete = uploads.map((upload) => upload.key);
+  const pendingUploadKeys = uploads.map((upload) => upload.key);
   const code = generateLinkCode();
 
   try {
@@ -227,14 +242,16 @@ export async function POST(req: Request) {
         : isActiveInput ? 1 : 0
       : undefined;
 
-    await Promise.all(
-      uploads.map(async (upload) => {
-        const head = await R2.head(upload.key);
-        if (!head) {
-          throw new Error(`MISSING_OBJECT:${upload.platform}`);
-        }
-      })
-    );
+    if (!useCnServer && R2) {
+      await Promise.all(
+        uploads.map(async (upload) => {
+          const head = await R2.head(upload.key);
+          if (!head) {
+            throw new Error(`MISSING_OBJECT:${upload.platform}`);
+          }
+        })
+      );
+    }
 
     const linkColumnPairs: Array<[string, unknown]> = [
       ['id', linkId],
@@ -246,6 +263,7 @@ export async function POST(req: Request) {
       ['ipa_version', derivedIpaVersion],
       ['platform', platformString],
       ['lang', linkLang],
+      ['network_area', networkArea],
       ['today_apk_dl', 0],
       ['today_ipa_dl', 0],
       ['today_total_dl', 0],
@@ -351,6 +369,9 @@ export async function POST(req: Request) {
         .run();
     }
     await ensureDownloadStatsTable(DB, linkId);
+    if (useCnServer) {
+      await publishLinkToCnServer(DB, bindings, linkId);
+    }
 
     return NextResponse.json({ ok: true, linkId, code });
   } catch (error) {
@@ -363,7 +384,11 @@ export async function POST(req: Request) {
       .run()
       .catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
-    await Promise.all(r2KeysToDelete.map((key) => R2.delete(key).catch(() => null)));
+    if (!useCnServer && R2) {
+      await Promise.all(pendingUploadKeys.map((key) => R2.delete(key).catch(() => null)));
+    } else if (useCnServer) {
+      await cleanupCnUploads(bindings, pendingUploadKeys).catch(() => null);
+    }
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }

@@ -1,5 +1,6 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
+import { getCnDownloadBaseUrl } from '@/lib/cn-server';
 
 import { createTranslator } from '@/i18n/helpers';
 import { DEFAULT_LOCALE, type Locale } from '@/i18n/dictionary';
@@ -70,6 +71,12 @@ export async function GET(
 
   const link = await fetchDistributionByCode(DB, code);
   if (!link || !link.isActive) return resp404('Not Found');
+  const url = new URL(request.url);
+  if (link.networkArea === 'CN') {
+    const cnBase = getCnDownloadBaseUrl(bindings);
+    const target = `${cnBase}/d/${encodeURIComponent(link.code)}${url.search}`;
+    return Response.redirect(target, 302);
+  }
 
   const files = link.files ?? [];
   const findByPlatform = (platform: string) =>
@@ -103,7 +110,6 @@ export async function GET(
   }
   const disableIos = !hasIpa || missing.length > 0;
 
-  const url = new URL(request.url);
   const qLocale = tryNormalizeLanguageCode(url.searchParams.get('lang'));
   const presetLocale = tryNormalizeLanguageCode(link.language);
   const pathLocale = (() => {

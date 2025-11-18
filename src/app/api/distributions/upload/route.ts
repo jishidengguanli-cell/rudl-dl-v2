@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { normalizeNetworkArea } from '@/lib/network-area';
+import { createCnUploadTicket } from '@/lib/cn-server';
 
 export const runtime = 'edge';
 
@@ -9,6 +11,8 @@ type Env = {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string;
+  CN_SERVER_API_BASE?: string;
+  CN_SERVER_API_TOKEN?: string;
 };
 
 type Platform = 'apk' | 'ipa';
@@ -22,6 +26,7 @@ type UploadRequestBody = {
   title?: string | null;
   bundleId?: string | null;
   version?: string | null;
+  networkArea?: string | null;
 };
 
 type UploadResponse = {
@@ -189,9 +194,6 @@ export async function POST(req: Request) {
   const accessKeyId = bindings.R2_ACCESS_KEY_ID;
   const secretKey = bindings.R2_SECRET_ACCESS_KEY;
   const bucketName = bindings.R2_BUCKET_NAME;
-  if (!R2 || !accountId || !accessKeyId || !secretKey || !bucketName) {
-    return NextResponse.json({ ok: false, error: 'Missing R2 credentials' }, { status: 500 });
-  }
 
   let payload: UploadRequestBody | undefined;
   try {
@@ -227,6 +229,8 @@ export async function POST(req: Request) {
   const title = (payload.title ?? '').trim() || null;
   const bundleId = (payload.bundleId ?? '').trim() || null;
   const version = (payload.version ?? '').trim() || null;
+  const networkArea = normalizeNetworkArea(payload.networkArea);
+  const useCnServer = networkArea === 'CN';
 
   let linkId = (payload.linkId ?? '').trim();
   if (!linkId) {
@@ -235,6 +239,46 @@ export async function POST(req: Request) {
 
   const safeName = sanitizeFileName(fileName, `${platform}.bin`);
   const key = `${uid}/links/${linkId}/${platform}/${safeName}`;
+
+  if (useCnServer) {
+    try {
+      const ticket = await createCnUploadTicket(bindings, {
+        key,
+        contentType,
+        size,
+        platform,
+        linkId,
+        ownerId: uid,
+      });
+      const response: UploadResponse = {
+        ok: true,
+        linkId,
+        uploadUrl: ticket.uploadUrl,
+        uploadHeaders: {
+          'Content-Type': contentType,
+          ...ticket.uploadHeaders,
+        },
+        upload: {
+          platform,
+          key,
+          size,
+          title,
+          bundleId,
+          version,
+          contentType,
+          sha256: null,
+        },
+      };
+      return NextResponse.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+
+  if (!R2 || !accountId || !accessKeyId || !secretKey || !bucketName) {
+    return NextResponse.json({ ok: false, error: 'Missing R2 credentials' }, { status: 500 });
+  }
 
   const exists = await R2.head(key);
   if (exists) {

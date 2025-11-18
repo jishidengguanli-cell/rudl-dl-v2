@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { normalizeLanguageCode, type LangCode } from '@/lib/language';
+import { normalizeNetworkArea, type NetworkArea } from './network-area';
 import { getTableInfo, hasColumn } from './distribution';
 
 export type DashboardFile = {
@@ -29,6 +30,7 @@ export type DashboardLink = {
   totalApkDl: number;
   totalIpaDl: number;
   totalTotalDl: number;
+  networkArea: NetworkArea;
   files: DashboardFile[];
 };
 
@@ -57,6 +59,7 @@ type LinkRow = {
   total_apk_dl?: number | string | null;
   total_ipa_dl?: number | string | null;
   total_total_dl?: number | string | null;
+  network_area?: string | null;
 };
 
 type FileRow = {
@@ -121,6 +124,7 @@ async function fetchLinksPage(
     linksInfo = await getTableInfo(DB, 'links', true);
   }
   const hasLangColumn = hasColumn(linksInfo, 'lang');
+  const hasNetworkAreaColumn = hasColumn(linksInfo, 'network_area');
 
   const totalRow = ownerId
     ? await DB.prepare('SELECT COUNT(*) as count FROM links WHERE owner_id=?')
@@ -139,6 +143,7 @@ async function fetchLinksPage(
     'is_active',
     'created_at',
     hasLangColumn ? 'lang' : null,
+    hasNetworkAreaColumn ? 'network_area' : null,
     'today_apk_dl',
     'today_ipa_dl',
     'today_total_dl',
@@ -195,6 +200,9 @@ async function fetchLinksPage(
       ),
       createdAt: toEpochSeconds(link.created_at),
       language: hasLangColumn ? normalizeLanguageCode(link.lang) : 'en',
+      networkArea: normalizeNetworkArea(
+        hasNetworkAreaColumn ? ((link.network_area ?? null) as string | null) : null
+      ),
       todayApkDl: toNumber(link.today_apk_dl),
       todayIpaDl: toNumber(link.today_ipa_dl),
       todayTotalDl: toNumber(link.today_total_dl),

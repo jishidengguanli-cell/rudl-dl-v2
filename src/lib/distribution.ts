@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { normalizeLanguageCode, type LangCode } from '@/lib/language';
+import { normalizeNetworkArea, type NetworkArea } from './network-area';
 
 export type TableName = 'links' | 'files' | 'users';
 
@@ -73,6 +74,7 @@ export type DistributionLink = {
   createdAt: number;
   language: LangCode;
   fileId: string | null;
+  networkArea: NetworkArea;
   files: DistributionFile[];
 };
 
@@ -152,6 +154,7 @@ async function fetchDistributionByField(
     'created_at',
     'lang',
     'file_id',
+    'network_area',
   ].filter((column) => hasColumn(linksInfo, column));
   if (!linkColumns.includes('id') || !linkColumns.includes('code')) {
     return null;
@@ -220,6 +223,7 @@ async function fetchDistributionByField(
     createdAt: toEpochSeconds(linkRow.created_at),
     language: normalizeLanguageCode(linkRow.lang),
     fileId: toStringOrNull(linkRow.file_id),
+    networkArea: normalizeNetworkArea(toStringOrNull(linkRow.network_area)),
     files,
   };
 

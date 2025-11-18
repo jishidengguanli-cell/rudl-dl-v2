@@ -1,5 +1,6 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
+import { getCnDownloadBaseUrl } from '@/lib/cn-server';
 
 export const runtime = 'edge';
 
@@ -31,6 +32,11 @@ export async function GET(
 
   const link = await fetchDistributionByCode(DB, code);
   if (!link || !link.isActive) return resp404('Not Found');
+  if (link.networkArea === 'CN') {
+    const cnBase = getCnDownloadBaseUrl(bindings);
+    const target = `${cnBase}/m/${encodeURIComponent(link.code)}`;
+    return Response.redirect(target, 302);
+  }
 
   const files = link.files ?? [];
   const primaryFile =

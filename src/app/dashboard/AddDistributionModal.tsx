@@ -15,6 +15,11 @@ import { Buffer } from 'buffer';
 import { useI18n } from '@/i18n/provider';
 import type { DashboardFile, DashboardLink } from '@/lib/dashboard';
 import { languageCodes, normalizeLanguageCode, type LangCode } from '@/lib/language';
+import {
+  NETWORK_AREA_OPTIONS,
+  normalizeNetworkArea,
+  type NetworkArea,
+} from '@/lib/network-area';
 
 const DEFAULT_TITLE = 'APP';
 
@@ -296,6 +301,7 @@ async function finalizeDistribution(body: {
   lang: LangCode;
   uploads: FinalizeUploadPayload[];
   isActive: boolean;
+  networkArea: NetworkArea;
 }) {
   const res = await fetch('/api/distributions', {
     method: 'POST',
@@ -320,6 +326,7 @@ async function patchDistribution(
     lang: LangCode;
     uploads: FinalizeUploadPayload[];
     isActive: boolean;
+    networkArea: NetworkArea;
   }
 ) {
   const res = await fetch(`/api/distributions/${linkId}`, {
@@ -365,6 +372,7 @@ export default function AddDistributionModal({
   const [language, setLanguage] = useState<LangCode>('en');
   const [autofill, setAutofill] = useState(true);
   const [isActive, setIsActive] = useState(true);
+  const [networkArea, setNetworkArea] = useState<NetworkArea>('global');
   const [apkState, setApkState] = useState<FileState>({ file: null, metadata: null });
   const [ipaState, setIpaState] = useState<FileState>({ file: null, metadata: null });
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
@@ -421,6 +429,7 @@ export default function AddDistributionModal({
       setIpaVersion('');
       setLanguage('en');
       setAutofill(true);
+      setNetworkArea('global');
       setApkState({ file: null, metadata: null });
       setIpaState({ file: null, metadata: null });
       setSubmitState('idle');
@@ -443,6 +452,7 @@ export default function AddDistributionModal({
     setLanguage(normalizeLanguageCode(initialLink.language));
     setAutofill(true);
     setIsActive(initialLink.isActive);
+    setNetworkArea(normalizeNetworkArea(initialLink.networkArea));
     setApkState({ file: null, metadata: null });
     setIpaState({ file: null, metadata: null });
     setSubmitState('idle');
@@ -705,6 +715,7 @@ export default function AddDistributionModal({
             title: baseMetadata.title,
             bundleId: baseMetadata.bundleId,
             version: baseMetadata.version,
+            networkArea,
           }),
         });
         let initParsed: UploadSuccessResponse | UploadErrorResponse;
@@ -787,6 +798,7 @@ export default function AddDistributionModal({
           lang: language,
           uploads: uploadsPayload,
           isActive,
+          networkArea,
         });
         if (update.ok) {
           setToast(t('dashboard.toastUpdated'));
@@ -808,6 +820,7 @@ export default function AddDistributionModal({
           lang: language,
           uploads: uploadsPayload,
           isActive,
+          networkArea,
         });
 
         if (finalize.ok) {
@@ -951,6 +964,23 @@ export default function AddDistributionModal({
                 {languageOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col text-sm font-medium text-gray-700">
+              {t('dashboard.networkAreaLabel')}
+              <select
+                className="mt-1 rounded border px-3 py-2 text-sm outline-none focus:border-black"
+                value={networkArea}
+                onChange={(event) =>
+                  setNetworkArea(normalizeNetworkArea(event.target.value))
+                }
+                disabled={submitState === 'submitting' || isEdit}
+              >
+                {NETWORK_AREA_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.labelKey)}
                   </option>
                 ))}
               </select>
