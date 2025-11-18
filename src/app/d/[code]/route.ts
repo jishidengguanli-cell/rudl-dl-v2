@@ -11,6 +11,7 @@ export const runtime = 'edge';
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
+  CN_DOWNLOAD_BASE_URL?: string;
 };
 
 type DownloadKey =
