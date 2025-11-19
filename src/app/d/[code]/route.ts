@@ -130,13 +130,7 @@ export async function GET(
     : '';
 
   const hrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
-  const manifestUrl = `${url.origin}/m/${encodeURIComponent(link.code)}`;
-  const iosRecordHref = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa` : '';
-  const hrefIos = hasIpa
-    ? `itms-services://?action=download-manifest&url=${encodeURIComponent(
-        manifestUrl
-      )}`
-    : '';
+  const hrefIos = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa` : '';
 
   const developerName =
     ipaFile?.bundleId ??
@@ -260,7 +254,7 @@ export async function GET(
                 attr(disableIos ? '#' : hrefIos)
               }" id="btn-ios" data-platform="ipa" ${dataAttributes} data-dev="${attr(
                 developerName
-              )}" data-missing="${attr(missMsg)}" data-dl="${attr(iosRecordHref)}" ${
+              )}" data-missing="${attr(missMsg)}" ${
                 disableIos ? 'aria-disabled="true"' : ''
               }>${h(dl('iosInstall'))}</a>`
             : ''
@@ -302,9 +296,6 @@ export async function GET(
   (function(){
     var installBtn = document.getElementById('btn-ios');
     var androidBtn = document.getElementById('btn-android');
-    var code = (location.pathname.split('/').pop() || '').trim();
-    var iosRecordUrl = installBtn ? (installBtn.getAttribute('data-dl') || '') : '';
-    var iosRecordSent = false;
 
     function getBillingPayload(btn, platform){
       if (!btn) return null;
@@ -357,42 +348,47 @@ export async function GET(
           alert(miss);
         });
       } else {
-        installBtn.addEventListener('click', function(){
+        installBtn.addEventListener('click', async function(e){
           if (!isiOS()) return;
+          e.preventDefault();
           if (!isSafari()) {
             alert("${h(dl('alertSafari'))}");
           }
-          var payload = getBillingPayload(installBtn, 'ipa');
-          if (payload) {
-            try {
-              if (navigator.sendBeacon) {
-                navigator.sendBeacon('/api/dl/bill', new Blob([payload], { type: 'application/json' }));
-              } else {
-                fetch('/api/dl/bill', {
-                  method: 'POST',
-                  headers: { 'content-type': 'application/json' },
-                  body: payload,
-                  credentials: 'include'
-                }).catch(function(){});
-              }
-            } catch (_) {}
-          }
-          if (!iosRecordSent && iosRecordUrl) {
-            iosRecordSent = true;
-            try {
-              fetch(iosRecordUrl, {
-                method: 'GET',
-                redirect: 'manual',
-                cache: 'no-store',
-                credentials: 'include'
-              }).catch(function(){
-                iosRecordSent = false;
-              });
-            } catch (_) {
-              iosRecordSent = false;
+          var href = installBtn.getAttribute('href');
+          if (!href || href === '#') return;
+          const payload = getBillingPayload(installBtn, 'ipa');
+          installBtn.disabled = true;
+          var ori = installBtn.textContent;
+          installBtn.textContent = '...';
+          const showGuideLater = function(){ setTimeout(showGuide, 600); };
+          try {
+            if (!payload) {
+              showGuideLater();
+              location.href = href;
+              return;
             }
+            const res = await fetch('/api/dl/bill', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: payload,
+              credentials: 'include'
+            });
+            if (res.ok) {
+              showGuideLater();
+              location.href = href;
+              return;
+            }
+            if (res.status === 402) {
+              alert("${h(dl('alertPoints'))}");
+            } else {
+              alert("${h(dl('alertCheckFailed'))}");
+            }
+          } catch (_) {
+            alert("${h(dl('alertNetworkError'))}");
+          } finally {
+            installBtn.disabled = false;
+            installBtn.textContent = ori;
           }
-          setTimeout(showGuide, 600);
         });
       }
     }
