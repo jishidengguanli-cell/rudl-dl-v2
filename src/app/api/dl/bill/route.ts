@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 import { triggerPointMonitors } from '@/lib/monitor';
+import { fetchDistributionById } from '@/lib/distribution';
 
 export const runtime = 'edge';
 
@@ -31,7 +32,10 @@ export async function POST(req: Request) {
 
   const now = Math.floor(Date.now() / 1000);
   const bucket_minute = Math.floor(now / 60);
-  const cost = platform === 'ipa' ? 5 : 3;
+  const link = await fetchDistributionById(DB, link_id).catch(() => null);
+  const isCnDownload = link?.networkArea === 'CN';
+  const cost =
+    platform === 'ipa' ? (isCnDownload ? 30 : 5) : isCnDownload ? 10 : 3;
 
   try {
     await ensurePointTables(DB);

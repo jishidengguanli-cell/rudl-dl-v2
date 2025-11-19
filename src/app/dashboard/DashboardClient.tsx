@@ -88,8 +88,6 @@ export default function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [statsLink, setStatsLink] = useState<DashboardLink | null>(null);
-  const [cnTestStatus, setCnTestStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
-  const [cnTestLogs, setCnTestLogs] = useState<string[]>([]);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -238,27 +236,6 @@ export default function DashboardClient({
     setTimeout(() => setToast(null), 5000);
   };
 
-  const runCnUploadTest = async () => {
-    setCnTestStatus('running');
-    setCnTestLogs([]);
-    try {
-      const res = await fetch('/api/distributions/cn-test', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-      });
-      const json = (await res.json()) as { ok: boolean; error?: string; logs?: string[] };
-      setCnTestLogs(json.logs ?? []);
-      if (!json.ok) {
-        throw new Error(json.error ?? 'CN_TEST_FAILED');
-      }
-      setCnTestStatus('success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setCnTestStatus('error');
-      setCnTestLogs((prev) => (prev.length ? prev : [`Error: ${message}`]));
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -281,45 +258,11 @@ export default function DashboardClient({
               </Link>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={runCnUploadTest}
-                disabled={cnTestStatus === 'running'}
-              >
-                {cnTestStatus === 'running' ? t('status.loading') : t('dashboard.cnTestButton')}
-              </button>
-              <button
-                type="button"
                 className="inline-flex items-center justify-center rounded bg-black px-3 py-1 text-sm font-medium text-white transition hover:bg-gray-800"
                 onClick={openCreateModal}
               >
                 {t('dashboard.addDistribution')}
               </button>
-            </div>
-          ) : null}
-          {cnTestStatus !== 'idle' ? (
-            <div
-              className={`mt-4 rounded border p-3 text-sm ${
-                cnTestStatus === 'success'
-                  ? 'border-green-200 bg-green-50 text-green-800'
-                  : cnTestStatus === 'running'
-                  ? 'border-blue-200 bg-blue-50 text-blue-800'
-                  : 'border-red-200 bg-red-50 text-red-800'
-              }`}
-            >
-              <p className="font-medium">
-                {cnTestStatus === 'success'
-                  ? t('dashboard.cnTestSuccess')
-                  : cnTestStatus === 'running'
-                  ? t('dashboard.cnTestRunning')
-                  : t('dashboard.cnTestError')}
-              </p>
-              {cnTestLogs.length ? (
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
-                  {cnTestLogs.map((log, index) => (
-                    <li key={`${log}-${index}`}>{log}</li>
-                  ))}
-                </ul>
-              ) : null}
             </div>
           ) : null}
         </div>
