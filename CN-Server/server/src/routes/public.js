@@ -101,7 +101,6 @@ router.get('/dl/:code', async (req, res) => {
     return res.status(404).send('Not Found');
   }
   const query = (req.query.p || req.query.platform || '').toString().toLowerCase();
-  const isRecordOnly = req.query.record === '1';
   const platforms = new Set(files.map((file) => (file.platform || '').toLowerCase()));
   const resolvePlatform = () => {
     if (query === 'ipa' || query === 'ios') return 'ipa';
@@ -118,10 +117,6 @@ router.get('/dl/:code', async (req, res) => {
   }
 
   await notifyDownload(meta, platform).catch(() => null);
-
-  if (isRecordOnly) {
-    return res.json({ ok: true });
-  }
 
   if (platform === 'apk') {
     return res.redirect(`${config.publicBaseUrl}/files/${encodeURIComponent(selected.key)}`);

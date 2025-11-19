@@ -75,11 +75,7 @@ const renderDownloadPage = ({ meta, locale, publicBaseUrl }) => {
   const hasApk = Boolean(apkFile);
   const hasIpa = Boolean(ipaFile);
   const downloadHrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
-  const recordHrefIpa = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa&record=1` : '';
-  const manifestUrl = `${publicBaseUrl}/m/${encodeURIComponent(link.code)}`;
-  const iosInstallUrl = hasIpa
-    ? `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`
-    : '';
+  const downloadHrefIpa = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa` : '';
 
   const renderFileRow = (title, file) => {
     if (!file) {
@@ -167,9 +163,9 @@ const renderDownloadPage = ({ meta, locale, publicBaseUrl }) => {
         <h2>${escapeHtml(translator('downloadPage.iosIpa'))}</h2>
         ${renderFileRow('iOS IPA', ipaFile)}
         <div class="actions">
-          <a id="btn-ios" class="btn secondary${hasIpa ? '' : ' disabled'}" href="${attr(iosInstallUrl)}" ${
+          <a class="btn secondary${hasIpa ? '' : ' disabled'}" href="${attr(downloadHrefIpa)}" ${
     hasIpa ? '' : 'aria-disabled="true"'
-  } data-record="${attr(recordHrefIpa)}">${escapeHtml(translator('downloadPage.iosInstall'))}</a>
+  }>${escapeHtml(translator('downloadPage.iosInstall'))}</a>
         </div>
       </div>
 
@@ -177,24 +173,6 @@ const renderDownloadPage = ({ meta, locale, publicBaseUrl }) => {
       ${switcher}
     </div>
   </div>
-  <script>
-    (function(){
-      var iosBtn = document.getElementById('btn-ios');
-      if(!iosBtn) return;
-      iosBtn.addEventListener('click', function(){
-        var recordUrl = iosBtn.getAttribute('data-record') || '';
-        if(!recordUrl) return;
-        try{
-          fetch(recordUrl, {
-            method: 'GET',
-            cache: 'no-store',
-            keepalive: true,
-            redirect: 'manual'
-          }).catch(function(){});
-        } catch(_){}
-      });
-    })();
-  </script>
 </body>
 </html>`;
 };
