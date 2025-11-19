@@ -131,6 +131,7 @@ export async function GET(
 
   const hrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
   const manifestUrl = `${url.origin}/m/${encodeURIComponent(link.code)}`;
+  const iosRecordHref = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa` : '';
   const hrefIos = hasIpa
     ? `itms-services://?action=download-manifest&url=${encodeURIComponent(
         manifestUrl
@@ -259,7 +260,7 @@ export async function GET(
                 attr(disableIos ? '#' : hrefIos)
               }" id="btn-ios" data-platform="ipa" ${dataAttributes} data-dev="${attr(
                 developerName
-              )}" data-missing="${attr(missMsg)}" ${
+              )}" data-missing="${attr(missMsg)}" data-dl="${attr(iosRecordHref)}" ${
                 disableIos ? 'aria-disabled="true"' : ''
               }>${h(dl('iosInstall'))}</a>`
             : ''
@@ -302,6 +303,8 @@ export async function GET(
     var installBtn = document.getElementById('btn-ios');
     var androidBtn = document.getElementById('btn-android');
     var code = (location.pathname.split('/').pop() || '').trim();
+    var iosRecordUrl = installBtn ? (installBtn.getAttribute('data-dl') || '') : '';
+    var iosRecordSent = false;
 
     function getBillingPayload(btn, platform){
       if (!btn) return null;
@@ -373,6 +376,21 @@ export async function GET(
                 }).catch(function(){});
               }
             } catch (_) {}
+          }
+          if (!iosRecordSent && iosRecordUrl) {
+            iosRecordSent = true;
+            try {
+              fetch(iosRecordUrl, {
+                method: 'GET',
+                redirect: 'manual',
+                cache: 'no-store',
+                credentials: 'include'
+              }).catch(function(){
+                iosRecordSent = false;
+              });
+            } catch (_) {
+              iosRecordSent = false;
+            }
           }
           setTimeout(showGuide, 600);
         });
