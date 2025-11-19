@@ -46,6 +46,10 @@ const en: Dict = {
   'dashboard.toastDeleted': 'Distribution deleted.',
   'dashboard.toastLinkCopied': 'Link copied to clipboard.',
   'dashboard.toastLinkCopyFailed': 'Failed to copy link. Please copy manually.',
+  'dashboard.cnTestButton': 'Test CN upload',
+  'dashboard.cnTestRunning': 'Testing connection to CN server…',
+  'dashboard.cnTestSuccess': 'CN upload test completed successfully.',
+  'dashboard.cnTestError': 'CN upload test failed.',
   'networkArea.global': 'Global region',
   'networkArea.cn': 'China mainland region',
   'dashboard.errorNoFiles': 'Please upload at least one package.',
@@ -526,6 +530,10 @@ const zhTW = makeLocaleDict('zh-TW', {
   'dashboard.copyLink': '複製連結',
   'networkArea.global': '全球區域',
   'networkArea.cn': '專屬中國境內區域',
+  'dashboard.cnTestButton': '測試中國主機上傳',
+  'dashboard.cnTestRunning': '正在測試與中國主機的連線…',
+  'dashboard.cnTestSuccess': '中國主機上傳測試成功。',
+  'dashboard.cnTestError': '中國主機上傳測試失敗。',
   'dashboard.downloadsToday': '今日',
   'dashboard.downloadsTotal': '總計',
   'dashboard.downloadsApk': 'APK',
@@ -855,6 +863,10 @@ const zhTW = makeLocaleDict('zh-TW', {
 });
 
 const zhCN = makeLocaleDict('zh-CN', {
+  'dashboard.cnTestButton': '测试中国主机上传',
+  'dashboard.cnTestRunning': '正在测试与中国主机的连线…',
+  'dashboard.cnTestSuccess': '中国主机上传测试成功。',
+  'dashboard.cnTestError': '中国主机上传测试失败。',
   'home.desc': '在这里统筹企业分发：上传新版、分享链接、掌握会员动态。',
   'home.title': '欢迎使用 DataruApp V2',
   'home.features.title': '你可以做什么',
