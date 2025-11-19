@@ -75,10 +75,7 @@ const renderDownloadPage = ({ meta, locale, publicBaseUrl }) => {
   const hasApk = Boolean(apkFile);
   const hasIpa = Boolean(ipaFile);
   const downloadHrefApk = hasApk ? `/dl/${encodeURIComponent(link.code)}?p=apk` : '';
-  const manifestUrl = `${publicBaseUrl}/m/${encodeURIComponent(link.code)}`;
-  const iosHref = hasIpa
-    ? `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`
-    : '';
+  const downloadHrefIpa = hasIpa ? `/dl/${encodeURIComponent(link.code)}?p=ipa` : '';
 
   const renderFileRow = (title, file) => {
     if (!file) {
@@ -166,7 +163,7 @@ const renderDownloadPage = ({ meta, locale, publicBaseUrl }) => {
         <h2>${escapeHtml(translator('downloadPage.iosIpa'))}</h2>
         ${renderFileRow('iOS IPA', ipaFile)}
         <div class="actions">
-          <a class="btn secondary${hasIpa ? '' : ' disabled'}" href="${attr(iosHref)}" ${
+          <a class="btn secondary${hasIpa ? '' : ' disabled'}" href="${attr(downloadHrefIpa)}" ${
     hasIpa ? '' : 'aria-disabled="true"'
   }>${escapeHtml(translator('downloadPage.iosInstall'))}</a>
         </div>
