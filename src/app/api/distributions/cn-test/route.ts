@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { createCnUploadTicket, cleanupCnUploads } from '@/lib/cn-server';
+import { createCnUploadTicket } from '@/lib/cn-server';
 
 export const runtime = 'edge';
 
@@ -79,11 +79,7 @@ export async function POST(req: Request) {
         { status: 502 }
       );
     }
-    logs.push('Upload completed. Cleaning up test file…');
-    await cleanupCnUploads(bindings, [key]).catch((error) => {
-      logs.push(`Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
-    });
-    logs.push('CN upload test finished.');
+    logs.push('Upload completed. Test file retained on CN server.');
     return NextResponse.json<JsonResponse>({ ok: true, logs });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
