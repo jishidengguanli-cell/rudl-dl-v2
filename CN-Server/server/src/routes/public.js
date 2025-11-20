@@ -9,7 +9,7 @@ const router = express.Router();
 const notifyDownload = async (meta, platform) => {
   if (!config.nextApiToken || typeof fetch !== 'function') return;
   try {
-    await fetch(`${config.nextApiBase}/api/cn/download`, {
+    const response = await fetch(`${config.nextApiBase}/api/cn/download`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -22,6 +22,10 @@ const notifyDownload = async (meta, platform) => {
         platform,
       }),
     });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      console.warn('[notify] upstream rejected download', response.status, body);
+    }
   } catch (error) {
     console.warn('[notify] failed to notify upstream download', error);
   }
