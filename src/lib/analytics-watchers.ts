@@ -165,6 +165,8 @@ const mapWatcherRow = (
   const linkCode = toStringOrNull(row.link_code);
   const chatId = toStringOrNull(row.watcher_chat_id);
   if (!id || !ownerId || !linkId || !linkCode || !chatId) return null;
+  const normalizedOwnerId = normalizeId(ownerId);
+  if (!normalizedOwnerId) return null;
 
   const settings = parseSettings(row.watcher_settings ?? null);
   const linkTitle = flags.hasTitle ? toStringOrNull(row.link_title ?? null) : null;
