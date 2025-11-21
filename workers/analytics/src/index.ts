@@ -1,5 +1,5 @@
-import { listActiveAnalyticsWatchers, type AnalyticsWatcher } from '@/lib/analytics-watchers';
-import { getTableInfo, type TableInfo } from '@/lib/distribution';
+import { listActiveAnalyticsWatchers, type AnalyticsWatcher } from '../../../src/lib/analytics-watchers';
+import { getTableInfo, type TableInfo } from '../../../src/lib/distribution';
 
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
 
@@ -179,13 +179,17 @@ async function cfGraphQL<T>(
     body: JSON.stringify({ query, variables }),
   });
 
-  const json = await res.json();
+  const json = (await res.json()) as { data?: T; errors?: unknown };
   if (!res.ok || json.errors) {
     console.warn('GraphQL error payload', json.errors || json);
     throw new Error('Cloudflare GraphQL API error');
   }
 
-  return json.data as T;
+  if (!json.data) {
+    throw new Error('Cloudflare GraphQL API error: empty response');
+  }
+
+  return json.data;
 }
 
 function summarizeHttpGroups(groups: HttpRequestGroup[]): Map<string, HttpAlertEvent> {
