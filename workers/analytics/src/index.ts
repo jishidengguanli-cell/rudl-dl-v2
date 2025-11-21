@@ -1,5 +1,5 @@
-import { listActiveAnalyticsWatchers, type AnalyticsWatcher } from '../../src/lib/analytics-watchers';
-import { getTableInfo, type TableInfo } from '../../src/lib/distribution';
+import { listActiveAnalyticsWatchers, type AnalyticsWatcher } from '@/lib/analytics-watchers';
+import { getTableInfo, type TableInfo } from '@/lib/distribution';
 
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
 
