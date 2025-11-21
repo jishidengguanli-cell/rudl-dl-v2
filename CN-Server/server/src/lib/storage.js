@@ -21,6 +21,15 @@ const ensureDir = async (dirPath) => {
 
 const getFilePathForKey = (key) => path.join(FILES_DIR, sanitizeKey(key));
 
+const sanitizeSegment = (value) => sanitizeKey(value).replace(/\//g, '');
+
+const getLinkDirectory = (ownerId, linkId) => {
+  const owner = sanitizeSegment(ownerId);
+  const link = sanitizeSegment(linkId);
+  if (!owner || !link) return null;
+  return path.join(FILES_DIR, owner, 'links', link);
+};
+
 const deleteFileByPath = async (filePath) => {
   try {
     await fsp.unlink(filePath);
@@ -69,6 +78,18 @@ const deleteLinkMetadata = async (code) => {
   await deleteFileByPath(filePath);
 };
 
+const deleteLinkDirectory = async (ownerId, linkId) => {
+  const dir = getLinkDirectory(ownerId, linkId);
+  if (!dir) return;
+  try {
+    await fsp.rm(dir, { recursive: true, force: true });
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+};
+
 const initStorage = async () => {
   await ensureDir(FILES_DIR);
   await ensureDir(LINKS_DIR);
@@ -83,4 +104,5 @@ module.exports = {
   readLinkMetadata,
   writeLinkMetadata,
   deleteLinkMetadata,
+  deleteLinkDirectory,
 };

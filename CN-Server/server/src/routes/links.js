@@ -1,5 +1,12 @@
 const express = require('express');
-const { sanitizeKey, writeLinkMetadata, deleteLinkMetadata, deleteFileByKey } = require('../lib/storage');
+const {
+  sanitizeKey,
+  writeLinkMetadata,
+  deleteLinkMetadata,
+  deleteFileByKey,
+  readLinkMetadata,
+  deleteLinkDirectory,
+} = require('../lib/storage');
 const config = require('../config');
 
 const router = express.Router();
@@ -68,9 +75,15 @@ router.post('/api/links/delete', requireAdmin, async (req, res) => {
   if (!code) {
     return res.status(400).json({ ok: false, error: 'INVALID_CODE' });
   }
+  const meta = await readLinkMetadata(code).catch(() => null);
   await deleteLinkMetadata(code).catch(() => null);
   if (Array.isArray(keys) && keys.length) {
     await Promise.all(keys.map((key) => deleteFileByKey(key).catch(() => null)));
+  }
+  const ownerId = meta?.link?.ownerId;
+  const linkId = meta?.link?.id;
+  if (ownerId && linkId) {
+    await deleteLinkDirectory(ownerId, linkId).catch(() => null);
   }
   return res.json({ ok: true });
 });
