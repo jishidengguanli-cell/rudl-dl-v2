@@ -621,7 +621,7 @@ export default {
         const message =
           eventData.kind === 'http' || eventData.kind === 'button'
             ? formatHttpMessage(eventData, watcher.linkCode)
-            : formatWebVitalMessage(eventData, watcher.linkCode);
+            : formatWebVitalMessage(eventData as WebVitalAlertEvent, watcher.linkCode);
         queueNotification(buckets, watcher, token, message);
       }
     }
