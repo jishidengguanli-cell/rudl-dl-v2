@@ -58,6 +58,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'LINK_NOT_FOUND' }, { status: 404 });
   }
 
+  const ownerId = (link.ownerId ?? payload.ownerId ?? '').trim();
+
   let totals: DownloadTotals | null = null;
   try {
     totals = await recordDownload(DB, link.id, platform);
@@ -65,10 +67,10 @@ export async function POST(req: Request) {
     console.error('[cn-download] recordDownload failed', error);
   }
 
-  if (totals && link.ownerId) {
+  if (totals && ownerId) {
     try {
       await triggerDownloadMonitors(DB, {
-        ownerId: link.ownerId,
+        ownerId,
         linkCode: link.code,
         platform,
         totals,
@@ -78,19 +80,23 @@ export async function POST(req: Request) {
     }
   }
 
-  if (link.ownerId) {
+  if (ownerId) {
     const origin = new URL(req.url);
     const billUrl = new URL('/api/dl/bill', `${origin.protocol}//${origin.host}`);
     try {
-      await fetch(billUrl.toString(), {
+      const response = await fetch(billUrl.toString(), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          account_id: link.ownerId,
+          account_id: ownerId,
           link_id: link.id,
           platform,
         }),
       });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        console.warn('[cn-download] billing responded with', response.status, body);
+      }
     } catch (error) {
       console.warn('[cn-download] billing failed', error);
     }
