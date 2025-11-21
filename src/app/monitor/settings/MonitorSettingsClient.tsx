@@ -8,6 +8,7 @@ type MonitorLink = {
   code: string;
   title: string | null;
   createdAt: number;
+  networkArea: string;
 };
 
 type MonitorType = 'points' | 'downloads';

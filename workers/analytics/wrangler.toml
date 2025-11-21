@@ -1,0 +1,12 @@
+name = "rudlanalytics"
+main = "index.ts"
+compatibility_date = "2025-10-03"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rudl_app"
+database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"

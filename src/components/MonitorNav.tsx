@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/monitor/privacy', labelKey: 'monitor.nav.privacy' },
   { href: '/monitor/tool', labelKey: 'monitor.nav.tools' },
   { href: '/monitor/settings', labelKey: 'monitor.nav.settings' },
+  { href: '/monitor/analytics', labelKey: 'monitor.nav.analytics' },
 ];
 
 export default function MonitorNav() {

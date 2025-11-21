@@ -249,6 +249,7 @@ export type DistributionLinkSummary = {
   code: string;
   title: string | null;
   createdAt: number;
+  networkArea: NetworkArea;
 };
 
 export async function fetchDistributionSummariesByOwner(
@@ -261,6 +262,10 @@ export async function fetchDistributionSummariesByOwner(
   const columns = ['id', 'code', 'title', 'created_at'].filter((column) =>
     hasColumn(linksInfo, column)
   );
+  const includeNetworkArea = hasColumn(linksInfo, 'network_area');
+  if (includeNetworkArea) {
+    columns.push('network_area');
+  }
   if (!columns.includes('id') || !columns.includes('code')) return [];
 
   const statement = `SELECT ${columns.join(', ')} FROM links WHERE owner_id=? ORDER BY created_at DESC`;
@@ -273,6 +278,9 @@ export async function fetchDistributionSummariesByOwner(
       code: toStringOrNull(row.code) ?? '',
       title: toStringOrNull(row.title),
       createdAt: toEpochSeconds(row.created_at),
+      networkArea: includeNetworkArea
+        ? normalizeNetworkArea(toStringOrNull(row.network_area))
+        : normalizeNetworkArea(null),
     }))
     .filter((entry) => entry.id && entry.code);
 }
