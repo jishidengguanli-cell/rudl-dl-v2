@@ -161,15 +161,9 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const getDB = (env: WorkerEnv): D1Database | null => {
-  return env.DB ?? env['rudl-app'] ?? null;
-};
+const getDB = (env: WorkerEnv): D1Database | null => env.DB ?? env['rudl-app'] ?? null;
 
-async function cfGraphQL<T>(
-  env: WorkerEnv,
-  query: string,
-  variables: Record<string, unknown>
-): Promise<T> {
+async function cfGraphQL<T>(env: WorkerEnv, query: string, variables: Record<string, unknown>): Promise<T> {
   if (!env.CF_API_TOKEN) {
     throw new Error('Missing CF_API_TOKEN for GraphQL request');
   }
@@ -184,24 +178,21 @@ async function cfGraphQL<T>(
   });
 
   const json = (await res.json()) as { data?: T; errors?: unknown };
-  if (!res.ok || json.errors) {
-    console.warn('GraphQL error payload', json.errors || json);
+  if (!res.ok || json.errors || !json.data) {
+    console.warn('[analytics-worker] GraphQL error payload', json.errors || json);
     throw new Error('Cloudflare GraphQL API error');
-  }
-
-  if (!json.data) {
-    throw new Error('Cloudflare GraphQL API error: empty response');
   }
 
   return json.data;
 }
 
-function summarizeHttpGroups(groups: HttpRequestGroup[]): Map<string, HttpAlertEvent> {
+const summarizeHttpGroups = (groups: HttpRequestGroup[]): Map<string, HttpAlertEvent> => {
   const summary = new Map<string, HttpAlertEvent>();
 
   for (const group of groups) {
     const path = group.dimensions?.clientRequestPath;
     if (!path) continue;
+
     const status = Number(group.dimensions?.edgeResponseStatus ?? 0);
     const country = group.dimensions?.clientCountryName || 'Unknown';
     const count = Number(group.count ?? 0);
@@ -224,21 +215,16 @@ function summarizeHttpGroups(groups: HttpRequestGroup[]): Map<string, HttpAlertE
     stats.total += count;
     if (status >= 400) {
       stats.errors += count;
-      stats.statuses = stats.statuses
-        ? `${stats.statuses}, ${status}`
-        : `${status}`;
+      stats.statuses = stats.statuses ? `${stats.statuses}, ${status}` : `${status}`;
     }
-    stats.countries = stats.countries
-      ? `${stats.countries}, ${country}`
-      : country;
+
+    stats.countries = stats.countries ? `${stats.countries}, ${country}` : country;
   }
 
   return summary;
-}
-
-const normalizeCode = (value: string | null | undefined): string => {
-  return value ? value.trim().toLowerCase() : '';
 };
+
+const normalizeCode = (value: string | null | undefined): string => (value ? value.trim().toLowerCase() : '');
 
 const extractCodeFromPath = (path: string): string | null => {
   const match = path.match(/\/(?:d|dl)\/([^/?]+)/i);
@@ -246,23 +232,20 @@ const extractCodeFromPath = (path: string): string | null => {
 };
 
 const formatCountries = (value: string): string => {
-  const parts = value
+  const list = value
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
-  const unique = Array.from(new Set(parts));
-  return unique.slice(0, 4).join(', ');
+  return Array.from(new Set(list)).slice(0, 4).join(', ');
 };
 
-const formatStatusList = (statuses: string): string => {
+const formatStatusList = (value: string): string => {
   const counts = new Map<string, number>();
-  statuses
+  value
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
-    .forEach((status) => {
-      counts.set(status, (counts.get(status) ?? 0) + 1);
-    });
+    .forEach((status) => counts.set(status, (counts.get(status) ?? 0) + 1));
   return Array.from(counts.entries())
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
@@ -310,18 +293,13 @@ const findColumn = (info: TableInfo, candidates: string[]): string | null => {
 };
 
 const getTelegramColumn = async (DB: D1Database): Promise<string | null> => {
-  if (telegramColumnCache !== undefined) {
-    return telegramColumnCache;
-  }
+  if (telegramColumnCache !== undefined) return telegramColumnCache;
   const info = await getTableInfo(DB, 'users');
   telegramColumnCache = findColumn(info, telegramColumnCandidates);
   return telegramColumnCache;
 };
 
-async function fetchTelegramTokens(
-  DB: D1Database,
-  ownerIds: string[]
-): Promise<Map<string, string>> {
+const fetchTelegramTokens = async (DB: D1Database, ownerIds: string[]): Promise<Map<string, string>> => {
   const unique = Array.from(new Set(ownerIds.map((id) => id.trim()).filter(Boolean)));
   if (!unique.length) return new Map();
 
@@ -347,9 +325,9 @@ async function fetchTelegramTokens(
     }
   }
   return map;
-}
+};
 
-async function sendTelegram(token: string, chatId: string, text: string) {
+const sendTelegram = async (token: string, chatId: string, text: string) => {
   if (!token || !chatId || !text) return;
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const res = await fetch(url, {
@@ -365,15 +343,15 @@ async function sendTelegram(token: string, chatId: string, text: string) {
   if (!res.ok) {
     console.warn('[analytics-worker] Telegram API error', res.status, await res.text());
   }
-}
+};
 
-async function collectHttpEvents(
+const collectHttpEvents = async (
   env: WorkerEnv,
   sinceIso: string,
   untilIso: string,
   pathPrefix: string,
   kind: 'http' | 'button'
-): Promise<HttpAlertEvent[]> {
+): Promise<HttpAlertEvent[]> => {
   if (!env.CF_ZONE_ID) {
     console.warn('[analytics-worker] Missing CF_ZONE_ID; skip HTTP check');
     return [];
@@ -385,8 +363,7 @@ async function collectHttpEvents(
     until: untilIso,
     pathPrefix,
   });
-  const groups =
-    data.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups ?? [];
+  const groups = data.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups ?? [];
   const stats = summarizeHttpGroups(groups);
   const minHits = parseNumber(env.HTTP_MIN_REQUESTS, 10);
   const threshold = parseNumber(env.HTTP_ERROR_RATE_THRESHOLD, 0.05);
@@ -415,31 +392,23 @@ async function collectHttpEvents(
     });
   }
   return events;
-}
+};
 
-async function checkDownloadErrors(
-  env: WorkerEnv,
-  sinceIso: string,
-  untilIso: string
-): Promise<HttpAlertEvent[]> {
+const checkDownloadErrors = (env: WorkerEnv, sinceIso: string, untilIso: string) => {
   const prefix = env.DOWNLOAD_PATH_PREFIX || '/d/';
   return collectHttpEvents(env, sinceIso, untilIso, prefix, 'http');
-}
+};
 
-async function checkDownloadButtonErrors(
-  env: WorkerEnv,
-  sinceIso: string,
-  untilIso: string
-): Promise<HttpAlertEvent[]> {
+const checkDownloadButtonErrors = (env: WorkerEnv, sinceIso: string, untilIso: string) => {
   const prefix = env.DOWNLOAD_HANDLER_PREFIX || '/dl/';
   return collectHttpEvents(env, sinceIso, untilIso, prefix, 'button');
-}
+};
 
-async function checkWebVitals(
+const checkWebVitals = async (
   env: WorkerEnv,
   sinceIso: string,
   untilIso: string
-): Promise<WebVitalAlertEvent[]> {
+): Promise<WebVitalAlertEvent[]> => {
   if (!env.CF_ACCOUNT_ID) {
     console.warn('[analytics-worker] Missing CF_ACCOUNT_ID; skip Web Vitals check');
     return [];
@@ -449,27 +418,19 @@ async function checkWebVitals(
   const urlFilter = env.WEB_VITALS_URL_FILTER || '/d/';
   const lcpThreshold = parseNumber(env.LCP_P75_THRESHOLD_MS, 4000);
   const inpThreshold = parseNumber(env.INP_P75_THRESHOLD_MS, 400);
-  const thresholds: Record<string, number> = {
-    LCP: lcpThreshold,
-    INP: inpThreshold,
-  };
+  const thresholds: Record<string, number> = { LCP: lcpThreshold, INP: inpThreshold };
 
-  const data = await cfGraphQL<GraphQLResult<RumWebVitalsResponse>>(
-    env,
-    RUM_WEB_VITALS_QUERY,
-    {
-      accountTag: env.CF_ACCOUNT_ID,
-      since: sinceIso,
-      until: untilIso,
-      metricNames,
-      urlFilter,
-    }
-  );
+  const data = await cfGraphQL<GraphQLResult<RumWebVitalsResponse>>(env, RUM_WEB_VITALS_QUERY, {
+    accountTag: env.CF_ACCOUNT_ID,
+    since: sinceIso,
+    until: untilIso,
+    metricNames,
+    urlFilter,
+  });
 
-  const groups =
-    data.viewer?.accounts?.[0]?.rumWebVitalsEventsAdaptiveGroups ?? [];
-
+  const groups = data.viewer?.accounts?.[0]?.rumWebVitalsEventsAdaptiveGroups ?? [];
   const events: WebVitalAlertEvent[] = [];
+
   for (const group of groups) {
     const metricName = group.dimensions?.metricName;
     if (!metricName) continue;
@@ -478,21 +439,19 @@ async function checkWebVitals(
 
     const p75 = toNumber(group.quantiles?.valueP75);
     if (p75 === null) continue;
+    const p90 = toNumber(group.quantiles?.valueP90);
+    const qualifies = p75 > threshold;
+    const failureReason = qualifies ? undefined : `P75 ${formatMs(p75) ?? `${p75}ms`} 未超過門檻 ${threshold}ms`;
     const url = buildRumUrl(group.dimensions);
     const code = extractCodeFromPath(group.dimensions?.urlPath || '');
-    const qualifies = p75 > threshold;
-    let failureReason: string | undefined;
-    if (!qualifies) {
-      const text = formatMs(p75) ?? `${p75}ms`;
-      failureReason = `P75 ${text} 未超過門檻 ${threshold}ms`;
-    }
+
     events.push({
       kind: metricName === 'LCP' ? 'lcp' : 'inp',
       code,
       url: url || (code ? `/d/${code}` : ''),
       metricName: metricName as 'LCP' | 'INP',
       p75,
-      p90: toNumber(group.quantiles?.valueP90),
+      p90,
       threshold,
       country: group.dimensions?.country,
       device: group.dimensions?.deviceType,
@@ -502,7 +461,7 @@ async function checkWebVitals(
   }
 
   return events;
-}
+};
 
 const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean => {
   if (event.kind === 'http') return watcher.settings.httpErrors;
@@ -511,7 +470,6 @@ const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean =
   if (event.kind === 'inp') return watcher.settings.inp;
   return false;
 };
-
 
 type MessageOptions = { test?: boolean };
 
@@ -523,12 +481,12 @@ const formatHttpMessage = (
   const title = event.kind === 'http' ? '下載頁 HTTP 錯誤' : '下載按鈕觸發失敗';
   const icon = options?.test ? '🧪' : '🚨';
   const lines = [
-    ${icon} **,
-    CODE: \${code}\`,
-    路徑: \${event.path}\`,
-    總請求 ，錯誤  (%),
-    event.statuses ? 主要狀態碼:  : null,
-    event.countries ? 來源:  : null,
+    `${icon} *${title}*`,
+    `CODE: \`${code}\``,
+    `路徑: \`${event.path}\``,
+    `總請求 ${event.total}，錯誤 ${event.errors} (${(event.rate * 100).toFixed(1)}%)`,
+    event.statuses ? `主要狀態碼: ${event.statuses}` : null,
+    event.countries ? `來源: ${event.countries}` : null,
   ];
   return lines.filter(Boolean).join('\n');
 };
@@ -536,13 +494,13 @@ const formatHttpMessage = (
 const formatHttpTestMessage = (event: HttpAlertEvent, code: string): string => {
   const reason = event.failureReason || '未達警報門檻';
   const lines = [
-    🧪 *測試模式： 錯誤*,
-    CODE: \${code}\`,
-    路徑: \${event.path}\`,
-    總請求 ，錯誤  (%),
-    event.statuses ? 主要狀態碼:  : null,
-    event.countries ? 來源:  : null,
-    原因: ,
+    `🧪 *測試模式：${event.kind === 'http' ? '下載頁' : '下載按鈕'} 錯誤*`,
+    `CODE: \`${code}\``,
+    `路徑: \`${event.path}\``,
+    `總請求 ${event.total}，錯誤 ${event.errors} (${(event.rate * 100).toFixed(1)}%)`,
+    event.statuses ? `主要狀態碼: ${event.statuses}` : null,
+    event.countries ? `來源: ${event.countries}` : null,
+    `原因: ${reason}`,
   ];
   return lines.filter(Boolean).join('\n');
 };
@@ -556,34 +514,35 @@ const formatWebVitalMessage = (
   const p90Text = formatMs(event.p90 ?? null);
   const icon = options?.test ? '🧪' : '⚠️';
   const lines = [
-    ${icon} *Web Vitals：*,
-    CODE: \${code}\`,
-    event.url ? 頁面:  : null,
-    p75Text ? P75:  > ms : null,
-    p90Text ? P90:  : null,
-    event.country ? 國家:  : null,
-    event.device ? 裝置:  : null,
+    `${icon} *Web Vitals：${event.metricName}*`,
+    `CODE: \`${code}\``,
+    event.url ? `頁面: ${event.url}` : null,
+    p75Text ? `P75: ${p75Text} > ${event.threshold}ms` : null,
+    p90Text ? `P90: ${p90Text}` : null,
+    event.country ? `國家: ${event.country}` : null,
+    event.device ? `裝置: ${event.device}` : null,
   ];
   return lines.filter(Boolean).join('\n');
 };
 
 const formatWebVitalTestMessage = (event: WebVitalAlertEvent, code: string): string => {
-  const p75Text = formatMs(event.p75) ?? ${event.p75}ms;
+  const p75Text = formatMs(event.p75) ?? `${event.p75}ms`;
   const p90Text = formatMs(event.p90 ?? null);
   const reason = event.failureReason || '未達警報門檻';
   const lines = [
-    🧪 *測試模式：Web Vitals *,
-    CODE: \${code}\`,
-    event.url ? 頁面:  : null,
-    P75: ,
-    p90Text ? P90:  : null,
-    門檻: ms,
-    event.country ? 國家:  : null,
-    event.device ? 裝置:  : null,
-    原因: ,
+    `🧪 *測試模式：Web Vitals ${event.metricName}*`,
+    `CODE: \`${code}\``,
+    event.url ? `頁面: ${event.url}` : null,
+    `P75: ${p75Text}`,
+    p90Text ? `P90: ${p90Text}` : null,
+    `門檻: ${event.threshold}ms`,
+    event.country ? `國家: ${event.country}` : null,
+    event.device ? `裝置: ${event.device}` : null,
+    `原因: ${reason}`,
   ];
   return lines.filter(Boolean).join('\n');
 };
+
 const queueNotification = (
   buckets: Map<string, NotificationBucket>,
   watcher: AnalyticsWatcher,
@@ -659,9 +618,7 @@ export default {
       console.error('[analytics-worker] checkWebVitals failed', error);
     }
 
-    if (!events.length) {
-      return;
-    }
+    if (!events.length) return;
 
     const buckets = new Map<string, NotificationBucket>();
 
@@ -675,37 +632,33 @@ export default {
         if (!isEventAllowed(watcher, eventData)) continue;
         const token = tokens.get(watcher.ownerId);
         if (!token) {
-          console.warn(
-            '[analytics-worker] Telegram token missing for owner',
-            watcher.ownerId
-          );
+          console.warn('[analytics-worker] Telegram token missing for owner', watcher.ownerId);
           continue;
         }
+
         const isTestWatcher = Boolean(watcher.settings.testMode);
         if (!eventData.qualifies && !isTestWatcher) {
           continue;
         }
+
         const message =
           eventData.kind === 'http' || eventData.kind === 'button'
             ? eventData.qualifies
               ? formatHttpMessage(eventData, watcher.linkCode, { test: isTestWatcher })
               : formatHttpTestMessage(eventData, watcher.linkCode)
             : eventData.qualifies
-            ? formatWebVitalMessage(
-                eventData as WebVitalAlertEvent,
-                watcher.linkCode,
-                { test: isTestWatcher }
-              )
+            ? formatWebVitalMessage(eventData as WebVitalAlertEvent, watcher.linkCode, {
+                test: isTestWatcher,
+              })
             : formatWebVitalTestMessage(eventData as WebVitalAlertEvent, watcher.linkCode);
+
         queueNotification(buckets, watcher, token, message);
       }
     }
 
-    if (!buckets.size) {
-      return;
-    }
+    if (!buckets.size) return;
 
-    const header = `監控時間：${since} ~ ${until}` + "\n\n";
+    const header = `監控時間：${since} ~ ${until}\n\n`;
     for (const bucket of buckets.values()) {
       const body = header + bucket.messages.join('\n\n');
       await sendTelegram(bucket.token, bucket.chatId, body);
