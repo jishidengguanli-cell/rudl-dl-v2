@@ -514,25 +514,29 @@ const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean =
 
 type MessageOptions = { test?: boolean };
 
-const formatHttpMessage = (event: HttpAlertEvent, code: string, options?: MessageOptions): string => {
+type MessageOptions = { test?: boolean };
+
+const formatHttpMessage = (
+  event: HttpAlertEvent,
+  code: string,
+  options?: MessageOptions
+): string => {
   const title = event.kind === 'http' ? '下載頁 HTTP 錯誤' : '下載按鈕觸發失敗';
   const icon = options?.test ? '🧪' : '🚨';
-  return [
+  const lines = [
     ${icon} **,
     CODE: \${code}\`,
     路徑: \${event.path}\`,
     總請求 ，錯誤  (%),
     event.statuses ? 主要狀態碼:  : null,
     event.countries ? 來源:  : null,
-  ]
-    .filter(Boolean)
-    .join("
-");
+  ];
+  return lines.filter(Boolean).join('\n');
 };
 
 const formatHttpTestMessage = (event: HttpAlertEvent, code: string): string => {
   const reason = event.failureReason || '未達警報門檻';
-  return [
+  const lines = [
     🧪 *測試模式： 錯誤*,
     CODE: \${code}\`,
     路徑: \${event.path}\`,
@@ -540,10 +544,8 @@ const formatHttpTestMessage = (event: HttpAlertEvent, code: string): string => {
     event.statuses ? 主要狀態碼:  : null,
     event.countries ? 來源:  : null,
     原因: ,
-  ]
-    .filter(Boolean)
-    .join("
-");
+  ];
+  return lines.filter(Boolean).join('\n');
 };
 
 const formatWebVitalMessage = (
@@ -554,7 +556,7 @@ const formatWebVitalMessage = (
   const p75Text = formatMs(event.p75);
   const p90Text = formatMs(event.p90 ?? null);
   const icon = options?.test ? '🧪' : '⚠️';
-  return [
+  const lines = [
     ${icon} *Web Vitals：*,
     CODE: \${code}\`,
     event.url ? 頁面:  : null,
@@ -562,17 +564,15 @@ const formatWebVitalMessage = (
     p90Text ? P90:  : null,
     event.country ? 國家:  : null,
     event.device ? 裝置:  : null,
-  ]
-    .filter(Boolean)
-    .join("
-");
+  ];
+  return lines.filter(Boolean).join('\n');
 };
 
 const formatWebVitalTestMessage = (event: WebVitalAlertEvent, code: string): string => {
   const p75Text = formatMs(event.p75) ?? ${event.p75}ms;
   const p90Text = formatMs(event.p90 ?? null);
   const reason = event.failureReason || '未達警報門檻';
-  return [
+  const lines = [
     🧪 *測試模式：Web Vitals *,
     CODE: \${code}\`,
     event.url ? 頁面:  : null,
@@ -582,10 +582,8 @@ const formatWebVitalTestMessage = (event: WebVitalAlertEvent, code: string): str
     event.country ? 國家:  : null,
     event.device ? 裝置:  : null,
     原因: ,
-  ]
-    .filter(Boolean)
-    .join("
-");
+  ];
+  return lines.filter(Boolean).join('\n');
 };
 const queueNotification = (
   buckets: Map<string, NotificationBucket>,
