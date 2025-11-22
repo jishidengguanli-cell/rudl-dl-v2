@@ -473,11 +473,7 @@ const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean =
 
 type MessageOptions = { test?: boolean };
 
-const formatHttpMessage = (
-  event: HttpAlertEvent,
-  code: string,
-  options?: MessageOptions
-): string => {
+const formatHttpMessage = (event: HttpAlertEvent, code: string, options?: MessageOptions): string => {
   const title = event.kind === 'http' ? '下載頁 HTTP 錯誤' : '下載按鈕觸發失敗';
   const icon = options?.test ? '🧪' : '🚨';
   const lines = [
