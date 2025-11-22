@@ -512,9 +512,6 @@ const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean =
   return false;
 };
 
-type MessageOptions = { test?: boolean };
-
-type MessageOptions = { test?: boolean };
 
 type MessageOptions = { test?: boolean };
 
@@ -708,7 +705,7 @@ export default {
       return;
     }
 
-    const header = `監控時間：${since} ~ ${until}\n\n`;
+    const header = `監控時間：${since} ~ ${until}` + "\n\n";
     for (const bucket of buckets.values()) {
       const body = header + bucket.messages.join('\n\n');
       await sendTelegram(bucket.token, bucket.chatId, body);
