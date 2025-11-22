@@ -161,6 +161,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const log = (...args: unknown[]) => console.log('[analytics-worker]', ...args);
+
 const getDB = (env: WorkerEnv): D1Database | null => env.DB ?? env['rudl-app'] ?? null;
 
 async function cfGraphQL<T>(env: WorkerEnv, query: string, variables: Record<string, unknown>): Promise<T> {
@@ -390,6 +392,16 @@ const collectHttpEvents = async (
       qualifies,
       failureReason,
     });
+    log('http-event', {
+      kind,
+      code: entry.code,
+      path: entry.path,
+      total: entry.total,
+      errors: entry.errors,
+      rate,
+      qualifies,
+      failureReason,
+    });
   }
   return events;
 };
@@ -455,6 +467,15 @@ const checkWebVitals = async (
       threshold,
       country: group.dimensions?.country,
       device: group.dimensions?.deviceType,
+      qualifies,
+      failureReason,
+    });
+    log('web-vitals-event', {
+      metricName,
+      code,
+      url,
+      p75,
+      threshold,
       qualifies,
       failureReason,
     });
@@ -573,6 +594,16 @@ export default {
       return;
     }
 
+    log(
+      'watchers-loaded',
+      watchers.map((watcher) => ({
+        owner: watcher.ownerId,
+        code: watcher.linkCode,
+        chat: watcher.chatId,
+        testMode: Boolean(watcher.settings.testMode),
+      }))
+    );
+
     const ownerIds = watchers.map((watcher) => watcher.ownerId).filter(Boolean);
     const tokens = await fetchTelegramTokens(DB, ownerIds);
     if (!tokens.size) {
@@ -614,7 +645,20 @@ export default {
       console.error('[analytics-worker] checkWebVitals failed', error);
     }
 
-    if (!events.length) return;
+    if (!events.length) {
+      log('events-collected', []);
+      return;
+    }
+
+    log(
+      'events-collected',
+      events.map((event) => ({
+        kind: event.kind,
+        code: event.code,
+        qualifies: event.qualifies,
+        failureReason: event.failureReason,
+      }))
+    );
 
     const buckets = new Map<string, NotificationBucket>();
 
@@ -634,6 +678,12 @@ export default {
 
         const isTestWatcher = Boolean(watcher.settings.testMode);
         if (!eventData.qualifies && !isTestWatcher) {
+          log('event-skipped', {
+            code: eventData.code,
+            kind: eventData.kind,
+            reason: eventData.failureReason || '未達門檻',
+            watcher: watcher.chatId,
+          });
           continue;
         }
 
@@ -649,6 +699,13 @@ export default {
             : formatWebVitalTestMessage(eventData as WebVitalAlertEvent, watcher.linkCode);
 
         queueNotification(buckets, watcher, token, message);
+        log('event-queued', {
+          code: eventData.code,
+          kind: eventData.kind,
+          watcher: watcher.chatId,
+          qualifies: eventData.qualifies,
+          testMode: isTestWatcher,
+        });
       }
     }
 
@@ -657,6 +714,7 @@ export default {
     const header = `監控時間：${since} ~ ${until}\n\n`;
     for (const bucket of buckets.values()) {
       const body = header + bucket.messages.join('\n\n');
+      log('sending-telegram', { chatId: bucket.chatId, messageCount: bucket.messages.length });
       await sendTelegram(bucket.token, bucket.chatId, body);
     }
   },
