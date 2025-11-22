@@ -15,6 +15,7 @@ type AnalyticsWatcherSettings = {
   buttonErrors: boolean;
   lcp: boolean;
   inp: boolean;
+  testMode: boolean;
 };
 
 type AnalyticsWatcher = {
@@ -37,6 +38,7 @@ type FormState = {
   lcp: boolean;
   inp: boolean;
   isActive: boolean;
+  testMode: boolean;
 };
 
 type Props = {
@@ -51,6 +53,7 @@ const defaultForm = (): FormState => ({
   lcp: true,
   inp: true,
   isActive: true,
+  testMode: false,
 });
 
 const metricBadges = (
@@ -62,6 +65,7 @@ const metricBadges = (
   if (settings.buttonErrors) badges.push(t('monitor.analytics.metric.button'));
   if (settings.lcp) badges.push(t('monitor.analytics.metric.lcp'));
   if (settings.inp) badges.push(t('monitor.analytics.metric.inp'));
+  if (settings.testMode) badges.push(t('monitor.analytics.metric.testMode'));
   return badges;
 };
 
@@ -129,6 +133,7 @@ export default function MonitorAnalyticsClient({ links }: Props) {
       lcp: watcher.settings.lcp,
       inp: watcher.settings.inp,
       isActive: watcher.isActive,
+      testMode: watcher.settings.testMode ?? false,
     });
     setStatus(null);
   };
@@ -162,6 +167,7 @@ export default function MonitorAnalyticsClient({ links }: Props) {
         lcp: form.lcp,
         inp: form.inp,
         isActive: form.isActive,
+        testMode: form.testMode,
       };
       let method: 'POST' | 'PATCH' = 'POST';
       if (editingId) {
@@ -270,6 +276,11 @@ export default function MonitorAnalyticsClient({ links }: Props) {
             <p className="text-xs text-gray-500">
               {t('monitor.analytics.badge.metrics').replace('{metrics}', labels || '-')}
             </p>
+            {watcher.settings.testMode && (
+              <p className="mt-1 inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                {t('monitor.analytics.testModeBadge')}
+              </p>
+            )}
             {!watcher.linkIsActive && (
               <p className="mt-1 text-xs text-orange-500">
                 {t('monitor.analytics.linkInactive')}
@@ -412,6 +423,19 @@ export default function MonitorAnalyticsClient({ links }: Props) {
             {t('monitor.analytics.metric.enabled')}
           </label>
         </fieldset>
+
+        <div className="rounded-lg border border-dashed border-gray-200 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.testMode}
+              onChange={(event) => handleInputChange('testMode', event.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {t('monitor.analytics.testModeLabel')}
+          </label>
+          <p className="mt-1 text-xs text-gray-500">{t('monitor.analytics.testModeHint')}</p>
+        </div>
 
         <div className="flex items-center justify-end gap-3">
           <button

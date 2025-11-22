@@ -67,6 +67,8 @@ type HttpAlertEvent = {
   rate: number;
   statuses: string;
   countries: string;
+  qualifies: boolean;
+  failureReason?: string;
 };
 
 type WebVitalAlertEvent = {
@@ -79,6 +81,8 @@ type WebVitalAlertEvent = {
   threshold: number;
   country?: string | null;
   device?: string | null;
+  qualifies: boolean;
+  failureReason?: string;
 };
 
 type AlertEvent = HttpAlertEvent | WebVitalAlertEvent;
@@ -388,16 +392,25 @@ async function collectHttpEvents(
 
   const events: HttpAlertEvent[] = [];
   for (const entry of stats.values()) {
-    if (entry.total < minHits) continue;
     if (!entry.errors) continue;
     const rate = entry.errors / entry.total;
-    if (rate < threshold) continue;
+    let qualifies = true;
+    let failureReason: string | undefined;
+    if (entry.total < minHits) {
+      qualifies = false;
+      failureReason = `請求 ${entry.total} 次低於門檻 ${minHits}`;
+    } else if (rate < threshold) {
+      qualifies = false;
+      failureReason = `錯誤率 ${(rate * 100).toFixed(1)}% 低於門檻 ${(threshold * 100).toFixed(1)}%`;
+    }
     events.push({
       ...entry,
       kind,
       rate,
       statuses: formatStatusList(entry.statuses),
       countries: formatCountries(entry.countries),
+      qualifies,
+      failureReason,
     });
   }
   return events;
@@ -463,9 +476,15 @@ async function checkWebVitals(
     if (!threshold) continue;
 
     const p75 = toNumber(group.quantiles?.valueP75);
-    if (p75 === null || p75 <= threshold) continue;
+    if (p75 === null) continue;
     const url = buildRumUrl(group.dimensions);
     const code = extractCodeFromPath(group.dimensions?.urlPath || '');
+    const qualifies = p75 > threshold;
+    let failureReason: string | undefined;
+    if (!qualifies) {
+      const text = formatMs(p75) ?? `${p75}ms`;
+      failureReason = `P75 ${text} 未超過門檻 ${threshold}ms`;
+    }
     events.push({
       kind: metricName === 'LCP' ? 'lcp' : 'inp',
       code,
@@ -476,6 +495,8 @@ async function checkWebVitals(
       threshold,
       country: group.dimensions?.country,
       device: group.dimensions?.deviceType,
+      qualifies,
+      failureReason,
     });
   }
 
@@ -490,37 +511,81 @@ const isEventAllowed = (watcher: AnalyticsWatcher, event: AlertEvent): boolean =
   return false;
 };
 
-const formatHttpMessage = (event: HttpAlertEvent, code: string): string => {
-  const title =
-    event.kind === 'http' ? '下載頁 HTTP 錯誤' : '下載按鈕觸發失敗';
+type MessageOptions = { test?: boolean };
+
+const formatHttpMessage = (event: HttpAlertEvent, code: string, options?: MessageOptions): string => {
+  const title = event.kind === 'http' ? '下載頁 HTTP 錯誤' : '下載按鈕觸發失敗';
+  const icon = options?.test ? '🧪' : '🚨';
   return [
-    `🚨 *${title}*`,
-    `CODE: \`${code}\``,
-    `路徑: \`${event.path}\``,
-    `總請求: ${event.total}，錯誤: ${event.errors} (${(event.rate * 100).toFixed(1)}%)`,
-    event.statuses ? `狀態碼: ${event.statuses}` : null,
-    event.countries ? `來源: ${event.countries}` : null,
+    ${icon} **,
+    CODE: \${code}\`,
+    路徑: \${event.path}\`,
+    總請求 ，錯誤  (%),
+    event.statuses ? 主要狀態碼:  : null,
+    event.countries ? 來源:  : null,
   ]
     .filter(Boolean)
-    .join('\n');
+    .join("
+");
 };
 
-const formatWebVitalMessage = (event: WebVitalAlertEvent, code: string): string => {
+const formatHttpTestMessage = (event: HttpAlertEvent, code: string): string => {
+  const reason = event.failureReason || '未達警報門檻';
+  return [
+    🧪 *測試模式： 錯誤*,
+    CODE: \${code}\`,
+    路徑: \${event.path}\`,
+    總請求 ，錯誤  (%),
+    event.statuses ? 主要狀態碼:  : null,
+    event.countries ? 來源:  : null,
+    原因: ,
+  ]
+    .filter(Boolean)
+    .join("
+");
+};
+
+const formatWebVitalMessage = (
+  event: WebVitalAlertEvent,
+  code: string,
+  options?: MessageOptions
+): string => {
   const p75Text = formatMs(event.p75);
   const p90Text = formatMs(event.p90 ?? null);
+  const icon = options?.test ? '🧪' : '⚠️';
   return [
-    `⚠️ *Web Vitals：${event.metricName}*`,
-    `CODE: \`${code}\``,
-    event.url ? `頁面: ${event.url}` : null,
-    p75Text ? `P75: ${p75Text} > ${event.threshold}ms` : null,
-    p90Text ? `P90: ${p90Text}` : null,
-    event.country ? `國家: ${event.country}` : null,
-    event.device ? `裝置: ${event.device}` : null,
+    ${icon} *Web Vitals：*,
+    CODE: \${code}\`,
+    event.url ? 頁面:  : null,
+    p75Text ? P75:  > ms : null,
+    p90Text ? P90:  : null,
+    event.country ? 國家:  : null,
+    event.device ? 裝置:  : null,
   ]
     .filter(Boolean)
-    .join('\n');
+    .join("
+");
 };
 
+const formatWebVitalTestMessage = (event: WebVitalAlertEvent, code: string): string => {
+  const p75Text = formatMs(event.p75) ?? ${event.p75}ms;
+  const p90Text = formatMs(event.p90 ?? null);
+  const reason = event.failureReason || '未達警報門檻';
+  return [
+    🧪 *測試模式：Web Vitals *,
+    CODE: \${code}\`,
+    event.url ? 頁面:  : null,
+    P75: ,
+    p90Text ? P90:  : null,
+    門檻: ms,
+    event.country ? 國家:  : null,
+    event.device ? 裝置:  : null,
+    原因: ,
+  ]
+    .filter(Boolean)
+    .join("
+");
+};
 const queueNotification = (
   buckets: Map<string, NotificationBucket>,
   watcher: AnalyticsWatcher,
@@ -618,10 +683,22 @@ export default {
           );
           continue;
         }
+        const isTestWatcher = Boolean(watcher.settings.testMode);
+        if (!eventData.qualifies && !isTestWatcher) {
+          continue;
+        }
         const message =
           eventData.kind === 'http' || eventData.kind === 'button'
-            ? formatHttpMessage(eventData, watcher.linkCode)
-            : formatWebVitalMessage(eventData as WebVitalAlertEvent, watcher.linkCode);
+            ? eventData.qualifies
+              ? formatHttpMessage(eventData, watcher.linkCode, { test: isTestWatcher })
+              : formatHttpTestMessage(eventData, watcher.linkCode)
+            : eventData.qualifies
+            ? formatWebVitalMessage(
+                eventData as WebVitalAlertEvent,
+                watcher.linkCode,
+                { test: isTestWatcher }
+              )
+            : formatWebVitalTestMessage(eventData as WebVitalAlertEvent, watcher.linkCode);
         queueNotification(buckets, watcher, token, message);
       }
     }

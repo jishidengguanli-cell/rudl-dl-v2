@@ -27,6 +27,7 @@ type Payload = {
   lcp?: unknown;
   inp?: unknown;
   isActive?: unknown;
+  testMode?: unknown;
 };
 
 const parseUid = (req: Request): string | null => {
@@ -76,6 +77,7 @@ const buildRequiredSettings = (payload: Payload): AnalyticsWatcherSettings => ({
   buttonErrors: parseBoolean(payload.buttonErrors) ?? DEFAULT_ANALYTICS_WATCHER_SETTINGS.buttonErrors,
   lcp: parseBoolean(payload.lcp) ?? DEFAULT_ANALYTICS_WATCHER_SETTINGS.lcp,
   inp: parseBoolean(payload.inp) ?? DEFAULT_ANALYTICS_WATCHER_SETTINGS.inp,
+  testMode: parseBoolean(payload.testMode) ?? DEFAULT_ANALYTICS_WATCHER_SETTINGS.testMode,
 });
 
 const buildOptionalSettings = (
@@ -90,6 +92,8 @@ const buildOptionalSettings = (
   if (typeof lcpFlag === 'boolean') patch.lcp = lcpFlag;
   const inpFlag = parseBoolean(payload.inp);
   if (typeof inpFlag === 'boolean') patch.inp = inpFlag;
+  const testFlag = parseBoolean(payload.testMode);
+  if (typeof testFlag === 'boolean') patch.testMode = testFlag;
   return Object.keys(patch).length ? patch : undefined;
 };
 

@@ -7,6 +7,7 @@ export type AnalyticsWatcherSettings = {
   buttonErrors: boolean;
   lcp: boolean;
   inp: boolean;
+  testMode: boolean;
 };
 
 export const DEFAULT_ANALYTICS_WATCHER_SETTINGS: AnalyticsWatcherSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_ANALYTICS_WATCHER_SETTINGS: AnalyticsWatcherSettings = {
   buttonErrors: true,
   lcp: true,
   inp: true,
+  testMode: false,
 };
 
 export type AnalyticsWatcher = {
@@ -127,6 +129,7 @@ const normalizeSettings = (
   if (typeof partial.buttonErrors === 'boolean') next.buttonErrors = partial.buttonErrors;
   if (typeof partial.lcp === 'boolean') next.lcp = partial.lcp;
   if (typeof partial.inp === 'boolean') next.inp = partial.inp;
+  if (typeof partial.testMode === 'boolean') next.testMode = partial.testMode;
   return next;
 };
 
