@@ -516,6 +516,8 @@ type MessageOptions = { test?: boolean };
 
 type MessageOptions = { test?: boolean };
 
+type MessageOptions = { test?: boolean };
+
 const formatHttpMessage = (
   event: HttpAlertEvent,
   code: string,
