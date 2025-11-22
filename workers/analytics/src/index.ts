@@ -216,6 +216,7 @@ function summarizeHttpGroups(groups: HttpRequestGroup[]): Map<string, HttpAlertE
         rate: 0,
         statuses: '',
         countries: '',
+        qualifies: false,
       });
     }
 
