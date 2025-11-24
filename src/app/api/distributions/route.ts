@@ -6,6 +6,7 @@ import { normalizeLanguageCode } from '@/lib/language';
 import {
   cleanupRegionalUploads,
   publishLinkToRegionalServer,
+  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import {
@@ -197,8 +198,10 @@ export async function POST(req: Request) {
   const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(networkArea)
     ? networkArea
     : null;
+  const useRegionalBackend =
+    regionalArea && isRegionalServerConfigured(regionalArea, bindings);
   const platformString = uploads.map((upload) => upload.platform).join(',');
-  if (!regionalArea && !R2) {
+  if (!useRegionalBackend && !R2) {
     return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
   }
 
@@ -221,7 +224,7 @@ export async function POST(req: Request) {
     ipaVersionInput ||
     '';
 
-  const pendingUploadKeys = regionalArea ? uploads.map((upload) => upload.key) : [];
+  const pendingUploadKeys = useRegionalBackend ? uploads.map((upload) => upload.key) : [];
   const code = generateLinkCode();
 
   try {
@@ -249,7 +252,7 @@ export async function POST(req: Request) {
         : isActiveInput ? 1 : 0
       : undefined;
 
-    if (!regionalArea && R2) {
+    if (!useRegionalBackend && R2) {
       await Promise.all(
         uploads.map(async (upload) => {
           const head = await R2.head(upload.key);
@@ -376,7 +379,7 @@ export async function POST(req: Request) {
         .run();
     }
     await ensureDownloadStatsTable(DB, linkId);
-    if (regionalArea) {
+    if (useRegionalBackend && regionalArea) {
       await publishLinkToRegionalServer(regionalArea, DB, bindings, linkId);
     }
 
@@ -391,9 +394,9 @@ export async function POST(req: Request) {
       .run()
       .catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
-    if (!regionalArea && R2) {
+    if (!useRegionalBackend && R2) {
       await Promise.all(pendingUploadKeys.map((key) => R2.delete(key).catch(() => null)));
-    } else if (regionalArea) {
+    } else if (useRegionalBackend && regionalArea) {
       await cleanupRegionalUploads(regionalArea, bindings, pendingUploadKeys).catch(() => null);
     }
     const message = error instanceof Error ? error.message : String(error);

@@ -13,6 +13,7 @@ import {
   cleanupRegionalUploads,
   deleteRegionalLink,
   publishLinkToRegionalServer,
+  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import {
@@ -110,7 +111,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
     ? existing.networkArea
     : null;
-  if (!regionalArea && !R2) {
+  const useRegionalBackend =
+    regionalArea && isRegionalServerConfigured(regionalArea, bindings);
+  if (!useRegionalBackend && !R2) {
     return jsonError('Missing R2 binding', 500);
   }
 
@@ -325,7 +328,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       await DB.batch(statements);
     }
 
-    if (!regionalArea && R2 && r2KeysToDelete.length) {
+    if (!useRegionalBackend && R2 && r2KeysToDelete.length) {
       await Promise.all(
         r2KeysToDelete.map(async (key) => {
           try {
@@ -337,14 +340,14 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       );
     }
 
-    if (regionalArea) {
+    if (useRegionalBackend && regionalArea) {
       await publishLinkToRegionalServer(regionalArea, DB, bindings, linkId);
     }
 
     return NextResponse.json<JsonOk>({ ok: true, linkId, code: existing.code });
   } catch (error) {
     if (newUploadKeys.length) {
-      if (!regionalArea && R2) {
+      if (!useRegionalBackend && R2) {
         await Promise.all(
           newUploadKeys.map(async (key) => {
             try {
@@ -354,7 +357,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
             }
           })
         );
-      } else if (regionalArea) {
+      } else if (useRegionalBackend && regionalArea) {
         await cleanupRegionalUploads(regionalArea, bindings, newUploadKeys).catch(() => null);
       }
     }
@@ -394,7 +397,9 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   const deleteArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
     ? existing.networkArea
     : null;
-  if (!deleteArea && !R2) {
+  const useDeleteBackend =
+    deleteArea && isRegionalServerConfigured(deleteArea, bindings);
+  if (!useDeleteBackend && !R2) {
     return jsonError('Missing R2 binding', 500);
   }
 
@@ -409,7 +414,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
     ]);
     await deleteDownloadStatsForLink(DB, linkId);
 
-    if (!deleteArea && R2 && r2Keys.length) {
+    if (!useDeleteBackend && R2 && r2Keys.length) {
       await Promise.all(
         r2Keys.map(async (key) => {
           try {
@@ -419,7 +424,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
           }
         })
       );
-    } else if (deleteArea) {
+    } else if (useDeleteBackend && deleteArea) {
       await deleteRegionalLink(deleteArea, bindings, {
         linkId,
         code: existing.code,

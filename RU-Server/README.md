@@ -58,7 +58,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-By default Nginx listens on port `8080` and proxies dynamic routes to the Node service while serving `/files/*` from the shared volume.
+By default Nginx listens on host ports `8080/8443` (mapped to container `80/443`) and proxies dynamic routes to the Node service while serving `/files/*` from the shared volume. If you need to expose public `80/443`, configure aaPanel’s existing Nginx to reverse proxy to `http://127.0.0.1:8080`/`https://127.0.0.1:8443` or adjust the mapping once those ports are free.
 
 ## API overview
 
