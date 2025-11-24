@@ -1,6 +1,10 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
-import { getCnDownloadBaseUrl } from '@/lib/cn-server';
+import {
+  getRegionalDownloadBaseUrl,
+  type RegionalServerBindings,
+} from '@/lib/regional-server';
+import { isRegionalNetworkArea } from '@/lib/network-area';
 
 import { createTranslator } from '@/i18n/helpers';
 import { DEFAULT_LOCALE, type Locale } from '@/i18n/dictionary';
@@ -11,8 +15,7 @@ export const runtime = 'edge';
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
-  CN_DOWNLOAD_BASE_URL?: string;
-};
+} & RegionalServerBindings;
 
 type DownloadKey =
   | 'download'
@@ -73,9 +76,9 @@ export async function GET(
   const link = await fetchDistributionByCode(DB, code);
   if (!link || !link.isActive) return resp404('Not Found');
   const url = new URL(request.url);
-  if (link.networkArea === 'CN') {
-    const cnBase = getCnDownloadBaseUrl(bindings);
-    const target = `${cnBase}/d/${encodeURIComponent(link.code)}${url.search}`;
+  if (isRegionalNetworkArea(link.networkArea)) {
+    const baseUrl = getRegionalDownloadBaseUrl(link.networkArea, bindings);
+    const target = `${baseUrl}/d/${encodeURIComponent(link.code)}${url.search}`;
     return Response.redirect(target, 302);
   }
 

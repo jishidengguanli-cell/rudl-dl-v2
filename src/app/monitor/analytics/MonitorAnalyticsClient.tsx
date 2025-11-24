@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/i18n/provider';
+import { isRegionalNetworkArea } from '@/lib/network-area';
 
 type MonitorLink = {
   id: string;
@@ -81,11 +82,11 @@ export default function MonitorAnalyticsClient({ links }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const allowedLinks = useMemo(
-    () => links.filter((link) => link.networkArea !== 'CN'),
+    () => links.filter((link) => !isRegionalNetworkArea(link.networkArea)),
     [links]
   );
   const blockedLinks = useMemo(
-    () => links.filter((link) => link.networkArea === 'CN'),
+    () => links.filter((link) => isRegionalNetworkArea(link.networkArea)),
     [links]
   );
 

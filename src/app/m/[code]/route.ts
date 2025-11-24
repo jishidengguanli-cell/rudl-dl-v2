@@ -1,14 +1,17 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
-import { getCnDownloadBaseUrl } from '@/lib/cn-server';
+import {
+  getRegionalDownloadBaseUrl,
+  type RegionalServerBindings,
+} from '@/lib/regional-server';
+import { isRegionalNetworkArea } from '@/lib/network-area';
 
 export const runtime = 'edge';
 
 type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
-  CN_DOWNLOAD_BASE_URL?: string;
-};
+} & RegionalServerBindings;
 
 const DEFAULT_TITLE = 'App';
 const CDN_BASE = 'https://cdn.dataruapp.com/';
@@ -33,9 +36,9 @@ export async function GET(
 
   const link = await fetchDistributionByCode(DB, code);
   if (!link || !link.isActive) return resp404('Not Found');
-  if (link.networkArea === 'CN') {
-    const cnBase = getCnDownloadBaseUrl(bindings);
-    const target = `${cnBase}/m/${encodeURIComponent(link.code)}`;
+  if (isRegionalNetworkArea(link.networkArea)) {
+    const baseUrl = getRegionalDownloadBaseUrl(link.networkArea, bindings);
+    const target = `${baseUrl}/m/${encodeURIComponent(link.code)}`;
     return Response.redirect(target, 302);
   }
 

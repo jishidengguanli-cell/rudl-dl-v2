@@ -3,6 +3,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { ensurePointTables, hasPointAccountsUpdatedAt, hasUsersBalanceColumn } from '@/lib/schema';
 import { triggerPointMonitors } from '@/lib/monitor';
 import { fetchDistributionById } from '@/lib/distribution';
+import { isRegionalNetworkArea } from '@/lib/network-area';
 
 export const runtime = 'edge';
 
@@ -33,9 +34,9 @@ export async function POST(req: Request) {
   const now = Math.floor(Date.now() / 1000);
   const bucket_minute = Math.floor(now / 60);
   const link = await fetchDistributionById(DB, link_id).catch(() => null);
-  const isCnDownload = link?.networkArea === 'CN';
+  const isRegionalDownload = link ? isRegionalNetworkArea(link.networkArea) : false;
   const cost =
-    platform === 'ipa' ? (isCnDownload ? 30 : 5) : isCnDownload ? 10 : 3;
+    platform === 'ipa' ? (isRegionalDownload ? 30 : 5) : isRegionalDownload ? 10 : 3;
 
   try {
     await ensurePointTables(DB);

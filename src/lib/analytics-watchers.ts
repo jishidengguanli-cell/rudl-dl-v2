@@ -1,6 +1,10 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { getTableInfo, hasColumn } from './distribution';
-import { normalizeNetworkArea, type NetworkArea } from './network-area';
+import {
+  normalizeNetworkArea,
+  isRegionalNetworkArea,
+  type NetworkArea,
+} from './network-area';
 
 export type AnalyticsWatcherSettings = {
   httpErrors: boolean;
@@ -238,7 +242,9 @@ async function queryWatchers(DB: D1Database, filters: QueryFilters = {}): Promis
   }
 
   if (filters.excludeChina && flags.hasNetworkArea) {
-    conditions.push("(UPPER(l.network_area) IS NULL OR UPPER(l.network_area) != 'CN')");
+    conditions.push(
+      "(UPPER(l.network_area) IS NULL OR UPPER(l.network_area) NOT IN ('CN','RU'))"
+    );
   }
 
   const query = `SELECT ${selectColumns.join(', ')}
@@ -318,7 +324,7 @@ export async function createAnalyticsWatcher(
   const networkArea = flags.hasNetworkArea
     ? normalizeNetworkArea(toStringOrNull(linkRow['network_area']))
     : normalizeNetworkArea(null);
-  if (networkArea === 'CN') {
+  if (isRegionalNetworkArea(networkArea)) {
     throw new AnalyticsWatcherError('LINK_UNSUPPORTED_CN');
   }
 

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { normalizeNetworkArea } from '@/lib/network-area';
+import { normalizeNetworkArea, isRegionalNetworkArea } from '@/lib/network-area';
 import { createCnUploadTicket } from '@/lib/cn-server';
+import { createRuUploadTicket } from '@/lib/ru-server';
 
 export const runtime = 'edge';
 
@@ -13,6 +14,8 @@ type Env = {
   R2_BUCKET_NAME?: string;
   CN_SERVER_API_BASE?: string;
   CN_SERVER_API_TOKEN?: string;
+  RU_SERVER_API_BASE?: string;
+  RU_SERVER_API_TOKEN?: string;
 };
 
 type Platform = 'apk' | 'ipa';
@@ -230,7 +233,7 @@ export async function POST(req: Request) {
   const bundleId = (payload.bundleId ?? '').trim() || null;
   const version = (payload.version ?? '').trim() || null;
   const networkArea = normalizeNetworkArea(payload.networkArea);
-  const useCnServer = networkArea === 'CN';
+  const regionalArea = isRegionalNetworkArea(networkArea) ? networkArea : null;
 
   let linkId = (payload.linkId ?? '').trim();
   if (!linkId) {
@@ -240,9 +243,11 @@ export async function POST(req: Request) {
   const safeName = sanitizeFileName(fileName, `${platform}.bin`);
   const key = `${uid}/links/${linkId}/${platform}/${safeName}`;
 
-  if (useCnServer) {
+  if (regionalArea) {
     try {
-      const ticket = await createCnUploadTicket(bindings, {
+      const creator =
+        regionalArea === 'CN' ? createCnUploadTicket : createRuUploadTicket;
+      const ticket = await creator(bindings, {
         key,
         contentType,
         size,

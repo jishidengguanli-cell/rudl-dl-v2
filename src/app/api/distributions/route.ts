@@ -3,9 +3,17 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { generateLinkCode } from '@/lib/code';
 import { deleteDownloadStatsForLink, ensureDownloadStatsTable } from '@/lib/downloads';
 import { normalizeLanguageCode } from '@/lib/language';
-import { cleanupCnUploads } from '@/lib/cn-server';
-import { publishLinkToCnServer } from '@/lib/cn-sync';
-import { normalizeNetworkArea, type NetworkArea } from '@/lib/network-area';
+import {
+  cleanupRegionalUploads,
+  publishLinkToRegionalServer,
+  type RegionalServerBindings,
+} from '@/lib/regional-server';
+import {
+  normalizeNetworkArea,
+  isRegionalNetworkArea,
+  type NetworkArea,
+  type RegionalNetworkArea,
+} from '@/lib/network-area';
 
 export const runtime = 'edge';
 
@@ -13,10 +21,7 @@ type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
   R2_BUCKET?: R2Bucket;
-  CN_SERVER_API_BASE?: string;
-  CN_SERVER_API_TOKEN?: string;
-  CN_DOWNLOAD_BASE_URL?: string;
-};
+} & RegionalServerBindings;
 
 type UploadInput = {
   platform: 'apk' | 'ipa';
@@ -189,9 +194,11 @@ export async function POST(req: Request) {
   const networkArea = normalizeNetworkArea(
     typeof networkAreaRaw === 'string' ? networkAreaRaw : null
   );
+  const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(networkArea)
+    ? networkArea
+    : null;
   const platformString = uploads.map((upload) => upload.platform).join(',');
-  const useCnServer = networkArea === 'CN';
-  if (!useCnServer && !R2) {
+  if (!regionalArea && !R2) {
     return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });
   }
 
@@ -214,7 +221,7 @@ export async function POST(req: Request) {
     ipaVersionInput ||
     '';
 
-  const pendingUploadKeys = uploads.map((upload) => upload.key);
+  const pendingUploadKeys = regionalArea ? uploads.map((upload) => upload.key) : [];
   const code = generateLinkCode();
 
   try {
@@ -242,7 +249,7 @@ export async function POST(req: Request) {
         : isActiveInput ? 1 : 0
       : undefined;
 
-    if (!useCnServer && R2) {
+    if (!regionalArea && R2) {
       await Promise.all(
         uploads.map(async (upload) => {
           const head = await R2.head(upload.key);
@@ -369,8 +376,8 @@ export async function POST(req: Request) {
         .run();
     }
     await ensureDownloadStatsTable(DB, linkId);
-    if (useCnServer) {
-      await publishLinkToCnServer(DB, bindings, linkId);
+    if (regionalArea) {
+      await publishLinkToRegionalServer(regionalArea, DB, bindings, linkId);
     }
 
     return NextResponse.json({ ok: true, linkId, code });
@@ -384,10 +391,10 @@ export async function POST(req: Request) {
       .run()
       .catch(() => null);
     await deleteDownloadStatsForLink(DB, linkId).catch(() => null);
-    if (!useCnServer && R2) {
+    if (!regionalArea && R2) {
       await Promise.all(pendingUploadKeys.map((key) => R2.delete(key).catch(() => null)));
-    } else if (useCnServer) {
-      await cleanupCnUploads(bindings, pendingUploadKeys).catch(() => null);
+    } else if (regionalArea) {
+      await cleanupRegionalUploads(regionalArea, bindings, pendingUploadKeys).catch(() => null);
     }
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

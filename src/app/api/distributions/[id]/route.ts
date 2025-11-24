@@ -9,9 +9,18 @@ import {
   type DistributionFile,
 } from '@/lib/distribution';
 import { normalizeLanguageCode } from '@/lib/language';
-import { cleanupCnUploads, deleteCnLink } from '@/lib/cn-server';
-import { publishLinkToCnServer } from '@/lib/cn-sync';
-import { normalizeNetworkArea, type NetworkArea } from '@/lib/network-area';
+import {
+  cleanupRegionalUploads,
+  deleteRegionalLink,
+  publishLinkToRegionalServer,
+  type RegionalServerBindings,
+} from '@/lib/regional-server';
+import {
+  normalizeNetworkArea,
+  isRegionalNetworkArea,
+  type NetworkArea,
+  type RegionalNetworkArea,
+} from '@/lib/network-area';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
 export const runtime = 'edge';
@@ -22,10 +31,7 @@ type Env = {
   DB?: D1Database;
   ['rudl-app']?: D1Database;
   R2_BUCKET?: R2Bucket;
-  CN_SERVER_API_BASE?: string;
-  CN_SERVER_API_TOKEN?: string;
-  CN_DOWNLOAD_BASE_URL?: string;
-};
+} & RegionalServerBindings;
 
 type UploadInput = {
   platform: 'apk' | 'ipa';
@@ -101,8 +107,10 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   }
 
   await ensureDownloadStatsTable(DB, linkId);
-  const useCnServer = existing.networkArea === 'CN';
-  if (!useCnServer && !R2) {
+  const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
+    ? existing.networkArea
+    : null;
+  if (!regionalArea && !R2) {
     return jsonError('Missing R2 binding', 500);
   }
 
@@ -317,7 +325,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       await DB.batch(statements);
     }
 
-    if (!useCnServer && R2 && r2KeysToDelete.length) {
+    if (!regionalArea && R2 && r2KeysToDelete.length) {
       await Promise.all(
         r2KeysToDelete.map(async (key) => {
           try {
@@ -329,14 +337,14 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       );
     }
 
-    if (useCnServer) {
-      await publishLinkToCnServer(DB, bindings, linkId);
+    if (regionalArea) {
+      await publishLinkToRegionalServer(regionalArea, DB, bindings, linkId);
     }
 
     return NextResponse.json<JsonOk>({ ok: true, linkId, code: existing.code });
   } catch (error) {
     if (newUploadKeys.length) {
-      if (!useCnServer && R2) {
+      if (!regionalArea && R2) {
         await Promise.all(
           newUploadKeys.map(async (key) => {
             try {
@@ -346,8 +354,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
             }
           })
         );
-      } else if (useCnServer) {
-        await cleanupCnUploads(bindings, newUploadKeys).catch(() => null);
+      } else if (regionalArea) {
+        await cleanupRegionalUploads(regionalArea, bindings, newUploadKeys).catch(() => null);
       }
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -383,8 +391,10 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
     return jsonError('FORBIDDEN', 403);
   }
 
-  const useCnServer = existing.networkArea === 'CN';
-  if (!useCnServer && !R2) {
+  const deleteArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
+    ? existing.networkArea
+    : null;
+  if (!deleteArea && !R2) {
     return jsonError('Missing R2 binding', 500);
   }
 
@@ -399,7 +409,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
     ]);
     await deleteDownloadStatsForLink(DB, linkId);
 
-    if (!useCnServer && R2 && r2Keys.length) {
+    if (!deleteArea && R2 && r2Keys.length) {
       await Promise.all(
         r2Keys.map(async (key) => {
           try {
@@ -409,8 +419,12 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
           }
         })
       );
-    } else if (useCnServer) {
-      await deleteCnLink(bindings, { linkId, code: existing.code, keys: r2Keys }).catch(() => null);
+    } else if (deleteArea) {
+      await deleteRegionalLink(deleteArea, bindings, {
+        linkId,
+        code: existing.code,
+        keys: r2Keys,
+      }).catch(() => null);
     }
 
     return NextResponse.json<JsonOk>({ ok: true, linkId, code: existing.code });

@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n/provider';
 import type { DashboardLink, DashboardPage } from '@/lib/dashboard';
 import type { Locale } from '@/i18n/dictionary';
 import { getPublicCnDownloadDomain } from '@/lib/cn-domain';
+import { getPublicRuDownloadDomain } from '@/lib/ru-domain';
 import type { NetworkArea } from '@/lib/network-area';
 import AddDistributionModal from './AddDistributionModal';
 import LinkStatsModal from './LinkStatsModal';
@@ -40,10 +41,14 @@ const formatCount = (value: number | null | undefined) => {
 };
 
 const CN_DOWNLOAD_DOMAIN = getPublicCnDownloadDomain();
+const RU_DOWNLOAD_DOMAIN = getPublicRuDownloadDomain();
 
 const getShareUrl = (code: string, area: NetworkArea, hydrated: boolean) => {
   if (area === 'CN') {
     return `${CN_DOWNLOAD_DOMAIN}/d/${code}`;
+  }
+  if (area === 'RU') {
+    return `${RU_DOWNLOAD_DOMAIN}/d/${code}`;
   }
   if (hydrated && typeof window !== 'undefined') {
     return `${window.location.origin}/d/${code}`;
@@ -317,6 +322,8 @@ export default function DashboardClient({
                         {t(
                           link.networkArea === 'CN'
                             ? 'networkArea.cn'
+                            : link.networkArea === 'RU'
+                            ? 'networkArea.ru'
                             : 'networkArea.global'
                         )}
                       </span>
