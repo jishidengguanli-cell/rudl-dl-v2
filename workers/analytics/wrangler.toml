@@ -1,4 +1,4 @@
-name = "rudlanalytics"
+name = "web-analytics
 main = "src/index.ts"
 compatibility_date = "2025-10-03"
 compatibility_flags = ["nodejs_compat"]
