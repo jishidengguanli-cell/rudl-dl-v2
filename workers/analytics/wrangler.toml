@@ -4,7 +4,7 @@ compatibility_date = "2025-10-03"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/1 * * * *"]
 
 [vars]
 CF_ZONE_ID = "3324598d7b5168161d656336408e2be6"

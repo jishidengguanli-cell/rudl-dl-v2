@@ -47,6 +47,9 @@ type RumWebVitalsGroup = {
     metricName?: string;
     urlHost?: string;
     urlPath?: string;
+    requestHost?: string;
+    requestPath?: string;
+    requestScheme?: string;
     country?: string;
     deviceType?: string;
   };
@@ -123,7 +126,6 @@ const RUM_WEB_VITALS_QUERY = `
     $accountTag: String!
     $since: Time!
     $until: Time!
-    $urlFilter: String!
   ) {
     viewer {
       accounts(filter: { accountTag: $accountTag }) {
@@ -132,7 +134,6 @@ const RUM_WEB_VITALS_QUERY = `
           filter: {
             datetime_geq: $since
             datetime_lt: $until
-            url_contains: $urlFilter
           }
         ) {
           quantiles {
@@ -141,6 +142,9 @@ const RUM_WEB_VITALS_QUERY = `
           }
           dimensions {
             metricName
+            requestHost
+            requestPath
+            requestScheme
             urlHost
             urlPath
             deviceType
@@ -257,11 +261,12 @@ const formatStatusList = (value: string): string => {
 };
 
 const buildRumUrl = (dimensions: RumWebVitalsGroup['dimensions']): string => {
-  const path = dimensions?.urlPath || '';
-  const host = dimensions?.urlHost;
+  const path = dimensions?.requestPath || dimensions?.urlPath || '';
+  const host = dimensions?.requestHost || dimensions?.urlHost;
   if (host) {
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    return `https://${host}${normalizedPath}`;
+    const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : '';
+    const scheme = dimensions?.requestScheme || 'https';
+    return `${scheme}://${host}${normalizedPath}`;
   }
   return path || '';
 };
@@ -426,7 +431,6 @@ const checkWebVitals = async (
     return [];
   }
 
-  const urlFilter = env.WEB_VITALS_URL_FILTER || '/d/';
   const lcpThreshold = parseNumber(env.LCP_P75_THRESHOLD_MS, 4000);
   const inpThreshold = parseNumber(env.INP_P75_THRESHOLD_MS, 400);
   const thresholds: Record<string, number> = { LCP: lcpThreshold, INP: inpThreshold };
@@ -435,9 +439,9 @@ const checkWebVitals = async (
     accountTag: env.CF_ACCOUNT_ID,
     since: sinceIso,
     until: untilIso,
-    urlFilter,
   });
 
+  const urlPrefix = env.WEB_VITALS_URL_FILTER || '/d/';
   const groups = data.viewer?.accounts?.[0]?.rumWebVitalsEventsAdaptiveGroups ?? [];
   const events: WebVitalAlertEvent[] = [];
 
@@ -447,13 +451,16 @@ const checkWebVitals = async (
     const threshold = thresholds[metricName];
     if (!threshold) continue;
 
+    const requestPath = group.dimensions?.requestPath || group.dimensions?.urlPath || '';
+    if (urlPrefix && requestPath && !requestPath.startsWith(urlPrefix)) continue;
+
     const p75 = toNumber(group.quantiles?.valueP75);
     if (p75 === null) continue;
     const p90 = toNumber(group.quantiles?.valueP90);
     const qualifies = p75 > threshold;
     const failureReason = qualifies ? undefined : `P75 ${formatMs(p75) ?? `${p75}ms`} 未超過門檻 ${threshold}ms`;
     const url = buildRumUrl(group.dimensions);
-    const code = extractCodeFromPath(group.dimensions?.urlPath || '');
+    const code = extractCodeFromPath(requestPath);
 
     events.push({
       kind: metricName === 'LCP' ? 'lcp' : 'inp',
