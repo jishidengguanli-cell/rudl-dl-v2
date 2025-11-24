@@ -95,7 +95,7 @@ type NotificationBucket = {
 };
 
 const HTTP_REQUESTS_QUERY = `
-  query DownloadPathErrors($zoneTag: String!, $since: Time!, $until: Time!, $pathPrefix: String!) {
+  query DownloadPathErrors($zoneTag: String!, $since: Time!, $until: Time!) {
     viewer {
       zones(filter: { zoneTag: $zoneTag }) {
         httpRequestsAdaptiveGroups(
@@ -104,7 +104,6 @@ const HTTP_REQUESTS_QUERY = `
             datetime_geq: $since
             datetime_lt: $until
             requestSource: "eyeball"
-            clientRequestPath_starts_with: $pathPrefix
           }
         ) {
           count
@@ -191,12 +190,13 @@ async function cfGraphQL<T>(env: WorkerEnv, query: string, variables: Record<str
   return json.data;
 }
 
-const summarizeHttpGroups = (groups: HttpRequestGroup[]): Map<string, HttpAlertEvent> => {
+const summarizeHttpGroups = (groups: HttpRequestGroup[], pathPrefix?: string): Map<string, HttpAlertEvent> => {
   const summary = new Map<string, HttpAlertEvent>();
 
   for (const group of groups) {
     const path = group.dimensions?.clientRequestPath;
     if (!path) continue;
+    if (pathPrefix && !path.startsWith(pathPrefix)) continue;
 
     const status = Number(group.dimensions?.edgeResponseStatus ?? 0);
     const country = group.dimensions?.clientCountryName || 'Unknown';
@@ -366,10 +366,9 @@ const collectHttpEvents = async (
     zoneTag: env.CF_ZONE_ID,
     since: sinceIso,
     until: untilIso,
-    pathPrefix,
   });
   const groups = data.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups ?? [];
-  const stats = summarizeHttpGroups(groups);
+  const stats = summarizeHttpGroups(groups, pathPrefix);
   const minHits = parseNumber(env.HTTP_MIN_REQUESTS, 10);
   const threshold = parseNumber(env.HTTP_ERROR_RATE_THRESHOLD, 0.05);
 
