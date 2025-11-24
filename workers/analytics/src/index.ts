@@ -123,7 +123,6 @@ const RUM_WEB_VITALS_QUERY = `
     $accountTag: String!
     $since: Time!
     $until: Time!
-    $metricNames: [String!]!
     $urlFilter: String!
   ) {
     viewer {
@@ -133,7 +132,6 @@ const RUM_WEB_VITALS_QUERY = `
           filter: {
             datetime_geq: $since
             datetime_lt: $until
-            metricName_in: $metricNames
             url_contains: $urlFilter
           }
         ) {
@@ -428,7 +426,6 @@ const checkWebVitals = async (
     return [];
   }
 
-  const metricNames = ['LCP', 'INP'];
   const urlFilter = env.WEB_VITALS_URL_FILTER || '/d/';
   const lcpThreshold = parseNumber(env.LCP_P75_THRESHOLD_MS, 4000);
   const inpThreshold = parseNumber(env.INP_P75_THRESHOLD_MS, 400);
@@ -438,7 +435,6 @@ const checkWebVitals = async (
     accountTag: env.CF_ACCOUNT_ID,
     since: sinceIso,
     until: untilIso,
-    metricNames,
     urlFilter,
   });
 
