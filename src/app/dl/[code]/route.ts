@@ -5,7 +5,6 @@ import { recordDownload, type DownloadTotals } from '@/lib/downloads';
 import { triggerDownloadMonitors } from '@/lib/monitor';
 import {
   getRegionalDownloadBaseUrl,
-  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import { isRegionalNetworkArea } from '@/lib/network-area';
@@ -39,10 +38,7 @@ export async function GET(
     return new Response('Not Found', { status: 404 });
   }
   const url = new URL(request.url);
-  if (
-    isRegionalNetworkArea(link.networkArea) &&
-    isRegionalServerConfigured(link.networkArea, bindings)
-  ) {
+  if (isRegionalNetworkArea(link.networkArea)) {
     const baseUrl = getRegionalDownloadBaseUrl(link.networkArea, bindings);
     const target = `${baseUrl}/dl/${encodeURIComponent(link.code)}${url.search}`;
     return Response.redirect(target, 302);

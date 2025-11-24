@@ -2,7 +2,6 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { fetchDistributionByCode } from '@/lib/distribution';
 import {
   getRegionalDownloadBaseUrl,
-  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import { isRegionalNetworkArea } from '@/lib/network-area';
@@ -37,10 +36,7 @@ export async function GET(
 
   const link = await fetchDistributionByCode(DB, code);
   if (!link || !link.isActive) return resp404('Not Found');
-  if (
-    isRegionalNetworkArea(link.networkArea) &&
-    isRegionalServerConfigured(link.networkArea, bindings)
-  ) {
+  if (isRegionalNetworkArea(link.networkArea)) {
     const baseUrl = getRegionalDownloadBaseUrl(link.networkArea, bindings);
     const target = `${baseUrl}/m/${encodeURIComponent(link.code)}`;
     return Response.redirect(target, 302);

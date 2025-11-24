@@ -3,7 +3,6 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { normalizeNetworkArea, isRegionalNetworkArea } from '@/lib/network-area';
 import { createCnUploadTicket } from '@/lib/cn-server';
 import { createRuUploadTicket } from '@/lib/ru-server';
-import { isRegionalServerConfigured } from '@/lib/regional-server';
 
 export const runtime = 'edge';
 
@@ -235,8 +234,7 @@ export async function POST(req: Request) {
   const version = (payload.version ?? '').trim() || null;
   const networkArea = normalizeNetworkArea(payload.networkArea);
   const regionalArea = isRegionalNetworkArea(networkArea) ? networkArea : null;
-  const useRegionalBackend =
-    regionalArea && isRegionalServerConfigured(regionalArea, bindings);
+  const useRegionalBackend = Boolean(regionalArea);
 
   let linkId = (payload.linkId ?? '').trim();
   if (!linkId) {
@@ -246,7 +244,7 @@ export async function POST(req: Request) {
   const safeName = sanitizeFileName(fileName, `${platform}.bin`);
   const key = `${uid}/links/${linkId}/${platform}/${safeName}`;
 
-  if (useRegionalBackend) {
+  if (useRegionalBackend && regionalArea) {
     try {
       const creator =
         regionalArea === 'CN' ? createCnUploadTicket : createRuUploadTicket;

@@ -6,7 +6,6 @@ import { normalizeLanguageCode } from '@/lib/language';
 import {
   cleanupRegionalUploads,
   publishLinkToRegionalServer,
-  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import {
@@ -198,8 +197,7 @@ export async function POST(req: Request) {
   const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(networkArea)
     ? networkArea
     : null;
-  const useRegionalBackend =
-    regionalArea && isRegionalServerConfigured(regionalArea, bindings);
+  const useRegionalBackend = Boolean(regionalArea);
   const platformString = uploads.map((upload) => upload.platform).join(',');
   if (!useRegionalBackend && !R2) {
     return NextResponse.json({ ok: false, error: 'Missing R2 binding' }, { status: 500 });

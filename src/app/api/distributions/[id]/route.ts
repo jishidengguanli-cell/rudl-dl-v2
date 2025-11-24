@@ -13,7 +13,6 @@ import {
   cleanupRegionalUploads,
   deleteRegionalLink,
   publishLinkToRegionalServer,
-  isRegionalServerConfigured,
   type RegionalServerBindings,
 } from '@/lib/regional-server';
 import {
@@ -111,8 +110,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const regionalArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
     ? existing.networkArea
     : null;
-  const useRegionalBackend =
-    regionalArea && isRegionalServerConfigured(regionalArea, bindings);
+  const useRegionalBackend = Boolean(regionalArea);
   if (!useRegionalBackend && !R2) {
     return jsonError('Missing R2 binding', 500);
   }
@@ -397,8 +395,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   const deleteArea: RegionalNetworkArea | null = isRegionalNetworkArea(existing.networkArea)
     ? existing.networkArea
     : null;
-  const useDeleteBackend =
-    deleteArea && isRegionalServerConfigured(deleteArea, bindings);
+  const useDeleteBackend = Boolean(deleteArea);
   if (!useDeleteBackend && !R2) {
     return jsonError('Missing R2 binding', 500);
   }

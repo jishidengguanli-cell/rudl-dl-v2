@@ -17,25 +17,6 @@ import type { RegionalNetworkArea } from './network-area';
 
 export type RegionalServerBindings = CnServerBindings & RuServerBindings;
 
-export const isRegionalServerConfigured = (
-  area: RegionalNetworkArea | null | undefined,
-  bindings?: Partial<RegionalServerBindings>
-): area is RegionalNetworkArea => {
-  if (!area) return false;
-  if (area === 'CN') {
-    return Boolean(
-      bindings &&
-        bindings.CN_SERVER_API_BASE &&
-        bindings.CN_SERVER_API_TOKEN
-    );
-  }
-  return Boolean(
-    bindings &&
-      bindings.RU_SERVER_API_BASE &&
-      bindings.RU_SERVER_API_TOKEN
-  );
-};
-
 export const getRegionalDownloadBaseUrl = (
   area: RegionalNetworkArea,
   bindings?: Partial<RegionalServerBindings>
