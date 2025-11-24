@@ -10,3 +10,11 @@ crons = ["*/5 * * * *"]
 binding = "DB"
 database_name = "rudl_app"
 database_id = "6971cadc-b4f7-4642-bc78-f1e5e1bee999"
+
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+logs = { enabled = true, include = "all" }
