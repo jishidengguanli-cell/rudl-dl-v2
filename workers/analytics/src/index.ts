@@ -39,10 +39,10 @@ type HttpRequestResponse = {
 };
 
 type RumWebVitalsGroup = {
-  quantiles?: {
-    valueP75?: number;
-    valueP90?: number;
-  };
+  quantiles_largestContentfulPaintP75?: number;
+  quantiles_largestContentfulPaintP90?: number;
+  quantiles_interactionToNextPaintP75?: number;
+  quantiles_interactionToNextPaintP90?: number;
   dimensions?: {
     metricName?: string;
     urlHost?: string;
@@ -136,10 +136,10 @@ const RUM_WEB_VITALS_QUERY = `
             datetime_lt: $until
           }
         ) {
-          quantiles {
-            valueP75
-            valueP90
-          }
+          quantiles_largestContentfulPaintP75
+          quantiles_largestContentfulPaintP90
+          quantiles_interactionToNextPaintP75
+          quantiles_interactionToNextPaintP90
           dimensions {
             metricName
             requestHost
@@ -283,6 +283,25 @@ const toNumber = (value: unknown): number | null => {
 const formatMs = (value: number | null | undefined): string | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return `${Math.round(value)}ms`;
+};
+
+const getWebVitalQuantiles = (
+  group: RumWebVitalsGroup,
+  metricName?: string
+): { p75: number | null; p90: number | null } => {
+  if (metricName === 'LCP') {
+    return {
+      p75: toNumber(group.quantiles_largestContentfulPaintP75),
+      p90: toNumber(group.quantiles_largestContentfulPaintP90),
+    };
+  }
+  if (metricName === 'INP') {
+    return {
+      p75: toNumber(group.quantiles_interactionToNextPaintP75),
+      p90: toNumber(group.quantiles_interactionToNextPaintP90),
+    };
+  }
+  return { p75: null, p90: null };
 };
 
 const telegramColumnCandidates = ['telegram_bot_token', 'TELEGRAM_BOT_TOKEN'];
@@ -454,9 +473,8 @@ const checkWebVitals = async (
     const requestPath = group.dimensions?.requestPath || group.dimensions?.urlPath || '';
     if (urlPrefix && requestPath && !requestPath.startsWith(urlPrefix)) continue;
 
-    const p75 = toNumber(group.quantiles?.valueP75);
+    const { p75, p90 } = getWebVitalQuantiles(group, metricName);
     if (p75 === null) continue;
-    const p90 = toNumber(group.quantiles?.valueP90);
     const qualifies = p75 > threshold;
     const failureReason = qualifies ? undefined : `P75 ${formatMs(p75) ?? `${p75}ms`} 未超過門檻 ${threshold}ms`;
     const url = buildRumUrl(group.dimensions);
