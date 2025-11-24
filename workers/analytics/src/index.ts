@@ -44,20 +44,19 @@ type RumWebVitalsGroup = {
   quantiles_interactionToNextPaintP75?: number;
   quantiles_interactionToNextPaintP90?: number;
   dimensions?: {
-    metricName?: string;
-    urlHost?: string;
-    urlPath?: string;
     requestHost?: string;
     requestPath?: string;
     requestScheme?: string;
-    country?: string;
+    urlHost?: string;
+    urlPath?: string;
+    countryName?: string;
     deviceType?: string;
   };
 };
 
 type RumWebVitalsResponse = {
   accounts?: Array<{
-    rumWebVitalsEventsAdaptiveGroups?: RumWebVitalsGroup[];
+    rumPerformanceEventsAdaptiveGroups?: RumWebVitalsGroup[];
   }>;
 };
 
@@ -129,7 +128,7 @@ const RUM_WEB_VITALS_QUERY = `
   ) {
     viewer {
       accounts(filter: { accountTag: $accountTag }) {
-        rumWebVitalsEventsAdaptiveGroups(
+        rumPerformanceEventsAdaptiveGroups(
           limit: 200
           filter: {
             datetime_geq: $since
@@ -141,14 +140,13 @@ const RUM_WEB_VITALS_QUERY = `
           quantiles_interactionToNextPaintP75
           quantiles_interactionToNextPaintP90
           dimensions {
-            metricName
             requestHost
             requestPath
             requestScheme
             urlHost
             urlPath
             deviceType
-            country
+            countryName
           }
         }
       }
@@ -461,47 +459,49 @@ const checkWebVitals = async (
   });
 
   const urlPrefix = env.WEB_VITALS_URL_FILTER || '/d/';
-  const groups = data.viewer?.accounts?.[0]?.rumWebVitalsEventsAdaptiveGroups ?? [];
+  const groups = data.viewer?.accounts?.[0]?.rumPerformanceEventsAdaptiveGroups ?? [];
   const events: WebVitalAlertEvent[] = [];
 
   for (const group of groups) {
-    const metricName = group.dimensions?.metricName;
-    if (!metricName) continue;
-    const threshold = thresholds[metricName];
-    if (!threshold) continue;
-
     const requestPath = group.dimensions?.requestPath || group.dimensions?.urlPath || '';
     if (urlPrefix && requestPath && !requestPath.startsWith(urlPrefix)) continue;
 
-    const { p75, p90 } = getWebVitalQuantiles(group, metricName);
-    if (p75 === null) continue;
-    const qualifies = p75 > threshold;
-    const failureReason = qualifies ? undefined : `P75 ${formatMs(p75) ?? `${p75}ms`} 未超過門檻 ${threshold}ms`;
     const url = buildRumUrl(group.dimensions);
     const code = extractCodeFromPath(requestPath);
 
-    events.push({
-      kind: metricName === 'LCP' ? 'lcp' : 'inp',
-      code,
-      url: url || (code ? `/d/${code}` : ''),
-      metricName: metricName as 'LCP' | 'INP',
-      p75,
-      p90,
-      threshold,
-      country: group.dimensions?.country,
-      device: group.dimensions?.deviceType,
-      qualifies,
-      failureReason,
-    });
-    log('web-vitals-event', {
-      metricName,
-      code,
-      url,
-      p75,
-      threshold,
-      qualifies,
-      failureReason,
-    });
+    for (const metricName of ['LCP', 'INP'] as const) {
+      const threshold = thresholds[metricName];
+      if (!threshold) continue;
+
+      const { p75, p90 } = getWebVitalQuantiles(group, metricName);
+      if (p75 === null) continue;
+
+      const qualifies = p75 > threshold;
+      const failureReason = qualifies ? undefined : `P75 ${formatMs(p75) ?? `${p75}ms`} 超過門檻 ${threshold}ms`;
+
+      events.push({
+        kind: metricName === 'LCP' ? 'lcp' : 'inp',
+        code,
+        url: url || (code ? `/d/${code}` : ''),
+        metricName,
+        p75,
+        p90,
+        threshold,
+        country: group.dimensions?.countryName,
+        device: group.dimensions?.deviceType,
+        qualifies,
+        failureReason,
+      });
+      log('web-vitals-event', {
+        metricName,
+        code,
+        url,
+        p75,
+        threshold,
+        qualifies,
+        failureReason,
+      });
+    }
   }
 
   return events;
