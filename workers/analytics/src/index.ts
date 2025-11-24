@@ -56,7 +56,7 @@ type RumWebVitalsGroup = {
 
 type RumWebVitalsResponse = {
   accounts?: Array<{
-    rumPerformanceEventsAdaptiveGroups?: RumWebVitalsGroup[];
+    rumWebVitalsEventsAdaptiveGroups?: RumWebVitalsGroup[];
   }>;
 };
 
@@ -128,7 +128,7 @@ const RUM_WEB_VITALS_QUERY = `
   ) {
     viewer {
       accounts(filter: { accountTag: $accountTag }) {
-        rumPerformanceEventsAdaptiveGroups(
+        rumWebVitalsEventsAdaptiveGroups(
           limit: 200
           filter: {
             datetime_geq: $since
@@ -459,7 +459,7 @@ const checkWebVitals = async (
   });
 
   const urlPrefix = env.WEB_VITALS_URL_FILTER || '/d/';
-  const groups = data.viewer?.accounts?.[0]?.rumPerformanceEventsAdaptiveGroups ?? [];
+  const groups = data.viewer?.accounts?.[0]?.rumWebVitalsEventsAdaptiveGroups ?? [];
   const events: WebVitalAlertEvent[] = [];
 
   for (const group of groups) {
