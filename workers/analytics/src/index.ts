@@ -181,7 +181,10 @@ async function cfGraphQL<T>(env: WorkerEnv, query: string, variables: Record<str
 
   const json = (await res.json()) as { data?: T; errors?: unknown };
   if (!res.ok || json.errors || !json.data) {
-    console.warn('[analytics-worker] GraphQL error payload', json.errors || json);
+    console.warn(
+      '[analytics-worker] GraphQL error payload',
+      JSON.stringify(json, null, 2)
+    );
     throw new Error('Cloudflare GraphQL API error');
   }
 
