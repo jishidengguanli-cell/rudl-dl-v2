@@ -117,47 +117,4 @@ router.post('/api/uploads/cleanup', requireAdmin, async (req, res) => {
   return res.json({ ok: true, cleaned: keys.length });
 });
 
-router.post('/api/debug/create-test-file', requireAdmin, async (req, res) => {
-  const rawName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
-  const trimmed = rawName.trim();
-  const fallbackName = `debug/test-${Date.now()}.ini`;
-  const keyWithoutExt = sanitizeKey(trimmed || fallbackName) || fallbackName;
-  const key = keyWithoutExt.endsWith('.ini') ? keyWithoutExt : `${keyWithoutExt}.ini`;
-  const filePath = getFilePathForKey(key);
-  const fileUrl = `${config.publicBaseUrl}/files/${key}`;
-
-  try {
-    await ensureParentDir(filePath);
-    await fsp.writeFile(filePath, '', 'utf-8');
-    const stats = await fsp.stat(filePath).catch(() => null);
-    if (!stats) {
-      return res.status(500).json({
-        ok: false,
-        error: 'FILE_NOT_FOUND_AFTER_WRITE',
-        key,
-        filePath,
-        exists: false,
-        fileUrl,
-      });
-    }
-    return res.json({
-      ok: true,
-      key,
-      filePath,
-      fileUrl,
-      exists: true,
-      size: stats.size,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-      key,
-      filePath,
-      exists: false,
-      fileUrl,
-    });
-  }
-});
-
 module.exports = router;

@@ -43,16 +43,6 @@ type RuServerConfig = {
   token: string;
 };
 
-export type RuTestFileResponse = {
-  ok: boolean;
-  key?: string;
-  filePath?: string;
-  fileUrl?: string;
-  exists?: boolean;
-  size?: number;
-  error?: string;
-};
-
 const normalizeApiBase = (value: string | undefined | null) => {
   if (!value) return '';
   return value.trim().replace(/\/+$/, '');
@@ -153,23 +143,4 @@ export const cleanupRuUploads = async (
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ keys: trimmed }),
   });
-};
-
-export const createRuTestFile = async (
-  bindings: RuServerBindings,
-  fileName?: string
-): Promise<RuTestFileResponse> => {
-  const response = await ruRequest(bindings, '/api/debug/create-test-file', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ fileName }),
-  });
-  const json = (await response.json()) as RuTestFileResponse;
-  if (!json?.ok) {
-    throw new Error(json?.error ?? 'RU_TEST_FILE_FAILED');
-  }
-  if (!json.exists) {
-    throw new Error(json?.error ?? 'RU_TEST_FILE_NOT_CONFIRMED');
-  }
-  return json;
 };

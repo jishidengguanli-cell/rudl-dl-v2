@@ -44,7 +44,9 @@ router.get('/d/:code', async (req, res) => {
   if (!ensureActiveLink(meta)) {
     return res.status(404).send('Not Found');
   }
-  const locale = pickLocale(req.query.lang ?? meta.link.language, req.headers['accept-language']);
+  const queryLang =
+    typeof req.query.lang === 'string' && req.query.lang.trim() ? req.query.lang : null;
+  const locale = pickLocale(queryLang ?? meta.link.language, req.headers['accept-language']);
   const html = renderDownloadPage({ meta, locale, publicBaseUrl: config.publicBaseUrl });
   res.set('content-type', 'text/html; charset=utf-8');
   res.send(html);

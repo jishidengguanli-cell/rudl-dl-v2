@@ -93,9 +93,6 @@ export default function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [statsLink, setStatsLink] = useState<DashboardLink | null>(null);
-  const [testPending, setTestPending] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -244,62 +241,6 @@ export default function DashboardClient({
     setTimeout(() => setToast(null), 5000);
   };
 
-  const triggerRuTestFile = async () => {
-    const now = new Date();
-    const timestamp = now.toISOString();
-    const sanitizedTimestamp = timestamp.replace(/[:.]/g, '-');
-    const fileName = `debug/manual-test-${sanitizedTimestamp}.ini`;
-    console.log('[ru-test-file] start', { timestamp, fileName });
-    setTestPending(true);
-    setTestResult(null);
-    setTestError(null);
-    try {
-      console.log('[ru-test-file] calling /api/debug/ru/create-test-file');
-      const response = await fetch('/api/debug/ru/create-test-file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName }),
-      });
-      console.log('[ru-test-file] response status', response.status);
-      const payload: {
-        ok: boolean;
-        error?: string;
-        result?: {
-          ok?: boolean;
-          exists?: boolean;
-          fileUrl?: string | null;
-          key?: string | null;
-          size?: number | null;
-          error?: string | null;
-        };
-      } = await response.json();
-      console.log('[ru-test-file] payload', payload);
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? `HTTP_${response.status}`);
-      }
-      const result = payload.result;
-      if (!result?.ok || !result.exists) {
-        throw new Error(result?.error ?? 'RU_FILE_NOT_CONFIRMED');
-      }
-      const createdPath = result.fileUrl ?? result.key ?? '';
-      const sizeLabel =
-        typeof result.size === 'number' && Number.isFinite(result.size)
-          ? ` (${result.size} bytes)`
-          : '';
-      setTestResult((createdPath || 'FILE_CREATED') + sizeLabel);
-      console.log('[ru-test-file] success', {
-        createdPath: createdPath || '(no url returned)',
-        size: result.size,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setTestError(message);
-      console.error('[ru-test-file] failed', { error: message });
-    } finally {
-      setTestPending(false);
-      console.log('[ru-test-file] finished');
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -328,21 +269,6 @@ export default function DashboardClient({
               >
                 {t('dashboard.addDistribution')}
               </button>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={triggerRuTestFile}
-                  disabled={testPending}
-                  className="inline-flex items-center justify-center rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
-                >
-                  {testPending ? '建立測試檔案中…' : 'RU 測試寫檔'}
-                </button>
-                {(testResult || testError) && (
-                  <span className={`text-xs ${testError ? 'text-red-600' : 'text-green-600'}`}>
-                    {testError ? `測試失敗：${testError}` : `測試成功：${testResult}`}
-                  </span>
-                )}
-              </div>
             </div>
           ) : null}
         </div>
