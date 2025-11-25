@@ -117,4 +117,21 @@ router.post('/api/uploads/cleanup', requireAdmin, async (req, res) => {
   return res.json({ ok: true, cleaned: keys.length });
 });
 
+router.post('/api/debug/create-test-file', requireAdmin, async (req, res) => {
+  const rawName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
+  const trimmed = rawName.trim();
+  const fallbackName = `debug/test-${Date.now()}.ini`;
+  const keyWithoutExt = sanitizeKey(trimmed || fallbackName) || fallbackName;
+  const key = keyWithoutExt.endsWith('.ini') ? keyWithoutExt : `${keyWithoutExt}.ini`;
+  const filePath = getFilePathForKey(key);
+  await ensureParentDir(filePath);
+  await fsp.writeFile(filePath, '', 'utf-8');
+  return res.json({
+    ok: true,
+    key,
+    filePath,
+    fileUrl: `${config.publicBaseUrl}/files/${key}`,
+  });
+});
+
 module.exports = router;

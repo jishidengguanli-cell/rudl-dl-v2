@@ -11,16 +11,30 @@ http {
   sendfile        on;
   keepalive_timeout  65;
 
+  # 全域上傳大小限制
   client_max_body_size 2g;
 
+  # 後端 app：docker-compose service 名稱
   upstream app_upstream {
     server app:4000;
   }
 
+  # HTTP 80：全部導到 HTTPS
   server {
     listen 80;
     server_name ru-d.dataruapp.com;
+    return 301 https://$host$request_uri;
+  }
 
+  # HTTPS 443 真正處理請求
+  server {
+    listen 443 ssl;
+    server_name ru-d.dataruapp.com;
+
+    ssl_certificate     /etc/letsencrypt/live/ru-d.dataruapp.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ru-d.dataruapp.com/privkey.pem;
+
+    # 健康檢查
     location /healthz {
       proxy_pass http://app_upstream/healthz;
     }
@@ -47,6 +61,7 @@ http {
       proxy_set_header Host $host;
     }
 
+    # 靜態檔案（下載用）
     location /files/ {
       alias /var/www/files/;
       add_header Access-Control-Allow-Origin *;

@@ -97,7 +97,7 @@ The JSON metadata matches the payload written by `links/publish`. The Node rende
 1. Install Docker + Docker Compose in aaPanel (App Store > Docker) and make sure the `docker` CLI is accessible.
 2. Upload or clone the `RU-Server` directory to the server, typically under `/www/wwwroot/<project>/RU-Server`.
 3. Copy `.env.example` -> `.env` and set the RU-specific domain/IP + tokens.
-4. From the aaPanel terminal run `cd /www/wwwroot/<project>/RU-Server && docker compose up -d`.
+4. From the aaPanel terminal run `cd /www/wwwroot/RU-Server && docker compose up -d`.
 5. Point your Russian domain (or internal-only host) to the machine’s public IP and open the required ports (default `8080` for Nginx, `4000` for the Node app if you expose it).
 
 If aaPanel cannot run Docker on that VM, run the Node server directly with `npm run dev`/`npm run start` inside `RU-Server/server`, and use aaPanel’s built-in Nginx to replicate the proxy rules defined in `nginx/nginx.conf`.
