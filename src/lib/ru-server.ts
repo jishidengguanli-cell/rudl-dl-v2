@@ -45,9 +45,12 @@ type RuServerConfig = {
 
 export type RuTestFileResponse = {
   ok: boolean;
-  key: string;
+  key?: string;
   filePath?: string;
   fileUrl?: string;
+  exists?: boolean;
+  size?: number;
+  error?: string;
 };
 
 const normalizeApiBase = (value: string | undefined | null) => {
@@ -163,7 +166,10 @@ export const createRuTestFile = async (
   });
   const json = (await response.json()) as RuTestFileResponse;
   if (!json?.ok) {
-    throw new Error('RU_TEST_FILE_FAILED');
+    throw new Error(json?.error ?? 'RU_TEST_FILE_FAILED');
+  }
+  if (!json.exists) {
+    throw new Error(json?.error ?? 'RU_TEST_FILE_NOT_CONFIRMED');
   }
   return json;
 };

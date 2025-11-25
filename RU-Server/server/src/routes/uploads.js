@@ -124,14 +124,40 @@ router.post('/api/debug/create-test-file', requireAdmin, async (req, res) => {
   const keyWithoutExt = sanitizeKey(trimmed || fallbackName) || fallbackName;
   const key = keyWithoutExt.endsWith('.ini') ? keyWithoutExt : `${keyWithoutExt}.ini`;
   const filePath = getFilePathForKey(key);
-  await ensureParentDir(filePath);
-  await fsp.writeFile(filePath, '', 'utf-8');
-  return res.json({
-    ok: true,
-    key,
-    filePath,
-    fileUrl: `${config.publicBaseUrl}/files/${key}`,
-  });
+  const fileUrl = `${config.publicBaseUrl}/files/${key}`;
+
+  try {
+    await ensureParentDir(filePath);
+    await fsp.writeFile(filePath, '', 'utf-8');
+    const stats = await fsp.stat(filePath).catch(() => null);
+    if (!stats) {
+      return res.status(500).json({
+        ok: false,
+        error: 'FILE_NOT_FOUND_AFTER_WRITE',
+        key,
+        filePath,
+        exists: false,
+        fileUrl,
+      });
+    }
+    return res.json({
+      ok: true,
+      key,
+      filePath,
+      fileUrl,
+      exists: true,
+      size: stats.size,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      key,
+      filePath,
+      exists: false,
+      fileUrl,
+    });
+  }
 });
 
 module.exports = router;

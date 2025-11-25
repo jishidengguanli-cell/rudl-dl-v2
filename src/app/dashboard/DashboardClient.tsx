@@ -264,15 +264,33 @@ export default function DashboardClient({
       const payload: {
         ok: boolean;
         error?: string;
-        result?: { fileUrl?: string | null; key?: string | null };
+        result?: {
+          ok?: boolean;
+          exists?: boolean;
+          fileUrl?: string | null;
+          key?: string | null;
+          size?: number | null;
+          error?: string | null;
+        };
       } = await response.json();
       console.log('[ru-test-file] payload', payload);
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? `HTTP_${response.status}`);
       }
-      const createdPath = payload.result?.fileUrl ?? payload.result?.key ?? '';
-      setTestResult(createdPath || 'FILE_CREATED');
-      console.log('[ru-test-file] success', { createdPath: createdPath || '(no url returned)' });
+      const result = payload.result;
+      if (!result?.ok || !result.exists) {
+        throw new Error(result?.error ?? 'RU_FILE_NOT_CONFIRMED');
+      }
+      const createdPath = result.fileUrl ?? result.key ?? '';
+      const sizeLabel =
+        typeof result.size === 'number' && Number.isFinite(result.size)
+          ? ` (${result.size} bytes)`
+          : '';
+      setTestResult((createdPath || 'FILE_CREATED') + sizeLabel);
+      console.log('[ru-test-file] success', {
+        createdPath: createdPath || '(no url returned)',
+        size: result.size,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setTestError(message);
