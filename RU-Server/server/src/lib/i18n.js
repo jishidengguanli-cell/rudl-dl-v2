@@ -9,11 +9,17 @@ const tryNormalizeLocale = (value) => {
   if (!trimmed) return null;
   const normalized = trimmed.replace('_', '-');
   if (supportedLocales.includes(normalized)) return normalized;
-  if (/^zh/i.test(normalized)) {
+  const lower = normalized.toLowerCase();
+  const caseInsensitiveMatch =
+    supportedLocales.find((locale) => locale.toLowerCase() === lower) ?? null;
+  if (caseInsensitiveMatch) return caseInsensitiveMatch;
+  if (/^zh/i.test(lower)) {
     if (/tw|hk|mo|hant/i.test(normalized)) return 'zh-TW';
     return 'zh-CN';
   }
-  if (/^en/i.test(normalized)) return 'en';
+  if (/^en/i.test(lower)) return 'en';
+  if (/^ru/i.test(lower)) return 'ru';
+  if (/^vi/i.test(lower)) return 'vi';
   return null;
 };
 

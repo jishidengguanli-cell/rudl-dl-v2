@@ -39,10 +39,10 @@ type HttpRequestResponse = {
 };
 
 type RumWebVitalsGroup = {
-  quantiles_largestContentfulPaintP75?: number;
-  quantiles_largestContentfulPaintP90?: number;
-  quantiles_interactionToNextPaintP75?: number;
-  quantiles_interactionToNextPaintP90?: number;
+  quantilesLargestContentfulPaintP75?: number;
+  quantilesLargestContentfulPaintP90?: number;
+  quantilesInteractionToNextPaintP75?: number;
+  quantilesInteractionToNextPaintP90?: number;
   dimensions?: {
     requestHost?: string;
     requestPath?: string;
@@ -135,10 +135,10 @@ const RUM_WEB_VITALS_QUERY = `
             datetime_lt: $until
           }
         ) {
-          quantiles_largestContentfulPaintP75
-          quantiles_largestContentfulPaintP90
-          quantiles_interactionToNextPaintP75
-          quantiles_interactionToNextPaintP90
+          quantilesLargestContentfulPaintP75
+          quantilesLargestContentfulPaintP90
+          quantilesInteractionToNextPaintP75
+          quantilesInteractionToNextPaintP90
           dimensions {
             requestHost
             requestPath
@@ -289,14 +289,14 @@ const getWebVitalQuantiles = (
 ): { p75: number | null; p90: number | null } => {
   if (metricName === 'LCP') {
     return {
-      p75: toNumber(group.quantiles_largestContentfulPaintP75),
-      p90: toNumber(group.quantiles_largestContentfulPaintP90),
+      p75: toNumber(group.quantilesLargestContentfulPaintP75),
+      p90: toNumber(group.quantilesLargestContentfulPaintP90),
     };
   }
   if (metricName === 'INP') {
     return {
-      p75: toNumber(group.quantiles_interactionToNextPaintP75),
-      p90: toNumber(group.quantiles_interactionToNextPaintP90),
+      p75: toNumber(group.quantilesInteractionToNextPaintP75),
+      p90: toNumber(group.quantilesInteractionToNextPaintP90),
     };
   }
   return { p75: null, p90: null };
