@@ -163,14 +163,37 @@ export default function PaymentClient({ enableEcpay }: Props) {
             {t('recharge.ecpayUnavailable')}
           </div>
         )}
-        <button
-          type="button"
-          onClick={handlePayWithEcpay}
-          disabled={!selectedPackage || !enableEcpay || submitting}
-          className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80 sm:w-auto"
-        >
-          {submitting ? t('recharge.processingPayment') : t('recharge.payWithEcpay')}
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <button
+            type="button"
+            onClick={handlePayWithEcpay}
+            disabled={!selectedPackage || !enableEcpay || submitting}
+            className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80 sm:w-auto"
+          >
+            {submitting ? t('recharge.processingPayment') : t('recharge.payWithEcpay')}
+          </button>
+          {selectedPackage?.nowPaymentsUrl && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-medium text-gray-700">{t('recharge.payment.cryptoTitle')}</div>
+              <a
+                href={selectedPackage.nowPaymentsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex w-full items-center sm:w-auto"
+                aria-label={t('recharge.payment.payWithNowPayments')}
+              >
+                <img
+                  src="https://nowpayments.io/images/embeds/payment-button-black.svg"
+                  alt={t('recharge.payment.payWithNowPayments')}
+                  className="h-11 w-auto"
+                />
+              </a>
+            </div>
+          )}
+        </div>
+        {selectedPackage?.nowPaymentsUrl && (
+          <p className="text-xs text-gray-500">{t('recharge.payment.cryptoDescription')}</p>
+        )}
       </div>
     </div>
   );
