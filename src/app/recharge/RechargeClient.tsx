@@ -1,89 +1,30 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '@/i18n/provider';
-
-const USD_TO_TWD = 32;
-
-const PACKAGES = [
-  { points: 200, priceUsd: 1 },
-  { points: 1000, priceUsd: 5 },
-  { points: 5000, priceUsd: 15 },
-  { points: 15000, priceUsd: 35 },
-  { points: 50000, priceUsd: 100 },
-  { points: 100000, priceUsd: 200 },
-].map((item) => ({
-  ...item,
-  priceTwd: Math.round(item.priceUsd * USD_TO_TWD),
-}));
-
-type CheckoutResponse = {
-  ok: boolean;
-  action?: string;
-  form?: Record<string, string>;
-  error?: string;
-};
-
-const submitEcpayForm = (action: string, formFields: Record<string, string>) => {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = action;
-
-  Object.entries(formFields).forEach(([key, value]) => {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = key;
-    input.value = value;
-    form.appendChild(input);
-  });
-
-  document.body.appendChild(form);
-  form.submit();
-};
+import { PACKAGES } from './packages';
 
 type Props = {
   enableEcpay: boolean;
 };
 
+const STORAGE_KEY = 'recharge:lastPackage';
+
 export default function RechargeClient({ enableEcpay }: Props) {
   const { t } = useI18n();
-  const [submittingPoints, setSubmittingPoints] = useState<number | null>(null);
+  const router = useRouter();
 
-  const handleCheckout = useCallback(
-    async (points: number, priceUsd: number, priceTwd: number) => {
-      if (!enableEcpay) {
-        return;
-      }
+  const handleGoToPayment = useCallback(
+    (points: number) => {
       try {
-        setSubmittingPoints(points);
-        const response = await fetch('/api/recharge/ecpay', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount: priceTwd,
-            points,
-            priceUsd,
-            priceTwd,
-          }),
-        });
-
-        const data = (await response.json()) as CheckoutResponse;
-        if (!response.ok || !data.ok || !data.action || !data.form) {
-          throw new Error(data.error ?? 'Invalid ECPay response');
-        }
-
-        submitEcpayForm(data.action, data.form);
+        sessionStorage.setItem(STORAGE_KEY, String(points));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error('[ecpay] checkout failed', message);
-        window.alert(`${t('recharge.paymentError')}\n${message}`);
-      } finally {
-        setSubmittingPoints(null);
+        console.warn('[recharge] unable to persist selection', error);
       }
+      router.push(`/recharge/payment?points=${points}`);
     },
-    [enableEcpay, t]
+    [router]
   );
 
   return (
@@ -99,7 +40,6 @@ export default function RechargeClient({ enableEcpay }: Props) {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {PACKAGES.map(({ points, priceUsd, priceTwd }) => {
-          const isSubmitting = submittingPoints === points;
           return (
             <div
               key={points}
@@ -114,11 +54,11 @@ export default function RechargeClient({ enableEcpay }: Props) {
               </div>
               <button
                 type="button"
-                onClick={() => handleCheckout(points, priceUsd, priceTwd)}
-                disabled={isSubmitting || !enableEcpay}
+                onClick={() => handleGoToPayment(points)}
+                disabled={!enableEcpay}
                 className="mt-6 rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-80"
               >
-                {isSubmitting ? t('recharge.processingPayment') : t('recharge.payWithEcpay')}
+                {t('recharge.goToPayment')}
               </button>
             </div>
           );
