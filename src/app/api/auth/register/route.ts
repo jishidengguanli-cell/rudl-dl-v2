@@ -21,6 +21,8 @@ type Env = {
   APP_NAME?: string;
   MAILCHANNELS_API_KEY?: string;
   MAILCHANNELS_API_BASE?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 };
 
 async function ensureUserBucketFolder(bucket: R2Bucket | undefined, userId: string) {
@@ -34,6 +36,35 @@ async function ensureUserBucketFolder(bucket: R2Bucket | undefined, userId: stri
     });
   } catch {
     // non-blocking
+  }
+}
+
+async function sendTelegramRegistrationNotice(env: Env, email: string) {
+  const token = env.TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = env.TELEGRAM_CHAT_ID?.trim();
+  if (!token || !chatId) return;
+
+  const body = {
+    chat_id: chatId,
+    text: `New user registered\nEmail: ${email}\nTime: ${new Date().toISOString()}`,
+    disable_web_page_preview: true,
+  };
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const snippet = await response
+        .clone()
+        .text()
+        .catch(() => '');
+      console.error('[register] telegram notify failed', response.status, snippet.slice(0, 200));
+    }
+  } catch (error) {
+    console.error('[register] telegram notify error', error);
   }
 }
 
@@ -115,6 +146,7 @@ export async function POST(req: Request) {
 
     await ensureUserBucketFolder(R2, id);
     shouldRollback = false;
+    await sendTelegramRegistrationNotice(bindings, normalizedEmail);
 
     const response = NextResponse.json({
       ok: true,
